@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, field_validator, ConfigDict, model_validator
 from datetime import date
 
 from app.models.transaction import TransactionType
@@ -58,3 +58,20 @@ class TransactionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class TransactionFilters(BaseModel):
+    type: TransactionType | None = None
+
+    currency_code: str | None = None
+
+    start_date: date | None = None
+
+    end_date: date | None = None
+
+    category_id: int | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "TransactionFilters":
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValueError("Start date cannot be greater than end date")
+
+        return self

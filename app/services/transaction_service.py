@@ -1,7 +1,7 @@
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository
 from app.models import Transaction
-from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate
-from app.exception import NotFoundException, NotAllowedActionException
+from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters
+from app.core.exceptions import NotFoundException, NotAllowedActionException, PermissionException
 
 
 class TransactionService:
@@ -15,13 +15,14 @@ class TransactionService:
         self.category_repository = category_repository
         self.currency_repository = currency_repository
 
-    async def create_transaction(self,
-                                 user_id: int,
-                                 data: TransactionCreate) -> TransactionResponse:
+    async def create_transaction(
+            self,
+            data: TransactionCreate,
+            user_id: int) -> TransactionResponse:
 
-        await self.validate_category(user_id, data.category_id)
+        await self._validate_category(user_id, data.category_id)
 
-        await self.validate_currency(data.currency_code)
+        await self._validate_currency(data.currency_code)
 
         new_transaction = Transaction(
             type=data.type,
@@ -44,17 +45,18 @@ class TransactionService:
     ) -> TransactionResponse:
         existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
 
-        await self.validate_transaction(user_id, existing_transaction)
+        await self._validate_transaction(user_id, existing_transaction)
 
         return TransactionResponse.model_validate(existing_transaction)
 
     async def get_user_transactions(
             self,
             user_id: int,
+            filters: TransactionFilters,
             limit: int = 20,
             offset: int = 0,
     ) -> list[TransactionResponse]:
-        user_transactions = await self.transaction_repository.get_by_user(user_id, limit, offset)
+        user_transactions = await self.transaction_repository.get_by_user(user_id, filters, limit, offset)
 
         return [
             TransactionResponse.model_validate(tr) for tr in user_transactions
@@ -63,17 +65,17 @@ class TransactionService:
     async def update_transaction(
             self,
             transaction_id: int,
+            data: TransactionUpdate,
             user_id: int,
-            data: TransactionUpdate
     ) -> TransactionResponse:
 
         existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
 
-        await self.validate_transaction(user_id, existing_transaction)
+        await self._validate_transaction(user_id, existing_transaction)
 
-        await self.validate_category(user_id, data.category_id)
+        await self._validate_category(user_id, data.category_id)
 
-        await self.validate_currency(data.currency_code)
+        await self._validate_currency(data.currency_code)
 
         existing_transaction.category_id = data.category_id
         existing_transaction.currency_code = data.currency_code
@@ -86,7 +88,18 @@ class TransactionService:
 
         return TransactionResponse.model_validate(updated_transaction)
 
-    async def validate_category(
+    async def delete_transaction(
+            self,
+            transaction_id: int,
+            user_id: int,
+    ) -> None:
+        existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
+
+        await self._validate_transaction(user_id, existing_transaction)
+
+        await self.transaction_repository.delete(existing_transaction)
+
+    async def _validate_category(
             self,
             user_id: int,
             category_id: int | None
@@ -100,12 +113,12 @@ class TransactionService:
             raise NotFoundException("Category not found")
 
         if existing_category.user_id != user_id:
-            raise PermissionError("You don't have permission to this category")
+            raise PermissionException("You don't have permission to this category")
 
         if existing_category.archived_at:
-            raise NotAllowedActionException("Archived category is no allowed to use")
+            raise NotAllowedActionException("Archived category is not allowed to use")
 
-    async def validate_currency(
+    async def _validate_currency(
             self,
             currency_code: str
     ) -> None:
@@ -117,7 +130,7 @@ class TransactionService:
         if not existing_currency.is_active:
             raise NotAllowedActionException("Currency is not active")
 
-    async def validate_transaction(
+    async def _validate_transaction(
             self,
             user_id: int,
             transaction: Transaction | None
@@ -126,15 +139,4 @@ class TransactionService:
             raise NotFoundException("Transaction not found")
 
         if transaction.user_id != user_id:
-            raise PermissionError("You don't have permission to this transaction")
-
-    async def delete_transaction(
-            self,
-            transaction_id: int,
-            user_id: int,
-    ) -> None:
-        existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
-
-        await self.validate_transaction(user_id, existing_transaction)
-
-        await self.transaction_repository.delete(existing_transaction)
+            raise PermissionException("You don't have permission to this transaction")

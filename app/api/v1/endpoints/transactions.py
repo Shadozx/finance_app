@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_transaction_service, get_current_user
 from app.services import TransactionService
-from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionType
+from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters
 from app.models import User
-from app.exception import NotAllowedActionException, NotFoundException
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -19,14 +18,7 @@ async def create_transaction(
         transaction_service: TransactionService = Depends(get_transaction_service),
         current_user: User = Depends(get_current_user),
 ):
-    try:
-        return await transaction_service.create_transaction(current_user.id, data)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except NotAllowedActionException as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    return await transaction_service.create_transaction(data, current_user.id)
 
 
 @router.get(
@@ -34,12 +26,13 @@ async def create_transaction(
     response_model=list[TransactionResponse]
 )
 async def get_transactions(
+        filters: TransactionFilters = Depends(),
         limit: int = 20,
         offset: int = 0,
         current_user: User = Depends(get_current_user),
         transaction_service: TransactionService = Depends(get_transaction_service)
 ):
-    return await transaction_service.get_user_transactions(current_user.id, limit, offset)
+    return await transaction_service.get_user_transactions(current_user.id, filters, limit, offset)
 
 
 @router.get(
@@ -51,12 +44,7 @@ async def get_transaction(
         current_user: User = Depends(get_current_user),
         transaction_service: TransactionService = Depends(get_transaction_service)
 ):
-    try:
-        return await transaction_service.get_transaction(transaction_id, current_user.id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    return await transaction_service.get_transaction(transaction_id, current_user.id)
 
 
 @router.put(
@@ -69,15 +57,7 @@ async def update_transaction(
         current_user: User = Depends(get_current_user),
         transaction_service: TransactionService = Depends(get_transaction_service)
 ):
-    try:
-        return await transaction_service.update_transaction(transaction_id, current_user.id, data)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except NotAllowedActionException as e:
-        raise HTTPException(status_code=409, detail=str(e))
-
+    return await transaction_service.update_transaction(transaction_id, current_user.id, data)
 
 
 @router.delete(
@@ -89,10 +69,4 @@ async def delete_transaction(
         current_user: User = Depends(get_current_user),
         transaction_service: TransactionService = Depends(get_transaction_service)
 ):
-    try:
-        await transaction_service.delete_transaction(transaction_id, current_user.id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
+    await transaction_service.delete_transaction(transaction_id, current_user.id)

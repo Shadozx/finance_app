@@ -1,11 +1,8 @@
-from app.core.security import hash_password
-from app.exception import ValueExistsException
 from app.models import User
 from app.repositories import UserRepository
-from app.schemas import UserCreate, UserResponse
-from app.core.security import create_access_token, verify_password
-from app.schemas import UserLogin
-from app.exception import AuthenticationError
+from app.schemas import UserCreate, UserResponse, UserLogin
+from app.core.security import create_access_token, verify_password, hash_password
+from app.core.exceptions import AuthenticationException, ValueExistsException
 
 
 class UserService:
@@ -39,6 +36,6 @@ class UserService:
         existing_user = await self.user_repository.get_by_email(user.email)
 
         if not existing_user or not verify_password(user.password, existing_user.hashed_password):
-            raise AuthenticationError("Invalid email or password")
+            raise AuthenticationException("Invalid email or password")
 
         return create_access_token({"sub": str(existing_user.id)})
