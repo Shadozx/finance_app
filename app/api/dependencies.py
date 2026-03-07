@@ -1,8 +1,9 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core import get_session, verify_token
+from app.core.exceptions import AuthenticationException
 from app.services import UserService, CategoryService, TransactionService, CurrencyService
 from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository
 from app.models import User
@@ -46,38 +47,28 @@ def get_currency_service(
     return CurrencyService(currency_repository)
 
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(security),
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),
         session: AsyncSession = Depends(get_session)
 ) -> User:
+    if not credentials:
+        raise AuthenticationException("Authorization header missing")
+
     try:
         payload = verify_token(credentials.credentials)
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    user_id = int(payload["sub"])
+        raise AuthenticationException("Invalid or expired token")
 
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload"
-        )
+    user_id = int(payload["sub"])
 
     user_repository = UserRepository(session)
 
     user = await user_repository.get_by_id(user_id)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User no longer exists",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+        raise AuthenticationException("User no longer exists")
 
     return user

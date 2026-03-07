@@ -4,7 +4,7 @@ from app.api.dependencies import get_current_user, get_category_service
 from app.services import CategoryService
 from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate
 from app.models import User
-from app.exception import ValueExistsException, NotFoundException
+from core.exceptions import ValueExistsException, NotFoundException
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -19,12 +19,7 @@ async def create_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    try:
-        return await category_service.create_category(current_user.id, data)
-    except ValueExistsException as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    return await category_service.create_category(current_user.id, data)
 
 
 @router.get(
@@ -48,14 +43,7 @@ async def update_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    try:
-        return await category_service.update_category(category_id, current_user.id, data)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueExistsException as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    return await category_service.update_category(category_id, current_user.id, data)
 
 
 @router.delete(
@@ -67,12 +55,7 @@ async def delete_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    try:
-        await category_service.archive_category(category_id, current_user.id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    await category_service.archive_category(category_id, current_user.id)
 
 
 @router.post(
@@ -84,11 +67,4 @@ async def restore_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    try:
-        return await category_service.restore_category(category_id, current_user.id)
-    except NotFoundException as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueExistsException as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    return await category_service.restore_category(category_id, current_user.id)

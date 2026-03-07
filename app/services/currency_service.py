@@ -1,6 +1,6 @@
 from app.repositories import CurrencyRepository
 from app.schemas import CurrencyResponse
-
+from app.core.exceptions import NotFoundException
 
 class CurrencyService:
 
@@ -20,6 +20,6 @@ class CurrencyService:
         existing_currency = await self.currency_repository.get_by_code(code)
 
         if not existing_currency:
-            raise ValueError("Currency not found")
+            raise NotFoundException("Currency not found")
 
         return CurrencyResponse.model_validate(existing_currency)

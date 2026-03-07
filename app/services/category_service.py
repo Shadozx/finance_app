@@ -1,7 +1,7 @@
 from app.models import Category
 from app.repositories import CategoryRepository
 from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate
-from app.exception import ValueExistsException, NotFoundException, NotAllowedActionException
+from app.core.exceptions import ValueExistsException, NotFoundException, NotAllowedActionException, PermissionException
 
 
 class CategoryService:
@@ -11,11 +11,11 @@ class CategoryService:
 
     async def create_category(
             self,
+            data: CategoryCreate,
             user_id: int,
-            data: CategoryCreate
     ) -> CategoryResponse:
         if await self.category_repository.get_by_user_and_name(user_id, data.name):
-            raise ValueExistsException("User has category with this name")
+            raise ValueExistsException("Category with this name exists")
 
         new_category = Category(
             name=data.name,
@@ -26,15 +26,18 @@ class CategoryService:
 
         return CategoryResponse.model_validate(created_category)
 
-    async def get_user_categories(self, user_id: int) -> list[CategoryResponse]:
+    async def get_user_categories(
+            self,
+            user_id: int
+    ) -> list[CategoryResponse]:
         categories = await self.category_repository.get_by_user(user_id)
         return [CategoryResponse.model_validate(cat) for cat in categories]
 
     async def update_category(
             self,
             category_id: int,
+            data: CategoryUpdate,
             user_id: int,
-            data: CategoryUpdate
     ) -> CategoryResponse:
         existing_category = await self.category_repository.get_by_id(category_id)
 
@@ -42,12 +45,12 @@ class CategoryService:
             raise NotFoundException("Category not found")
 
         if user_id != existing_category.user_id:
-            raise PermissionError("You don't have permission to update this category")
+            raise PermissionException("You don't have permission to update this category")
 
         duplicate = await self.category_repository.get_by_user_and_name(user_id, data.name)
 
         if duplicate and duplicate.id != category_id:
-            raise ValueExistsException("User has category with this name")
+            raise ValueExistsException("Category with this name exists")
 
         existing_category.name = data.name
 
@@ -66,7 +69,10 @@ class CategoryService:
             raise NotFoundException("Category not found")
 
         if user_id != existing_category.user_id:
-            raise PermissionError("You don't have permission to update this category")
+            raise PermissionException("You don't have permission to archive this category")
+
+        if existing_category.archived_at:
+            raise NotAllowedActionException("Category is archived")
 
         await self.category_repository.archive(existing_category)
 
@@ -81,7 +87,7 @@ class CategoryService:
             raise NotFoundException("Category not found")
 
         if existing_category.user_id != user_id:
-            raise PermissionError("You don't have permission to restore this category")
+            raise PermissionException("You don't have permission to restore this category")
 
         if not existing_category.archived_at:
             raise NotAllowedActionException("Category is not archived")
@@ -93,9 +99,8 @@ class CategoryService:
 
         if duplicate and duplicate.id != category_id and duplicate.archived_at is None:
             raise ValueExistsException(
-                f"Cannot restore: active category '{existing_category.name}' already exists"
+                "Active category with this name already exists"
             )
 
         await self.category_repository.restore(existing_category)
         return CategoryResponse.model_validate(existing_category)
-
