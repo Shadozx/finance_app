@@ -1,6 +1,8 @@
-from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository
+from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
+    TransactionTemplateRepository
 from app.models import Transaction
-from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters
+from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
+    UseTemplateRequest
 from app.core.exceptions import NotFoundException, NotAllowedActionException, PermissionException
 
 
@@ -8,10 +10,12 @@ class TransactionService:
     def __init__(
             self,
             transaction_repository: TransactionRepository,
+            transaction_template_repository: TransactionTemplateRepository,
             category_repository: CategoryRepository,
             currency_repository: CurrencyRepository
     ):
         self.transaction_repository = transaction_repository
+        self.transaction_template_repository = transaction_template_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
 
@@ -31,6 +35,43 @@ class TransactionService:
             user_id=user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
+            date=data.date,
+        )
+
+        created_transaction = await self.transaction_repository.create(new_transaction)
+
+        return TransactionResponse.model_validate(created_transaction)
+
+    async def create_from_template(
+            self,
+            template_id: int,
+            data: UseTemplateRequest,
+            user_id: int,
+    ) -> TransactionResponse:
+        existing_template = await self.transaction_template_repository.get_by_id(template_id)
+
+        if not existing_template:
+            raise NotFoundException("Transaction template not found")
+
+        if existing_template.user_id != user_id:
+            raise PermissionException("You don't have permission to this transaction template")
+
+        final_type = data.type or existing_template.type
+        final_amount = data.amount if data.amount is not None else existing_template.amount
+        final_category_id = data.category_id if data.category_id is not None else existing_template.category_id
+        final_currency_code = data.currency_code or existing_template.currency_code
+        final_description = data.description if data.description is not None else existing_template.description
+
+        await self._validate_category(user_id, final_category_id)
+        await self._validate_currency(final_currency_code)
+
+        new_transaction = Transaction(
+            type=final_type,
+            amount=final_amount,
+            description=final_description,
+            currency_code=final_currency_code,
+            user_id=user_id,
+            category_id=final_category_id,
             date=data.date,
         )
 

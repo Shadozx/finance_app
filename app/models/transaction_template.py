@@ -1,26 +1,23 @@
-import enum
-from datetime import date
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+from sqlalchemy import ForeignKey, Numeric, Enum, String, DateTime, UniqueConstraint, CheckConstraint
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
+from app.models import TransactionType
 
 
-class TransactionType(str, enum.Enum):
-    INCOME = "income"
-    EXPENSE = "expense"
-
-
-class Transaction(Base):
-    __tablename__ = "transactions"
+class TransactionTemplate(Base):
+    __tablename__ = "transaction_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
     type: Mapped[TransactionType] = mapped_column(Enum(TransactionType))
 
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+
+    name: Mapped[str] = mapped_column(String(100))
 
     description: Mapped[str | None] = mapped_column(String(1024))
 
@@ -30,19 +27,15 @@ class Transaction(Base):
 
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
 
-    date: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     @validates("amount")
     def validate_amount(self, key, value):
-
-        if value is None:
-            raise ValueError("Amount is required")
-
         if value < 0:
             raise ValueError("Amount cannot be negative")
-
         return value
 
     __table_args__ = (
+        UniqueConstraint('user_id', 'name', name='uq_user_template_name'),
         CheckConstraint('amount >= 0', name='check_amount_non_negative'),
     )

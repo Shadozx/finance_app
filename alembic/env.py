@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.currency import Currency
 from app.models.category import Category
 from app.models.transaction import Transaction
+from app.models.transaction_template import TransactionTemplate
 
 # Alembic Config
 config = context.config
@@ -39,6 +40,14 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+def include_object(object, name, type_, reflected, compare_to):
+    """
+    Should we include this object in autogenerate diff?
+    """
+    # Skip ENUM creation if already exists
+    if type_ == "type" and name == "transactiontype":
+        return False
+    return True
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)

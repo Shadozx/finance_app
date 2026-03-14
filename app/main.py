@@ -1,13 +1,12 @@
 import uvicorn
 from fastapi import FastAPI
 
-from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health
+from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
 from pydantic import ValidationError
 
 app = FastAPI(title="Finance Tracker API", version="1.1.0")
-
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
@@ -15,11 +14,11 @@ app.include_router(categories.router, prefix="/api/v1")
 app.include_router(currencies.router, prefix="/api/v1")
 app.include_router(transactions.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(transaction_templates.router, prefix="/api/v1")
 
 app.add_exception_handler(ValidationError, validation_exception_handler)
 app.add_exception_handler(AppException, app_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
-
 
 if __name__ == "__main__":
     # uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=[os.path.abspath("app")])
@@ -30,4 +29,9 @@ if __name__ == "__main__":
 #   "username": "user1234",
 #   "email": "testuser1234@gmail.com",
 #   "password": "qWerty12#"
+# }
+# {
+#   "username": "testuser123456789",
+#   "email": "user@example.com",
+#   "password": "userTest1"
 # }
