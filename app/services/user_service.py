@@ -1,8 +1,8 @@
 from app.models import User
 from app.repositories import UserRepository
-from app.schemas import UserCreate, UserResponse, UserLogin
+from app.schemas import UserCreate, UserResponse, UserLogin, UsernameUpdate, PasswordUpdate
 from app.core.security import create_access_token, verify_password, hash_password
-from app.core.exceptions import AuthenticationException, ValueExistsException
+from app.core.exceptions import AuthenticationException, ValueExistsException, ValidationException
 
 
 class UserService:
@@ -39,3 +39,36 @@ class UserService:
             raise AuthenticationException("Invalid email or password")
 
         return create_access_token({"sub": str(existing_user.id)})
+
+    async def update_username(
+            self,
+            data: UsernameUpdate,
+            user_id: int
+    ) -> UserResponse:
+        existing_user = await self.user_repository.get_by_id(user_id)
+
+        duplicate_username_user = await self.user_repository.get_by_username(data.new_username)
+
+        if duplicate_username_user and duplicate_username_user.id != user_id:
+            raise ValueExistsException("Username is already taken")
+
+        existing_user.username = data.new_username
+
+        return UserResponse.model_validate(await self.user_repository.update(existing_user))
+
+    async def update_password(
+            self,
+            data: PasswordUpdate,
+            user_id: int
+    ) -> None:
+        existing_user = await self.user_repository.get_by_id(user_id)
+
+        if data.current_password == data.new_password:
+            raise ValidationException("New password must be different from current password")
+
+        if not verify_password(data.current_password, existing_user.hashed_password):
+            raise AuthenticationException("Current password is incorrect")
+
+        existing_user.hashed_password = hash_password(data.new_password)
+
+        await self.user_repository.update(existing_user)

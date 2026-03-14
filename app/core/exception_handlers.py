@@ -13,6 +13,7 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
         "NotAllowedActionException": 409,
         "AuthenticationException": 401,
         "PermissionException": 403,
+        "ValidationException": 400
     }
     status_code = status_map.get(type(exc).__name__, 500)
     return JSONResponse(status_code=status_code, content={"detail": exc.message})

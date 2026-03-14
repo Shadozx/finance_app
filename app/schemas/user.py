@@ -1,7 +1,8 @@
-import re
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
+
+from app.schemas.validators import username_validator, password_validator
 
 
 # --- Pydantic-схеми ---
@@ -14,39 +15,36 @@ class UserCreate(BaseModel):
     @field_validator("username")
     @classmethod
     def validate_username(cls, v: str) -> str:
-        v = v.strip()
-
-        if len(v) < 3:
-            raise ValueError("Username must be at least 3 characters")
-
-        if len(v) > 50:
-            raise ValueError("Username must be less than 50 characters")
-
-        # Тільки букви, цифри, підкреслення
-        if not re.match(r"^[a-zA-Z0-9_]+$", v):
-            raise ValueError("Username can only contain letters, numbers and underscores")
-
-        return v
+        return username_validator(v)
 
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        v = v.strip()
-
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Password must contain at least one digit")
-        if not any(c.isalpha() for c in v):
-            raise ValueError("Password must contain at least one letter")
-
-        return v
+        return password_validator(v)
 
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+class UsernameUpdate(BaseModel):
+    new_username: str
+
+    @field_validator("new_username")
+    @classmethod
+    def validate_new_username(cls, v: str) -> str:
+        return username_validator(v)
+
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        return password_validator(v)
 
 
 class UserResponse(BaseModel):
