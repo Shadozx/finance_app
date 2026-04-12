@@ -3,7 +3,7 @@ from app.repositories import TransactionRepository, CurrencyRepository, Category
 from app.models import Transaction
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
-from app.core.exceptions import NotFoundException, NotAllowedActionException, PermissionException
+from app.services import validators
 
 
 class TransactionService:
@@ -23,10 +23,9 @@ class TransactionService:
             self,
             data: TransactionCreate,
             user_id: int) -> TransactionResponse:
+        await validators.validate_category(self.category_repository, user_id, data.category_id)
 
-        await self._validate_category(user_id, data.category_id)
-
-        await self._validate_currency(data.currency_code)
+        await validators.validate_currency(self.currency_repository, data.currency_code)
 
         new_transaction = Transaction(
             type=data.type,
@@ -42,19 +41,13 @@ class TransactionService:
 
         return TransactionResponse.model_validate(created_transaction)
 
-    async def create_from_template(
+    async def create_transaction_from_template(
             self,
             template_id: int,
             data: UseTemplateRequest,
             user_id: int,
     ) -> TransactionResponse:
-        existing_template = await self.transaction_template_repository.get_by_id(template_id)
-
-        if not existing_template:
-            raise NotFoundException("Transaction template not found")
-
-        if existing_template.user_id != user_id:
-            raise PermissionException("You don't have permission to this transaction template")
+        existing_template = await validators.validate_template(self.transaction_template_repository, user_id, template_id)
 
         final_type = data.type or existing_template.type
         final_amount = data.amount if data.amount is not None else existing_template.amount
@@ -62,8 +55,8 @@ class TransactionService:
         final_currency_code = data.currency_code or existing_template.currency_code
         final_description = data.description if data.description is not None else existing_template.description
 
-        await self._validate_category(user_id, final_category_id)
-        await self._validate_currency(final_currency_code)
+        await validators.validate_category(self.category_repository, user_id, final_category_id)
+        await validators.validate_currency(self.currency_repository, final_currency_code)
 
         new_transaction = Transaction(
             type=final_type,
@@ -84,9 +77,7 @@ class TransactionService:
             transaction_id: int,
             user_id: int
     ) -> TransactionResponse:
-        existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
-
-        await self._validate_transaction(user_id, existing_transaction)
+        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
 
         return TransactionResponse.model_validate(existing_transaction)
 
@@ -109,14 +100,11 @@ class TransactionService:
             data: TransactionUpdate,
             user_id: int,
     ) -> TransactionResponse:
+        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
 
-        existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
+        await validators.validate_category(self.category_repository, user_id, data.category_id)
 
-        await self._validate_transaction(user_id, existing_transaction)
-
-        await self._validate_category(user_id, data.category_id)
-
-        await self._validate_currency(data.currency_code)
+        await validators.validate_currency(self.currency_repository, data.currency_code)
 
         existing_transaction.category_id = data.category_id
         existing_transaction.currency_code = data.currency_code
@@ -134,50 +122,6 @@ class TransactionService:
             transaction_id: int,
             user_id: int,
     ) -> None:
-        existing_transaction = await self.transaction_repository.get_by_id(transaction_id)
-
-        await self._validate_transaction(user_id, existing_transaction)
+        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
 
         await self.transaction_repository.delete(existing_transaction)
-
-    async def _validate_category(
-            self,
-            user_id: int,
-            category_id: int | None
-    ) -> None:
-        if not category_id:
-            return
-
-        existing_category = await self.category_repository.get_by_id(category_id)
-
-        if not existing_category:
-            raise NotFoundException("Category not found")
-
-        if existing_category.user_id != user_id:
-            raise PermissionException("You don't have permission to this category")
-
-        if existing_category.archived_at:
-            raise NotAllowedActionException("Archived category is not allowed to use")
-
-    async def _validate_currency(
-            self,
-            currency_code: str
-    ) -> None:
-        existing_currency = await self.currency_repository.get_by_code(currency_code)
-
-        if not existing_currency:
-            raise NotFoundException("Currency not found")
-
-        if not existing_currency.is_active:
-            raise NotAllowedActionException("Currency is not active")
-
-    async def _validate_transaction(
-            self,
-            user_id: int,
-            transaction: Transaction | None
-    ) -> None:
-        if not transaction:
-            raise NotFoundException("Transaction not found")
-
-        if transaction.user_id != user_id:
-            raise PermissionException("You don't have permission to this transaction")

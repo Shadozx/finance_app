@@ -49,7 +49,7 @@ def get_transaction_template_service(
     transaction_template_repository = TransactionTemplateRepository(session)
 
     return TransactionTemplateService(
-        template_repository=transaction_template_repository,
+        transaction_template_repository=transaction_template_repository,
         category_repository=category_repository,
         currency_repository=currency_repository
     )

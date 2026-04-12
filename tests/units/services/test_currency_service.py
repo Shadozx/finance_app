@@ -10,8 +10,8 @@ from app.core.exceptions import NotFoundException
 class TestGetActiveCurrencies:
     async def test_active_currencies(
             self,
+            currency_service: CurrencyService,
             currency_repo_mock: CurrencyRepository,
-            currency_service: CurrencyService
     ):
         active_currencies = [
             Currency(
@@ -33,16 +33,13 @@ class TestGetActiveCurrencies:
                 is_active=True
             )
         ]
-
         currency_repo_mock.get_all_active.return_value = active_currencies
 
-        expected = [
+        result = await currency_service.get_active_currencies()
+
+        assert result == [
             CurrencyResponse.model_validate(c) for c in active_currencies
         ]
-
-        actual = await currency_service.get_active_currencies()
-
-        assert actual == expected
 
         currency_repo_mock.get_all_active.assert_called_once()
 
@@ -52,16 +49,13 @@ class TestGetActiveCurrencies:
             currency_service: CurrencyService
     ):
         active_currencies = []
-
         currency_repo_mock.get_all_active.return_value = active_currencies
-
-        expected = [
-            CurrencyResponse.model_validate(c) for c in active_currencies
-        ]
 
         actual = await currency_service.get_active_currencies()
 
-        assert actual == expected
+        assert actual == [
+            CurrencyResponse.model_validate(c) for c in active_currencies
+        ]
 
         currency_repo_mock.get_all_active.assert_called_once()
 
@@ -69,29 +63,58 @@ class TestGetActiveCurrencies:
 class TestGetCurrency:
     async def test_get_currency_success(
             self,
-            existing_currency: Currency,
+            currency_service: CurrencyService,
             currency_repo_mock: CurrencyRepository,
-            currency_service: CurrencyService
+            existing_currency: Currency,
     ):
         currency_repo_mock.get_by_code.return_value = existing_currency
 
-        expected = CurrencyResponse(
-            code=existing_currency.code,
-            symbol=existing_currency.symbol,
-            name=existing_currency.name,
-            is_active=existing_currency.is_active
-        )
+        result = await currency_service.get_currency(existing_currency.code)
 
-        actual = await currency_service.get_currency(existing_currency.code)
-
-        assert actual == expected
+        assert result == CurrencyResponse.model_validate(existing_currency)
 
         currency_repo_mock.get_by_code.assert_called_once_with(existing_currency.code)
 
+    async def test_get_currency_lower_case_currency_code(
+            self,
+            currency_service: CurrencyService,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+    ):
+        lower_case_currency_code = "uah"
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+
+        result = await currency_service.get_currency(lower_case_currency_code)
+
+        assert result == CurrencyResponse.model_validate(existing_currency)
+
+        call_args = currency_repo_mock.get_by_code.call_args[0][0]
+
+        assert call_args == existing_currency.code
+
+    async def test_get_currency_currency_code_with_spaces(
+            self,
+            currency_service: CurrencyService,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+    ):
+        currency_code_with_spaces = " UAH "
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+
+        result = await currency_service.get_currency(currency_code_with_spaces)
+
+        assert result == CurrencyResponse.model_validate(existing_currency)
+
+        call_args = currency_repo_mock.get_by_code.call_args[0][0]
+
+        assert call_args == existing_currency.code
+
     async def test_get_currency_not_found(
             self,
+            currency_service: CurrencyService,
             currency_repo_mock: CurrencyRepository,
-            currency_service: CurrencyService
     ):
         currency_repo_mock.get_by_code.return_value = None
 

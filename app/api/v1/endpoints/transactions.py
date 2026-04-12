@@ -33,7 +33,7 @@ async def create_transaction_from_template(
         transaction_service: TransactionService = Depends(get_transaction_service),
         current_user: User = Depends(get_current_user),
 ):
-    return await transaction_service.create_from_template(transaction_template_id, data, current_user.id)
+    return await transaction_service.create_transaction_from_template(transaction_template_id, data, current_user.id)
 
 
 @router.get(

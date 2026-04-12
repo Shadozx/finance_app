@@ -1,17 +1,18 @@
 from app.repositories import TransactionTemplateRepository, CategoryRepository, CurrencyRepository
 from app.schemas import TransactionTemplateCreate, TransactionTemplateUpdate, TransactionTemplateResponse
 from app.models import TransactionTemplate
-from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, ValueExistsException
+from app.core.exceptions import ValueExistsException
+from app.services import validators
 
 
 class TransactionTemplateService:
     def __init__(
             self,
-            template_repository: TransactionTemplateRepository,
+            transaction_template_repository: TransactionTemplateRepository,
             category_repository: CategoryRepository,
             currency_repository: CurrencyRepository,
     ):
-        self.template_repository = template_repository
+        self.transaction_template_repository = transaction_template_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
 
@@ -20,9 +21,8 @@ class TransactionTemplateService:
             template_id: int,
             user_id: int
     ) -> TransactionTemplateResponse:
-        existing_template = await self.template_repository.get_by_id(template_id)
-
-        await self._validate_template(user_id, existing_template)
+        existing_template = await validators.validate_template(self.transaction_template_repository, user_id,
+                                                               template_id)
 
         return TransactionTemplateResponse.model_validate(existing_template)
 
@@ -32,7 +32,7 @@ class TransactionTemplateService:
             limit: int = 20,
             offset: int = 0
     ) -> list[TransactionTemplateResponse]:
-        user_templates = await self.template_repository.get_by_user(user_id, limit, offset)
+        user_templates = await self.transaction_template_repository.get_by_user(user_id, limit, offset)
 
         return [
             TransactionTemplateResponse.model_validate(t) for t in user_templates
@@ -44,12 +44,12 @@ class TransactionTemplateService:
             user_id: int
     ) -> TransactionTemplateResponse:
 
-        if await self.template_repository.get_by_user_and_name(data.name, user_id):
+        if await self.transaction_template_repository.get_by_user_and_name(data.name, user_id):
             raise ValueExistsException("Transaction template with this name already exists")
 
-        await self._validate_category(user_id, data.category_id)
+        await validators.validate_category(self.category_repository, user_id, data.category_id)
 
-        await self._validate_currency(data.currency_code)
+        await validators.validate_currency(self.currency_repository, data.currency_code)
 
         new_template = TransactionTemplate(
             type=data.type,
@@ -61,7 +61,7 @@ class TransactionTemplateService:
             user_id=user_id
         )
 
-        created_template = await self.template_repository.create(new_template)
+        created_template = await self.transaction_template_repository.create(new_template)
 
         return TransactionTemplateResponse.model_validate(created_template)
 
@@ -71,18 +71,17 @@ class TransactionTemplateService:
             data: TransactionTemplateUpdate,
             user_id: int
     ) -> TransactionTemplateResponse:
-        duplicate_template = await self.template_repository.get_by_user_and_name(data.name, user_id)
+        duplicate_template = await self.transaction_template_repository.get_by_user_and_name(data.name, user_id)
 
         if duplicate_template and duplicate_template.id != template_id:
             raise ValueExistsException("Transaction template with this name already exists")
 
-        existing_template = await self.template_repository.get_by_id(template_id)
+        existing_template = await validators.validate_template(self.transaction_template_repository, user_id,
+                                                               template_id)
 
-        await self._validate_template(user_id, existing_template)
+        await validators.validate_category(self.category_repository, user_id, data.category_id)
 
-        await self._validate_category(user_id, data.category_id)
-
-        await self._validate_currency(data.currency_code)
+        await validators.validate_currency(self.currency_repository, data.currency_code)
 
         existing_template.type = data.type
         existing_template.amount = data.amount
@@ -91,7 +90,7 @@ class TransactionTemplateService:
         existing_template.currency_code = data.currency_code
         existing_template.category_id = data.category_id
 
-        updated_template = await self.template_repository.update(existing_template)
+        updated_template = await self.transaction_template_repository.update(existing_template)
 
         return TransactionTemplateResponse.model_validate(updated_template)
 
@@ -100,50 +99,7 @@ class TransactionTemplateService:
             template_id: int,
             user_id: int
     ) -> None:
-        existing_template = await self.template_repository.get_by_id(template_id)
+        existing_template = await validators.validate_template(self.transaction_template_repository, user_id,
+                                                               template_id)
 
-        await self._validate_template(user_id, existing_template)
-
-        await self.template_repository.delete(existing_template)
-
-    async def _validate_category(
-            self,
-            user_id: int,
-            category_id: int | None
-    ) -> None:
-        if not category_id:
-            return
-
-        existing_category = await self.category_repository.get_by_id(category_id)
-
-        if not existing_category:
-            raise NotFoundException("Category not found")
-
-        if existing_category.user_id != user_id:
-            raise PermissionException("You don't have permission to this category")
-
-        if existing_category.archived_at:
-            raise NotAllowedActionException("Archived category is not allowed to use")
-
-    async def _validate_currency(
-            self,
-            currency_code: str
-    ) -> None:
-        existing_currency = await self.currency_repository.get_by_code(currency_code)
-
-        if not existing_currency:
-            raise NotFoundException("Currency not found")
-
-        if not existing_currency.is_active:
-            raise NotAllowedActionException("Currency is not active")
-
-    async def _validate_template(
-            self,
-            user_id: int,
-            template: TransactionTemplate | None
-    ) -> None:
-        if not template:
-            raise NotFoundException("Transaction template not found")
-
-        if template.user_id != user_id:
-            raise PermissionException("You don't have permission to this transaction template")
+        await self.transaction_template_repository.delete(existing_template)
