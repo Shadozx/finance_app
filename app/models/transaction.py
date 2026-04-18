@@ -2,7 +2,7 @@ import enum
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint
+from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core import Base
@@ -44,5 +44,7 @@ class Transaction(Base):
         return value
 
     __table_args__ = (
-        CheckConstraint('amount >= 0', name='check_amount_non_negative'),
+        CheckConstraint("amount >= 0", name="check_transaction_amount_non_negative"),
+        Index("ix_transactions_user_id_date", "user_id", "date"),
+        Index("ix_transactions_category_id","category_id"),
     )
