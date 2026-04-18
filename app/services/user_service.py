@@ -4,6 +4,10 @@ from app.schemas import UserCreate, UserResponse, UserLogin, UsernameUpdate, Pas
 from app.core.security import create_access_token, verify_password, hash_password
 from app.core.exceptions import AuthenticationException, ValueExistsException, ValidationException
 
+import structlog
+
+logger = structlog.get_logger()
+
 
 class UserService:
 
@@ -27,6 +31,9 @@ class UserService:
         )
 
         created_user = await self.user_repository.create(new_user)
+
+        logger.info("user_register_success", user_id=created_user.id)
+
         return UserResponse.model_validate(created_user)
 
     async def authenticate(
@@ -36,7 +43,11 @@ class UserService:
         existing_user = await self.user_repository.get_by_email(user.email)
 
         if not existing_user or not verify_password(user.password, existing_user.hashed_password):
+            logger.warning("user_authenticate_failed", email=user.email)
+
             raise AuthenticationException("Invalid email or password")
+
+        logger.info("user_authenticate_success", user_id=existing_user.id, email=user.email)
 
         return create_access_token({"sub": str(existing_user.id)})
 
@@ -50,11 +61,16 @@ class UserService:
         duplicate_username_user = await self.user_repository.get_by_username(data.new_username)
 
         if duplicate_username_user and duplicate_username_user.id != user_id:
+            logger.info("username_update_failed", user_id=user_id, new_username=data.new_username)
+
             raise ValueExistsException("Username is already taken")
 
         existing_user.username = data.new_username
+        updated_user = await self.user_repository.update(existing_user)
 
-        return UserResponse.model_validate(await self.user_repository.update(existing_user))
+        logger.info("username_update_success", user_id=updated_user.id, new_username=data.new_username)
+
+        return UserResponse.model_validate(updated_user)
 
     async def update_password(
             self,
@@ -67,8 +83,12 @@ class UserService:
             raise ValidationException("New password must be different from current password")
 
         if not verify_password(data.current_password, existing_user.hashed_password):
+            logger.warning("password_update_failed", user_id=user_id)
+
             raise AuthenticationException("Current password is incorrect")
 
         existing_user.hashed_password = hash_password(data.new_password)
 
         await self.user_repository.update(existing_user)
+
+        logger.info("password_update_success", user_id=existing_user.id)

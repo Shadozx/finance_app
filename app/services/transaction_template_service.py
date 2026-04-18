@@ -1,8 +1,12 @@
+import structlog
+
 from app.repositories import TransactionTemplateRepository, CategoryRepository, CurrencyRepository
 from app.schemas import TransactionTemplateCreate, TransactionTemplateUpdate, TransactionTemplateResponse
 from app.models import TransactionTemplate
 from app.core.exceptions import ValueExistsException
 from app.services import validators
+
+logger = structlog.get_logger()
 
 
 class TransactionTemplateService:
@@ -21,8 +25,11 @@ class TransactionTemplateService:
             template_id: int,
             user_id: int
     ) -> TransactionTemplateResponse:
-        existing_template = await validators.validate_template(self.transaction_template_repository, user_id,
-                                                               template_id)
+        existing_template = await validators.validate_template(
+            self.transaction_template_repository,
+            user_id,
+            template_id
+        )
 
         return TransactionTemplateResponse.model_validate(existing_template)
 
@@ -63,6 +70,8 @@ class TransactionTemplateService:
 
         created_template = await self.transaction_template_repository.create(new_template)
 
+        logger.info("transaction_template_create_success", user_id=user_id, template_id=created_template.id)
+
         return TransactionTemplateResponse.model_validate(created_template)
 
     async def update_template(
@@ -92,6 +101,8 @@ class TransactionTemplateService:
 
         updated_template = await self.transaction_template_repository.update(existing_template)
 
+        logger.info("transaction_template_update_success", user_id=user_id, template_id=updated_template.id)
+
         return TransactionTemplateResponse.model_validate(updated_template)
 
     async def delete_template(
@@ -103,3 +114,5 @@ class TransactionTemplateService:
                                                                template_id)
 
         await self.transaction_template_repository.delete(existing_template)
+
+        logger.info("transaction_template_delete_success", user_id=user_id, template_id=existing_template.id)

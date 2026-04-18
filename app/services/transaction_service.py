@@ -1,9 +1,13 @@
+import structlog
+
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
     TransactionTemplateRepository
 from app.models import Transaction
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
 from app.services import validators
+
+logger = structlog.get_logger()
 
 
 class TransactionService:
@@ -39,6 +43,8 @@ class TransactionService:
 
         created_transaction = await self.transaction_repository.create(new_transaction)
 
+        logger.info("transaction_create_success", user_id=user_id, transaction_id=created_transaction.id)
+
         return TransactionResponse.model_validate(created_transaction)
 
     async def create_transaction_from_template(
@@ -47,7 +53,11 @@ class TransactionService:
             data: UseTemplateRequest,
             user_id: int,
     ) -> TransactionResponse:
-        existing_template = await validators.validate_template(self.transaction_template_repository, user_id, template_id)
+        existing_template = await validators.validate_template(
+            self.transaction_template_repository,
+            user_id,
+            template_id
+        )
 
         final_type = data.type or existing_template.type
         final_amount = data.amount if data.amount is not None else existing_template.amount
@@ -70,6 +80,8 @@ class TransactionService:
 
         created_transaction = await self.transaction_repository.create(new_transaction)
 
+        logger.info("transaction_create_from_template_success", user_id=user_id, transaction_id=created_transaction.id)
+
         return TransactionResponse.model_validate(created_transaction)
 
     async def get_transaction(
@@ -77,7 +89,11 @@ class TransactionService:
             transaction_id: int,
             user_id: int
     ) -> TransactionResponse:
-        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
+        existing_transaction = await validators.validate_transaction(
+            self.transaction_repository,
+            user_id,
+            transaction_id
+        )
 
         return TransactionResponse.model_validate(existing_transaction)
 
@@ -100,7 +116,11 @@ class TransactionService:
             data: TransactionUpdate,
             user_id: int,
     ) -> TransactionResponse:
-        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
+        existing_transaction = await validators.validate_transaction(
+            self.transaction_repository,
+            user_id,
+            transaction_id
+        )
 
         await validators.validate_category(self.category_repository, user_id, data.category_id)
 
@@ -115,6 +135,8 @@ class TransactionService:
 
         updated_transaction = await self.transaction_repository.update(existing_transaction)
 
+        logger.info("transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id)
+
         return TransactionResponse.model_validate(updated_transaction)
 
     async def delete_transaction(
@@ -122,6 +144,12 @@ class TransactionService:
             transaction_id: int,
             user_id: int,
     ) -> None:
-        existing_transaction = await validators.validate_transaction(self.transaction_repository, user_id, transaction_id)
+        existing_transaction = await validators.validate_transaction(
+            self.transaction_repository,
+            user_id,
+            transaction_id
+        )
 
         await self.transaction_repository.delete(existing_transaction)
+
+        logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)

@@ -4,9 +4,16 @@ from fastapi import FastAPI
 from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
+from app.core.middleware import RequestIDMiddleware
+from app.core.logging_config import setup_logging
+
 from pydantic import ValidationError
 
-app = FastAPI(title="Finance Tracker API", version="1.1.0")
+setup_logging()
+
+app = FastAPI(title="Finance Tracker API", version="1.4.0")
+
+app.add_middleware(RequestIDMiddleware)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
