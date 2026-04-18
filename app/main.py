@@ -1,17 +1,24 @@
 import uvicorn
 from fastapi import FastAPI
 
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
 from app.core.middleware import RequestIDMiddleware
 from app.core.logging_config import setup_logging
+from app.core.rate_limiter import limiter
 
 from pydantic import ValidationError
 
 setup_logging()
 
 app = FastAPI(title="Finance Tracker API", version="1.4.0")
+
+app.state.limiter = limiter
+
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(RequestIDMiddleware)
 
@@ -29,7 +36,7 @@ app.add_exception_handler(Exception, global_exception_handler)
 
 if __name__ == "__main__":
     # uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=[os.path.abspath("app")])
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8020, reload=False)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8020, reload=False, access_log=False)
 
 # test user
 # {

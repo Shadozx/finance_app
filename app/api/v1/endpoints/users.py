@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Request
 
 from app.models import User
 from app.schemas import UserResponse, UsernameUpdate, PasswordUpdate
 from app.api.dependencies import get_current_user, get_user_service
 from app.services import UserService
+
+from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -35,7 +37,9 @@ async def update_username(
     "/me/password",
     status_code=status.HTTP_204_NO_CONTENT,
 )
+@limiter.limit("3/minute")
 async def update_password(
+        request: Request,
         data: PasswordUpdate,
         current_user: User = Depends(get_current_user),
         user_service: UserService = Depends(get_user_service)
