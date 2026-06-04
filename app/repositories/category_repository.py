@@ -6,31 +6,43 @@ from sqlalchemy import select
 
 from app.models import Category
 
+from app.schemas import CategoryStatus
+
 
 class CategoryRepository:
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_id(self, category_id: int) -> Category | None:
+    async def get_by_id(
+            self,
+            category_id: int
+    ) -> Category | None:
         return (
             await self.session.execute(select(Category).where(Category.id == category_id))
         ).scalar_one_or_none()
 
-    async def get_by_user(self, user_id: int) -> list[Category]:
-        return (
-            cast(list[Category],
-                 (
-                     await self.session.execute(
-                         select(Category)
-                         .where(Category.user_id == user_id)
-                         .where(Category.archived_at.is_(None))
-                     )
-                 ).scalars().all()
-                 )
-        )
+    async def get_by_user(
+            self,
+            user_id: int,
+            status: CategoryStatus = CategoryStatus.ACTIVE,
+    ) -> list[Category]:
+        query = select(Category).where(Category.user_id == user_id)
 
-    async def get_by_user_and_name(self, user_id: int, name: str) -> Category | None:
+        if status == CategoryStatus.ACTIVE:
+            query = query.where(Category.archived_at.is_(None))
+
+        elif status == CategoryStatus.ARCHIVED:
+            query = query.where(Category.archived_at.is_not(None))
+
+        result = await self.session.execute(query)
+
+        return list(result.scalars().all())
+
+    async def get_by_user_and_name(
+            self,
+            user_id: int, name: str
+    ) -> Category | None:
         return (
             await self.session.execute(
                 select(Category)
@@ -39,7 +51,10 @@ class CategoryRepository:
             )
         ).scalar_one_or_none()
 
-    async def create(self, category: Category) -> Category:
+    async def create(
+            self,
+            category: Category
+    ) -> Category:
         self.session.add(category)
         await self.session.commit()
 
@@ -47,13 +62,19 @@ class CategoryRepository:
 
         return category
 
-    async def update(self, category: Category) -> Category:
+    async def update(
+            self,
+            category: Category
+    ) -> Category:
         await self.session.commit()
         await self.session.refresh(category)
 
         return category
 
-    async def archive(self, category: Category) -> None:
+    async def archive(
+            self,
+            category: Category
+    ) -> None:
         category.archived_at = datetime.utcnow()
 
         await self.session.commit()

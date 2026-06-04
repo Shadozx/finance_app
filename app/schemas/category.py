@@ -1,7 +1,8 @@
+from enum import Enum
+
 from pydantic import BaseModel, field_validator, ConfigDict
 from datetime import datetime
 
-# --- Pydantic-схеми ---
 class CategoryCreate(BaseModel):
     name: str
 
@@ -20,6 +21,11 @@ class CategoryCreate(BaseModel):
 
 class CategoryUpdate(CategoryCreate):
     pass
+
+class CategoryStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    ALL = "all"
 
 class CategoryResponse(BaseModel):
     id: int

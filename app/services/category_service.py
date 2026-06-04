@@ -2,7 +2,7 @@ import structlog
 
 from app.models import Category
 from app.repositories import CategoryRepository
-from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate
+from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate, CategoryStatus
 from app.core.exceptions import ValueExistsException, NotFoundException, NotAllowedActionException, PermissionException
 
 logger = structlog.get_logger()
@@ -34,9 +34,14 @@ class CategoryService:
 
     async def get_user_categories(
             self,
-            user_id: int
+            user_id: int,
+            status: CategoryStatus = CategoryStatus.ACTIVE,
     ) -> list[CategoryResponse]:
-        categories = await self.category_repository.get_by_user(user_id)
+        categories = await self.category_repository.get_by_user(
+            user_id=user_id,
+            status=status,
+        )
+
         return [CategoryResponse.model_validate(cat) for cat in categories]
 
     async def update_category(

@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_current_user, get_category_service
 from app.services import CategoryService
-from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate
+from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate, CategoryStatus
 from app.models import User
-from core.exceptions import ValueExistsException, NotFoundException
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -19,7 +18,7 @@ async def create_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    return await category_service.create_category(current_user.id, data)
+    return await category_service.create_category(data, current_user.id)
 
 
 @router.get(
@@ -27,10 +26,11 @@ async def create_category(
     response_model=list[CategoryResponse],
 )
 async def get_user_categories(
+        category_status: CategoryStatus = CategoryStatus.ACTIVE,
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    return await category_service.get_user_categories(current_user.id)
+    return await category_service.get_user_categories(current_user.id, category_status)
 
 
 @router.put(
@@ -43,7 +43,7 @@ async def update_category(
         current_user: User = Depends(get_current_user),
         category_service: CategoryService = Depends(get_category_service)
 ):
-    return await category_service.update_category(category_id, current_user.id, data)
+    return await category_service.update_category(category_id, data, current_user.id)
 
 
 @router.delete(
