@@ -26,7 +26,7 @@ async def validate_category(
         NotAllowedActionException: Category is archived
     """
 
-    if not category_id:
+    if category_id is None:
         return None
 
     existing_category = await category_repository.get_by_id(category_id)
