@@ -32,6 +32,21 @@ class TransactionTemplate(Base):
         default=lambda: datetime.now(timezone.utc)
     )
 
+    @validates("name")
+    def validate_name(self, key, value):
+        if value is None:
+            raise ValueError("Template name is required")
+
+        value = value.strip()
+
+        if len(value) < 1:
+            raise ValueError("Template name must be at least 1 character")
+
+        if len(value) > 100:
+            raise ValueError("Template name must be less than 100 characters")
+
+        return value
+
     @validates("amount")
     def validate_amount(self, key, value):
 
