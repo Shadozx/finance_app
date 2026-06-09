@@ -26,9 +26,10 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(categories.router, prefix="/api/v1")
 app.include_router(currencies.router, prefix="/api/v1")
+app.include_router(transaction_templates.router, prefix="/api/v1")
+
 app.include_router(transactions.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
-app.include_router(transaction_templates.router, prefix="/api/v1")
 
 app.add_exception_handler(ValidationError, validation_exception_handler)
 app.add_exception_handler(AppException, app_exception_handler)
