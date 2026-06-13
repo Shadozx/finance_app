@@ -1,10 +1,19 @@
 import structlog
 
-from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
+from app.repositories import (
+    TransactionRepository,
+    CurrencyRepository,
+    CategoryRepository,
     TransactionTemplateRepository
+)
 from app.models import Transaction
-from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
+from app.schemas import (
+    TransactionResponse,
+    TransactionCreate,
+    TransactionUpdate,
+    TransactionFilters,
     UseTemplateRequest
+)
 from app.services import validators
 
 logger = structlog.get_logger()
@@ -59,11 +68,31 @@ class TransactionService:
             template_id
         )
 
-        final_type = data.type or existing_template.type
-        final_amount = data.amount if data.amount is not None else existing_template.amount
-        final_category_id = data.category_id if data.category_id is not None else existing_template.category_id
-        final_currency_code = data.currency_code or existing_template.currency_code
-        final_description = data.description if data.description is not None else existing_template.description
+        final_type = (
+            data.type
+            if data.type is not None
+            else existing_template.type
+        )
+        final_amount = (
+            data.amount
+            if data.amount is not None
+            else existing_template.amount
+        )
+        final_category_id = (
+            data.category_id
+            if data.category_id is not None
+            else existing_template.category_id
+        )
+        final_currency_code = (
+            data.currency_code
+            if data.currency_code is not None
+            else existing_template.currency_code
+        )
+        final_description = (
+            data.description
+            if data.description is not None
+            else existing_template.description
+        )
 
         await validators.validate_category(self.category_repository, user_id, final_category_id)
         await validators.validate_currency(self.currency_repository, final_currency_code)

@@ -64,6 +64,13 @@ class TransactionFilters(BaseModel):
 
     category_id: int | None = None
 
+    @field_validator("currency_code")
+    @classmethod
+    def validate_currency_code_if_provided(cls, v: str | None) -> str | None:
+        if v is not None:
+            return currency_code_validator(v)
+        return v
+
     @model_validator(mode="after")
     def validate_dates(self) -> "TransactionFilters":
         if self.start_date and self.end_date and self.start_date > self.end_date:
