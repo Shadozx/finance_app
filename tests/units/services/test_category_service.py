@@ -5,7 +5,7 @@ import pytest
 from app.models import Category
 from app.repositories import CategoryRepository
 from app.services import CategoryService
-from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse
+from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryStatus
 
 from app.core.exceptions import NotFoundException, ValueExistsException, NotAllowedActionException, PermissionException
 from tests.units.services.helpers import assert_model_fields
@@ -235,7 +235,10 @@ class TestGetUserCategories:
             CategoryResponse.model_validate(c) for c in user_categories
         ]
 
-        category_repo_mock.get_by_user.assert_called_once_with(user_id)
+        category_repo_mock.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            status=CategoryStatus.ACTIVE,
+        )
 
     async def test_get_user_empty_categories(
             self,
@@ -254,8 +257,10 @@ class TestGetUserCategories:
             CategoryResponse.model_validate(c) for c in user_categories
         ]
 
-        category_repo_mock.get_by_user.assert_called_once_with(user_id)
-
+        category_repo_mock.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            status=CategoryStatus.ACTIVE,
+        )
 
 class TestArchiveCategory:
     async def test_archive_category_success(

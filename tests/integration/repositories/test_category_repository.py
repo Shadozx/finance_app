@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.repositories import UserRepository, CategoryRepository
 from app.models import User, Category
+from app.schemas import CategoryStatus
 
 
 @pytest.fixture
@@ -79,7 +80,7 @@ class TestGetById:
 
 
 class TestGetByUser:
-    async def test_get_by_user(
+    async def test_get_by_user_default_returns_active_categories(
             self,
             category_repository: CategoryRepository,
             category: Category,
@@ -95,30 +96,34 @@ class TestGetByUser:
 
         assert len(categories) == 2
 
-        assert categories[0].name == category.name
-        assert categories[1].name == new_category.name
+        category_ids = {cat.id for cat in categories}
 
-    async def test_get_by_user_excludes_archived(
+        assert category.id in category_ids
+        assert new_category.id in category_ids
+        assert all(cat.archived_at is None for cat in categories)
+
+    async def test_get_by_user_default_excludes_archived_categories(
             self,
             category_repository: CategoryRepository,
             category: Category,
-            archived_category: Category
+            archived_category: Category,
     ):
         categories = await category_repository.get_by_user(category.user_id)
 
         assert len(categories) == 1
-        assert categories[0].name == category.name
+        assert categories[0].id == category.id
+        assert categories[0].archived_at is None
 
-    async def test_get_by_user_empty(
+    async def test_get_by_user_returns_empty_list(
             self,
             category_repository: CategoryRepository,
             user: User,
     ):
         categories = await category_repository.get_by_user(user.id)
 
-        assert len(categories) == 0
+        assert categories == []
 
-    async def test_get_by_user_returns_only_own_categories(
+    async def test_get_by_user_default_returns_only_own_categories(
             self,
             test_session: AsyncSession,
             category_repository: CategoryRepository,
@@ -140,8 +145,82 @@ class TestGetByUser:
         categories = await category_repository.get_by_user(category.user_id)
 
         assert len(categories) == 1
+        assert categories[0].id == category.id
         assert categories[0].user_id == category.user_id
 
+    async def test_get_by_user_status_archived_returns_only_archived_categories(
+            self,
+            category_repository: CategoryRepository,
+            category: Category,
+            archived_category: Category,
+    ):
+        categories = await category_repository.get_by_user(
+            category.user_id,
+            status=CategoryStatus.ARCHIVED,
+        )
+
+        assert len(categories) == 1
+        assert categories[0].id == archived_category.id
+        assert categories[0].archived_at is not None
+
+    async def test_get_by_user_status_all_returns_active_and_archived_categories(
+            self,
+            category_repository: CategoryRepository,
+            category: Category,
+            archived_category: Category,
+    ):
+        categories = await category_repository.get_by_user(
+            category.user_id,
+            status=CategoryStatus.ALL,
+        )
+
+        assert len(categories) == 2
+
+        category_ids = {cat.id for cat in categories}
+
+        assert category.id in category_ids
+        assert archived_category.id in category_ids
+
+    async def test_get_by_user_status_all_returns_only_own_categories(
+            self,
+            test_session: AsyncSession,
+            category_repository: CategoryRepository,
+            category: Category,
+            archived_category: Category,
+    ):
+        other_user_repository = UserRepository(test_session)
+        other_user = await other_user_repository.create(User(
+            email="other@test.com",
+            username="other",
+            hashed_password="hashed",
+        ))
+
+        other_active_category = Category(
+            name="Other Active Category",
+            user_id=other_user.id,
+        )
+        await category_repository.create(other_active_category)
+
+        other_archived_category = Category(
+            name="Other Archived Category",
+            user_id=other_user.id,
+            archived_at=datetime(2020, 1, 1),
+        )
+        await category_repository.create(other_archived_category)
+
+        categories = await category_repository.get_by_user(
+            category.user_id,
+            status=CategoryStatus.ALL,
+        )
+
+        assert len(categories) == 2
+
+        category_ids = {cat.id for cat in categories}
+
+        assert category.id in category_ids
+        assert archived_category.id in category_ids
+        assert other_active_category.id not in category_ids
+        assert other_archived_category.id not in category_ids
 
 class TestGetByUserAndName:
     async def test_get_by_user_and_name(
