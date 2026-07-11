@@ -25,4 +25,12 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_DB: test_db
+          SECRET_KEY: "test-secret-key-at-least-32-characters-long-xx"
+          ENVIRONMENT: dev
         run: pytest tests/
