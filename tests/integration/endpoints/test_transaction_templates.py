@@ -607,6 +607,20 @@ class TestGetTransactionTemplates:
 
         assert "detail" in response.json()
 
+class TestTemplatePaginationBoundaries:
+    async def test_get_templates_limit_above_max_rejected(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.get(
+            API_TRANSACTION_TEMPLATES,
+            params={"limit": 101},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "detail" in response.json()
 
 class TestGetTransactionTemplateById:
     async def test_get_template_by_id_success(

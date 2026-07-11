@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 
 from app.api.dependencies import get_current_user, get_transaction_template_service
 from app.services import TransactionTemplateService
@@ -26,8 +26,8 @@ async def create_transaction_template(
     response_model=list[TransactionTemplateResponse]
 )
 async def get_user_transaction_templates(
-        limit: int = 20,
-        offset: int = 0,
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
         current_user: User = Depends(get_current_user),
         transaction_template_service: TransactionTemplateService = Depends(get_transaction_template_service),
 ):

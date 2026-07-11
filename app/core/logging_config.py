@@ -1,10 +1,10 @@
 import logging
 import structlog
 
-from app.core import settings
+from app.core.config import Settings
 
 
-def setup_logging():
+def setup_logging(settings: Settings):
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.TimeStamper(fmt="iso"),

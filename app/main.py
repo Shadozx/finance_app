@@ -1,9 +1,11 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates
+from app.core.config import settings, Environment
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
 from app.core.middleware import RequestIDMiddleware
@@ -12,15 +14,31 @@ from app.core.rate_limiter import limiter
 
 from pydantic import ValidationError
 
-setup_logging()
+is_prod = settings.ENVIRONMENT == Environment.PROD
 
-app = FastAPI(title="Finance Tracker API", version="1.4.0")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    docs_url=None if is_prod else "/docs",
+    redoc_url=None if is_prod else "/redoc",
+    openapi_url=None if is_prod else "/openapi.json",
+)
+
+setup_logging(settings)
 
 app.state.limiter = limiter
 
 app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(RequestIDMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")

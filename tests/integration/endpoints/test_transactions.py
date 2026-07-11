@@ -1290,6 +1290,41 @@ class TestGetTransactionsFilters:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
+class TestPaginationBoundaries:
+    @pytest.mark.parametrize("params, reason", [
+        ({"limit": 101}, "limit_above_max"),
+        ({"limit": 0}, "limit_zero"),
+        ({"limit": -1}, "limit_negative"),
+        ({"offset": -1}, "offset_negative"),
+    ])
+    async def test_get_transactions_invalid_pagination_rejected(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            params: dict[str, object],
+            reason: str,
+    ):
+        response = await client.get(
+            API_TRANSACTIONS,
+            params=params,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
+        assert "detail" in response.json()
+
+    async def test_get_transactions_limit_at_max_allowed(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"limit": 100},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
 
 class TestGetTransactionById:
     async def test_get_transaction_success(

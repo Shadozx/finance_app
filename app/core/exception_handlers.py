@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 import structlog
 
+from app.core.config import settings
 from app.core.exceptions import AppException
 
 logger = structlog.get_logger()
@@ -35,5 +36,11 @@ async def validation_exception_handler(request: Request, exc: ValidationError) -
 
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error("unhandled_exception", exc_info=True)
+
+    if settings.DEBUG:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc), "type": type(exc).__name__},
+        )
 
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
