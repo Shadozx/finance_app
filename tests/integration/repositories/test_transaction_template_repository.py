@@ -9,13 +9,6 @@ from app.repositories import UserRepository, TransactionTemplateRepository
 
 
 @pytest.fixture
-def transaction_template_repository(
-        test_session: AsyncSession
-):
-    return TransactionTemplateRepository(test_session)
-
-
-@pytest.fixture
 async def transaction_template(
         transaction_template_repository: TransactionTemplateRepository,
         user: User,

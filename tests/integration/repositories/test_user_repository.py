@@ -5,11 +5,6 @@ from app.repositories import UserRepository
 from app.models import User
 
 
-@pytest.fixture
-def user_repository(test_session):
-    return UserRepository(test_session)
-
-
 class TestCreate:
 
     async def test_create_user(

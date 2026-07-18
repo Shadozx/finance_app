@@ -5,14 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import UserRepository, TransactionRepository
 from app.models import User, Transaction, TransactionType, Category, Currency
-from app.schemas import TransactionFilters
-
-
-@pytest.fixture
-def transaction_repository(
-        test_session: AsyncSession,
-):
-    return TransactionRepository(test_session)
+from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
 
 
 @pytest.fixture
@@ -393,3 +386,384 @@ class TestDelete:
 
         found_transaction = await transaction_repository.get_by_id(transaction.id)
         assert found_transaction is None
+
+
+class TestGetSummary:
+    async def test_get_summary(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            uah_currency: Currency,
+            usd_currency: Currency
+    ):
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31)
+            )
+        )
+
+        assert len(summary) == 3
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.EXPENSE)] == Decimal("350.00")
+        assert totals[(usd_currency.code, TransactionType.EXPENSE)] == Decimal("50.00")
+        assert totals[(usd_currency.code, TransactionType.INCOME)] == Decimal("10500.00")
+
+        assert (uah_currency.code, TransactionType.INCOME) not in totals
+
+    async def test_get_summary_empty(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+    ):
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31)
+            )
+        )
+
+        assert len(summary) == 0
+
+    async def test_get_summary_returns_only_own(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            user: User,
+            transactions,
+            usd_currency: Currency,
+            uah_currency: Currency,
+    ):
+        other_user = await user_repository.create(User(
+            email="otheruser@test.com",
+            username="otheruser",
+            hashed_password="hashed_password",
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("999.00"),
+            description="Other user expense",
+            currency_code=uah_currency.code,
+            user_id=other_user.id,
+            category_id=None,
+            date=date(2026, 2, 20),
+        ))
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31)
+            )
+        )
+
+        assert len(summary) == 3
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.EXPENSE)] == Decimal("350.00")
+        assert totals[(usd_currency.code, TransactionType.EXPENSE)] == Decimal("50.00")
+        assert totals[(usd_currency.code, TransactionType.INCOME)] == Decimal("10500.00")
+
+    async def test_get_summary_filter_by_date_range(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            usd_currency: Currency,
+    ):
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                currency_code=usd_currency.code,
+                type=TransactionType.INCOME,
+                start_date=date(2026, 1, 15),
+                end_date=date(2026, 2, 15),
+            )
+
+        )
+
+        assert len(summary) == 1
+
+        usd_income_summary = summary[0]
+
+        assert usd_income_summary.type == TransactionType.INCOME
+        assert usd_income_summary.currency_code == usd_currency.code
+        assert usd_income_summary.total == Decimal("10000.00")
+
+    async def test_get_summary_with_type_filter(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            uah_currency: Currency,
+            usd_currency: Currency
+    ):
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+                type=TransactionType.EXPENSE
+            )
+        )
+
+        assert len(summary) == 2
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.EXPENSE)] == Decimal("350.00")
+        assert totals[(usd_currency.code, TransactionType.EXPENSE)] == Decimal("50.00")
+
+        assert (uah_currency.code, TransactionType.INCOME) not in totals
+        assert (usd_currency.code, TransactionType.INCOME) not in totals
+
+    async def test_get_summary_filter_by_category(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            category: Category,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(
+            Transaction(
+                type=TransactionType.INCOME,
+                amount=Decimal("450.00"),
+                description="Refund from a friend",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=category.id,
+                date=date(2026, 3, 1),
+            ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("75.00"),
+            description="Gym membership",
+            currency_code=usd_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 1, 20),
+        ))
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+                category_id=category.id
+            )
+        )
+
+        assert len(summary) == 4
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.EXPENSE)] == Decimal("350.00")
+        assert totals[(uah_currency.code, TransactionType.INCOME)] == Decimal("450.00")
+        assert totals[(usd_currency.code, TransactionType.EXPENSE)] == Decimal("75.00")
+        assert totals[(usd_currency.code, TransactionType.INCOME)] == Decimal("10000.00")
+
+
+class TestGetByCategory:
+    async def test_get_by_category(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31)
+            ),
+        )
+
+        assert len(summary) == 2
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("350.00")
+        assert totals[("UAH", category.id)].category_name == category.name
+        assert totals[("USD", None)].total == Decimal("50.00")
+        assert totals[("USD", None)].category_name is None
+
+        assert ("UAH", None) not in totals
+        assert ("USD", category.id) not in totals
+
+    async def test_get_by_category_does_not_mix_types(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            amount=Decimal("10000.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 1, 15),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("300.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("300.00")
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.INCOME,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("10000.00")
+
+    async def test_get_by_category_groups_uncategorized_together(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("250.00"),
+            description="Ice cream",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            date=date(2026, 1, 15),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", None)].total == Decimal("350.00")
+        assert totals[("UAH", None)].category_name is None
+        assert totals[("UAH", None)].category_id is None
+
+    async def test_get_by_category_returns_only_own(
+            self,
+            user_repository: UserRepository,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_currency: Currency,
+            category: Category,
+    ):
+        other_user = await user_repository.create(User(
+            email="otheruser@test.com",
+            username="otheruser",
+            hashed_password="hashed_password",
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("999.00"),
+            description="Other user expense",
+            currency_code=uah_currency.code,
+            user_id=other_user.id,
+            category_id=None,
+            date=date(2026, 2, 20),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("150.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("150.00")
+
+    async def test_get_by_category_empty(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+    ):
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31)
+            )
+        )
+
+        assert len(summary) == 0

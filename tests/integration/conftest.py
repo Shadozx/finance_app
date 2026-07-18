@@ -6,6 +6,7 @@ from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
 from app.models import User, Category, Currency
+from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository
 
 
 @pytest.fixture(scope="session")
@@ -125,3 +126,27 @@ async def usd_currency(test_session):
     await test_session.refresh(currency)
 
     return currency
+
+
+@pytest.fixture
+def category_repository(test_session: AsyncSession):
+    return CategoryRepository(test_session)
+
+
+@pytest.fixture
+def transaction_repository(
+        test_session: AsyncSession,
+):
+    return TransactionRepository(test_session)
+
+
+@pytest.fixture
+def transaction_template_repository(
+        test_session: AsyncSession
+):
+    return TransactionTemplateRepository(test_session)
+
+
+@pytest.fixture
+def user_repository(test_session):
+    return UserRepository(test_session)

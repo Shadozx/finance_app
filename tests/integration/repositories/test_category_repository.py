@@ -10,11 +10,6 @@ from app.schemas import CategoryStatus
 
 
 @pytest.fixture
-def category_repository(test_session: AsyncSession):
-    return CategoryRepository(test_session)
-
-
-@pytest.fixture
 async def archived_category(
         category_repository: CategoryRepository,
         user: User
@@ -221,6 +216,7 @@ class TestGetByUser:
         assert archived_category.id in category_ids
         assert other_active_category.id not in category_ids
         assert other_archived_category.id not in category_ids
+
 
 class TestGetByUserAndName:
     async def test_get_by_user_and_name(
