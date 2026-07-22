@@ -2,18 +2,20 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.models import Category, Currency, Transaction, TransactionTemplate
+from app.models import Category, Currency, Transaction, TransactionTemplate, Budget
 from app.repositories import (
     CategoryRepository,
     CurrencyRepository,
     TransactionTemplateRepository,
-    TransactionRepository
+    TransactionRepository,
+    BudgetRepository
 )
 from app.services.validators import (
     validate_category,
     validate_currency,
     validate_transaction,
-    validate_template
+    validate_template,
+    validate_budget
 )
 from app.core.exceptions import (
     NotFoundException,
@@ -361,4 +363,84 @@ class TestValidateTemplate:
 
         transaction_template_repo_mock.get_by_id.assert_called_once_with(
             existing_template.id
+        )
+
+
+class TestValidateBudget:
+    async def test_validate_budget_success(
+            self,
+            budget_repo_mock: BudgetRepository,
+            existing_budget: Budget
+    ):
+        """
+        GIVEN: Budget exists, owned by user
+        WHEN: validate_budget called
+        THEN: Returns the same budget instance
+        """
+
+        budget_repo_mock.get_by_id.return_value = existing_budget
+
+        result = await validate_budget(
+            budget_repo_mock,
+            existing_budget.user_id,
+            existing_budget.id
+        )
+
+        assert result is existing_budget
+
+        assert_model_fields(
+            result,
+            id=existing_budget.id,
+            name=existing_budget.name,
+            amount=existing_budget.amount,
+            user_id=existing_budget.user_id,
+            currency_code=existing_budget.currency_code,
+            category_id=existing_budget.category_id,
+        )
+
+        budget_repo_mock.get_by_id.assert_called_once_with(
+            existing_budget.id
+        )
+
+    async def test_validate_budget_not_found(
+            self,
+            budget_repo_mock: BudgetRepository,
+    ):
+        """
+        GIVEN: Budget doesn't exist
+        WHEN: validate_budget called
+        THEN: NotFoundException raised
+        """
+
+        budget_repo_mock.get_by_id.return_value = None
+
+        wrong_budget_id = 999
+
+        with pytest.raises(NotFoundException, match="Budget not found"):
+            await validate_budget(budget_repo_mock, 1, wrong_budget_id)
+
+        budget_repo_mock.get_by_id.assert_called_once_with(
+            wrong_budget_id
+        )
+
+    async def test_validate_budget_wrong_owner(
+            self,
+            budget_repo_mock: BudgetRepository,
+            existing_budget: Budget
+    ):
+        """
+        GIVEN: Budget exists but owned by different user
+        WHEN: validate_budget called with wrong user_id
+        THEN: PermissionException raised
+        """
+
+        budget_repo_mock.get_by_id.return_value = existing_budget
+
+        wrong_user_id = existing_budget.user_id + 1
+
+        with pytest.raises(PermissionException, match="You don't have permission to this budget"):
+            await validate_budget(budget_repo_mock, wrong_user_id, existing_budget.id)
+
+        budget_repo_mock.get_by_id.assert_called_once_with(
+            existing_budget.id
         )

@@ -1,6 +1,6 @@
 from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository, \
-    TransactionRepository
-from app.models import Category, TransactionTemplate, Transaction, Currency
+    TransactionRepository, BudgetRepository
+from app.models import Category, TransactionTemplate, Transaction, Currency, Budget
 from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, ValueExistsException
 
 
@@ -135,3 +135,35 @@ async def validate_template(
         raise PermissionException("You don't have permission to this transaction template")
 
     return existing_transaction_template
+
+
+async def validate_budget(
+        budget_repository: BudgetRepository,
+        user_id: int,
+        budget_id: int
+) -> Budget:
+    """
+    Validate budget exists and is owned by user.
+
+    Args:
+        budget_repository: Repository to fetch budget
+        user_id: User who should own the budget
+        budget_id: Budget to validate
+
+    Returns:
+        Validated Budget instance
+
+    Raises:
+        NotFoundException: Budget doesn't exist
+        PermissionException: Budget not owned by user
+    """
+
+    existing_budget = await budget_repository.get_by_id(budget_id)
+
+    if not existing_budget:
+        raise NotFoundException("Budget not found")
+
+    if existing_budget.user_id != user_id:
+        raise PermissionException("You don't have permission to this budget")
+
+    return existing_budget

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, statistics
+from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, statistics, budgets
 from app.core.config import settings, Environment
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
@@ -48,6 +48,8 @@ app.include_router(transaction_templates.router, prefix="/api/v1")
 
 app.include_router(transactions.router, prefix="/api/v1")
 app.include_router(statistics.router, prefix="/api/v1")
+
+app.include_router(budgets.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 
 app.add_exception_handler(ValidationError, validation_exception_handler)

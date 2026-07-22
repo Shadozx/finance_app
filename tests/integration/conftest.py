@@ -6,7 +6,7 @@ from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
 from app.models import User, Category, Currency
-from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository
+from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository, BudgetRepository
 
 
 @pytest.fixture(scope="session")
@@ -150,3 +150,7 @@ def transaction_template_repository(
 @pytest.fixture
 def user_repository(test_session):
     return UserRepository(test_session)
+
+@pytest.fixture
+def budget_repository(test_session):
+    return BudgetRepository(test_session)

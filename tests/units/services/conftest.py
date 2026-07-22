@@ -4,10 +4,11 @@ from pytest_mock import MockerFixture
 import datetime
 from decimal import Decimal
 
-from app.services import TransactionService, CategoryService, CurrencyService, UserService, TransactionTemplateService
+from app.services import TransactionService, CategoryService, CurrencyService, UserService, TransactionTemplateService, \
+    BudgetService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
-    TransactionTemplateRepository
-from app.models import Transaction, TransactionType, Currency, Category, User, TransactionTemplate
+    TransactionTemplateRepository, BudgetRepository
+from app.models import Transaction, TransactionType, Currency, Category, User, TransactionTemplate, Budget
 
 
 @pytest.fixture
@@ -33,6 +34,11 @@ def transaction_template_repo_mock(mocker: MockerFixture):
 @pytest.fixture
 def user_repo_mock(mocker: MockerFixture):
     return mocker.AsyncMock(spec=UserRepository)
+
+
+@pytest.fixture
+def budget_repo_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=BudgetRepository)
 
 
 @pytest.fixture
@@ -76,6 +82,21 @@ def currency_service(currency_repo_mock: CurrencyRepository):
 @pytest.fixture
 def user_service(user_repo_mock: UserRepository):
     return UserService(user_repo_mock)
+
+
+@pytest.fixture
+def budget_service(
+        budget_repo_mock: BudgetRepository,
+        category_repo_mock: CategoryRepository,
+        currency_repo_mock: CurrencyRepository,
+        transaction_repo_mock: TransactionRepository,
+):
+    return BudgetService(
+        budget_repository=budget_repo_mock,
+        category_repository=category_repo_mock,
+        currency_repository=currency_repo_mock,
+        transaction_repository=transaction_repo_mock,
+    )
 
 
 @pytest.fixture
@@ -147,4 +168,40 @@ def existing_user():
         username="user",
         hashed_password="hashed_password",
         created_at=datetime.datetime(2026, 2, 10),
+    )
+
+
+@pytest.fixture
+def existing_budget(
+        existing_user: User,
+        existing_currency: Currency,
+        existing_category: Category,
+):
+    return Budget(
+        id=1,
+        name="Food budget",
+        amount=Decimal("5000.00"),
+        currency_code=existing_currency.code,
+        category_id=existing_category.id,
+        start_date=datetime.date(2026, 7, 1),
+        end_date=datetime.date(2026, 7, 31),
+        user_id=existing_user.id,
+    )
+
+
+@pytest.fixture
+def zero_budget(
+        existing_user: User,
+        existing_currency: Currency,
+        existing_category: Category,
+):
+    return Budget(
+        id=2,
+        name="Zero budget",
+        amount=Decimal("0"),
+        currency_code=existing_currency.code,
+        category_id=existing_category.id,
+        start_date=datetime.date(2026, 7, 1),
+        end_date=datetime.date(2026, 7, 31),
+        user_id=existing_user.id,
     )

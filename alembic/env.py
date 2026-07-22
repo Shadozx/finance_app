@@ -12,12 +12,12 @@ from app.models.currency import Currency
 from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.transaction_template import TransactionTemplate
+from app.models.budget import Budget
 
 # Alembic Config
 config = context.config
 
-# Встановлюємо DATABASE_URL з settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.database_url_str)
 
 # Logging
 if config.config_file_name is not None:
@@ -40,6 +40,7 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
+
 def include_object(object, name, type_, reflected, compare_to):
     """
     Should we include this object in autogenerate diff?
@@ -48,6 +49,7 @@ def include_object(object, name, type_, reflected, compare_to):
     if type_ == "type" and name == "transactiontype":
         return False
     return True
+
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)

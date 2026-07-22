@@ -4,8 +4,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core import get_session, verify_token
 from app.core.exceptions import AuthenticationException
-from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, StatisticsService
-from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository, TransactionTemplateRepository
+from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, StatisticsService, BudgetService
+from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository, TransactionTemplateRepository, BudgetRepository
 from app.models import User
 
 
@@ -68,6 +68,22 @@ def get_currency_service(
     currency_repository = CurrencyRepository(session)
 
     return CurrencyService(currency_repository)
+
+
+def get_budget_service(
+        session: AsyncSession = Depends(get_session)
+) -> BudgetService:
+    budget_repository = BudgetRepository(session)
+    transaction_repository = TransactionRepository(session)
+    category_repository = CategoryRepository(session)
+    currency_repository = CurrencyRepository(session)
+
+    return BudgetService(
+        budget_repository=budget_repository,
+        transaction_repository=transaction_repository,
+        category_repository=category_repository,
+        currency_repository=currency_repository,
+    )
 
 
 security = HTTPBearer(auto_error=False)

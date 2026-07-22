@@ -767,3 +767,179 @@ class TestGetByCategory:
         )
 
         assert len(summary) == 0
+
+
+class TestGetSpent:
+    async def test_get_spent(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transactions,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("350.00")
+
+    async def test_get_spent_ignores_income(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("500.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            amount=Decimal("10000.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 2, 15),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("500.00")
+
+    async def test_get_spent_filters_category_currency_dates(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("300.00"),
+            description="Target",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("40.00"),
+            description="Other currency",
+            currency_code=usd_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("999.00"),
+            description="Uncategorized",
+            currency_code=uah_currency.code,
+            category_id=None,
+            user_id=user.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("888.00"),
+            description="Out of range",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 5, 1),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("300.00")
+
+    async def test_get_spent_empty_returns_zero(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("0")
+
+    async def test_get_spent_returns_only_own(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        other_user = await user_repository.create(User(
+            email="otherspent@test.com",
+            username="otherspent",
+            hashed_password="hashed_password",
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("777.00"),
+            description="Other user expense",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=other_user.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("100.00"),
+            description="Own expense",
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            date=date(2026, 2, 12),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("100.00")

@@ -1,7 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, Select, func
 
-from app.models import Transaction, Category
+from decimal import Decimal
+
+from datetime import date
+
+from app.models import Transaction, Category, TransactionType
 from app.schemas import TransactionFilters
 
 from app.repositories.types import SummaryRow, CategorySummaryRow
@@ -87,6 +91,21 @@ class TransactionRepository:
             CategorySummaryRow(currency_code=row[0], category_id=row[1], category_name=row[2], total=row[3])
             for row in rows
         ]
+
+    async def get_spent(
+            self, user_id: int, category_id: int, currency_code: str,
+            start_date: date, end_date: date,
+    ) -> Decimal:
+        query = (
+            select(func.coalesce(func.sum(Transaction.amount), Decimal("0")))
+            .where(Transaction.user_id == user_id)
+            .where(Transaction.category_id == category_id)
+            .where(Transaction.currency_code == currency_code)
+            .where(Transaction.type == TransactionType.EXPENSE)
+            .where(Transaction.date >= start_date)
+            .where(Transaction.date <= end_date)
+        )
+        return (await self.session.execute(query)).scalar_one()
 
     def _apply_filters(
             self,
