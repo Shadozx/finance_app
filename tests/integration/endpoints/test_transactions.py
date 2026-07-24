@@ -346,6 +346,7 @@ class TestCreateTransactionFromTemplate:
         ({"type": "wrong"}, "invalid_type"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"description": "x" * 1025}, "description_too_long"),
     ])
     async def test_create_transaction_from_template_validation_fails(
             self,
@@ -469,6 +470,33 @@ class TestCreateTransaction:
         assert body["id"] is not None
         assert body["amount"] == payload["amount"]
         assert body["user_id"] == authenticated_user["user"]["id"]
+
+
+    async def test_create_transaction_description_at_max_length_success(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            description="x" * 1024,
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        body = response.json()
+
+        assert body["id"] is not None
+        assert body["description"] == payload["description"]
+        assert body["user_id"] == authenticated_user["user"]["id"]
+
 
     async def test_create_transaction_with_other_user_category_forbidden(
             self,
@@ -610,6 +638,7 @@ class TestCreateTransaction:
         ({"currency_code": None}, "currency_code_null"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"description": "x" * 1025}, "description_too_long"),
     ])
     async def test_create_transaction_validation_fails(
             self,
@@ -1680,6 +1709,7 @@ class TestUpdateTransaction:
         ({"currency_code": None}, "currency_code_null"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"description": "x" * 1025}, "description_too_long"),
     ])
     async def test_update_transaction_validation_fails(
             self,

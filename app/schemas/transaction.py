@@ -1,8 +1,8 @@
-from pydantic import BaseModel, field_validator, ConfigDict, model_validator
+from pydantic import BaseModel, field_validator, ConfigDict, model_validator, Field
 from datetime import date
 
 from app.models.transaction import TransactionType
-from app.schemas.validators import amount_validator, currency_code_validator
+from app.schemas.validators import amount_validator, currency_code_validator, MAX_DESCRIPTION_LENGTH
 from decimal import Decimal
 
 
@@ -15,7 +15,7 @@ class TransactionCreate(BaseModel):
 
     category_id: int | None = None
 
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
 
     date: date
 

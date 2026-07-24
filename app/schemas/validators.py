@@ -7,6 +7,8 @@ USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
 MAX_DATE_RANGE_DAYS = 365
 
+MAX_DESCRIPTION_LENGTH = 1024
+
 
 def password_validator(
         password: str

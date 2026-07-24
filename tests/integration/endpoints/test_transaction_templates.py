@@ -339,6 +339,7 @@ class TestCreateTransactionTemplate:
         ({"currency_code": None}, "currency_code_null"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"description": "x" * 1025}, "description_too_long"),
     ])
     async def test_create_template_validation_fails(
             self,
@@ -1063,6 +1064,7 @@ class TestUpdateTransactionTemplate:
         ({"currency_code": None}, "currency_code_null"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"description": "x" * 1025}, "description_too_long"),
     ])
     async def test_update_template_validation_fails(
             self,
