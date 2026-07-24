@@ -2,9 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel, model_validator, field_validator, ConfigDict, field_serializer
-from app.schemas.validators import currency_code_validator, amount_validator
-
-MAX_RANGE_DAYS = 365
+from app.schemas.validators import currency_code_validator, amount_validator, validate_date_range
 
 
 class BudgetCreate(BaseModel):
@@ -45,11 +43,7 @@ class BudgetCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self) -> "BudgetCreate":
-        if self.start_date > self.end_date:
-            raise ValueError("Start date cannot be greater than end date")
-
-        if (self.end_date - self.start_date).days > MAX_RANGE_DAYS:
-            raise ValueError("Date range cannot exceed 1 year — split into multiple requests")
+        validate_date_range(self.start_date, self.end_date)
 
         return self
 
@@ -75,6 +69,7 @@ class BudgetResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class BudgetFilters(BaseModel):
     currency_code: str | None = None
 
@@ -97,13 +92,10 @@ class BudgetFilters(BaseModel):
             raise ValueError("Both dates must be provided, or neither")
 
         if self.start_date is not None and self.end_date is not None:
-            if self.start_date > self.end_date:
-                raise ValueError("Start date cannot be greater than end date")
-
-            if (self.end_date - self.start_date).days > MAX_RANGE_DAYS:
-                raise ValueError("Date range cannot exceed 1 year — split into multiple requests")
+            validate_date_range(self.start_date, self.end_date)
 
         return self
+
 
 class BudgetStatusResponse(BaseModel):
     budget: BudgetResponse

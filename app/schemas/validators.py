@@ -1,7 +1,11 @@
 import re
 from decimal import Decimal
 
+from datetime import date
+
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+
+MAX_DATE_RANGE_DAYS = 365
 
 
 def password_validator(
@@ -29,17 +33,18 @@ def username_validator(
     if len(username) > 50:
         raise ValueError("Username must be less than 50 characters")
 
-    # Тільки букви, цифри, підкреслення
     if not USERNAME_PATTERN.match(username):
         raise ValueError("Username can only contain letters, numbers and underscores")
 
     return username
+
 
 def amount_validator(amount: Decimal) -> Decimal:
     if amount < 0:
         raise ValueError("Amount cannot be negative")
 
     return amount
+
 
 def currency_code_validator(currency_code: str) -> str:
     currency_code = currency_code.strip().upper()
@@ -48,3 +53,10 @@ def currency_code_validator(currency_code: str) -> str:
         raise ValueError("Currency code must be 3 letters")
 
     return currency_code
+
+
+def validate_date_range(start_date: date, end_date: date) -> None:
+    if start_date > end_date:
+        raise ValueError("Start date cannot be greater than end date")
+    if (end_date - start_date).days > MAX_DATE_RANGE_DAYS:
+        raise ValueError("Date range cannot exceed 1 year — split into multiple requests")
