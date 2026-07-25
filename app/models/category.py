@@ -5,6 +5,11 @@ from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from app.core import Base
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models import User
+
 
 class Category(Base):
     __tablename__ = "categories"

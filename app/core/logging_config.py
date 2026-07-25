@@ -1,16 +1,18 @@
 import logging
 import structlog
+from structlog.typing import Processor
 
 from app.core.config import Settings
 
 
 def setup_logging(settings: Settings):
-    shared_processors = [
+    shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.add_log_level,
     ]
 
+    renderer: Processor
     if settings.DEBUG:
         renderer = structlog.dev.ConsoleRenderer()
     else:

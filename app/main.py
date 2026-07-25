@@ -34,7 +34,7 @@ app.add_middleware(RequestIDMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,8 +52,8 @@ app.include_router(statistics.router, prefix="/api/v1")
 app.include_router(budgets.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 
-app.add_exception_handler(ValidationError, validation_exception_handler)
-app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(ValidationError, validation_exception_handler) # type: ignore[arg-type]
+app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]  # Starlette types handler as (Request, Exception); ours narrows to AppException — safe, Starlette only dispatches matching type
 app.add_exception_handler(Exception, global_exception_handler)
 
 if __name__ == "__main__":
