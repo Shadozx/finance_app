@@ -6,10 +6,9 @@ from decimal import Decimal
 from datetime import date
 
 from app.models import Transaction, Category, TransactionType
-from app.schemas import TransactionFilters
+from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
 
-from app.repositories.types import SummaryRow, CategorySummaryRow
-from app.schemas import StatisticsFilters, CategoryStatisticsFilters
+from app.repositories.types import SummaryRow, CategorySummaryRow, TransactionFilterProtocol
 
 
 class TransactionRepository:
@@ -93,8 +92,12 @@ class TransactionRepository:
         ]
 
     async def get_spent(
-            self, user_id: int, category_id: int, currency_code: str,
-            start_date: date, end_date: date,
+            self,
+            user_id: int,
+            category_id: int,
+            currency_code: str,
+            start_date: date,
+            end_date: date,
     ) -> Decimal:
         query = (
             select(func.coalesce(func.sum(Transaction.amount), Decimal("0")))
@@ -110,7 +113,7 @@ class TransactionRepository:
     def _apply_filters(
             self,
             query: Select,
-            filters: TransactionFilters,
+            filters: TransactionFilterProtocol,
     ) -> Select:
         if filters.type is not None:
             query = query.where(Transaction.type == filters.type)
