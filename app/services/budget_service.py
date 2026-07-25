@@ -45,6 +45,8 @@ class BudgetService:
             today = date.today()
             start_date, end_date = today, today
         else:
+            assert filters.end_date is not None
+
             start_date, end_date = filters.start_date, filters.end_date
 
         budgets = await self.budget_repository.get_by_period(user_id, start_date, end_date)

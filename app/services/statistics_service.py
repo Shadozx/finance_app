@@ -41,6 +41,9 @@ class StatisticsService:
 
         currencies.sort(key=lambda c: c.currency_code)
 
+        assert filters.start_date is not None
+        assert filters.end_date is not None
+
         return SummaryResponse(
             period=SummaryPeriod(
                 start_date=filters.start_date,
@@ -83,6 +86,9 @@ class StatisticsService:
 
         for currency in currencies:
             currency.categories.sort(key=lambda c: (-c.total, c.category_name or ""))
+
+        assert filters.start_date is not None
+        assert filters.end_date is not None
 
         return CategorySummaryResponse(
             period=SummaryPeriod(
