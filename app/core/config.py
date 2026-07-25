@@ -16,7 +16,7 @@ class Environment(str, Enum):
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Finance Tracker"
-    VERSION: str = "1.8.0"
+    VERSION: str = "1.9.0"
 
     ENVIRONMENT: Environment = Environment.DEV
     DEBUG: bool = False
