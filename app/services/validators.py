@@ -1,7 +1,7 @@
 from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository, \
-    TransactionRepository, BudgetRepository
-from app.models import Category, TransactionTemplate, Transaction, Currency, Budget
-from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, ValueExistsException
+    TransactionRepository, BudgetRepository, UserRepository
+from app.models import Category, TransactionTemplate, Transaction, Currency, Budget, User
+from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, AuthenticationException
 
 
 async def validate_category(
@@ -167,3 +167,12 @@ async def validate_budget(
         raise PermissionException("You don't have permission to this budget")
 
     return existing_budget
+
+async def validate_user(
+    user_repository: UserRepository,
+    user_id: int,
+) -> User:
+    user = await user_repository.get_by_id(user_id)
+    if user is None:
+        raise AuthenticationException("User no longer exists")
+    return user

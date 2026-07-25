@@ -1,10 +1,13 @@
+import structlog
+
 from app.models import User
 from app.repositories import UserRepository
 from app.schemas import UserCreate, UserResponse, UserLogin, UsernameUpdate, PasswordUpdate
 from app.core.security import create_access_token, verify_password, hash_password
 from app.core.exceptions import AuthenticationException, ValueExistsException, ValidationException
 
-import structlog
+from app.services import validators
+
 
 logger = structlog.get_logger()
 
@@ -56,7 +59,7 @@ class UserService:
             data: UsernameUpdate,
             user_id: int
     ) -> UserResponse:
-        existing_user = await self.user_repository.get_by_id(user_id)
+        existing_user = await validators.validate_user(self.user_repository, user_id)
 
         duplicate_username_user = await self.user_repository.get_by_username(data.new_username)
 
@@ -77,7 +80,7 @@ class UserService:
             data: PasswordUpdate,
             user_id: int
     ) -> None:
-        existing_user = await self.user_repository.get_by_id(user_id)
+        existing_user = await validators.validate_user(self.user_repository, user_id)
 
         if data.current_password == data.new_password:
             raise ValidationException("New password must be different from current password")
