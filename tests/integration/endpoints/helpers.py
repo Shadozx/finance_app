@@ -52,7 +52,7 @@ async def archive_category(
 def transaction_template_payload(
         name: str = "Lunch template",
         amount: str = "150.00",
-        template_type: str = "expense",
+        template_type: str = "EXPENSE",
         currency_code: str = "USD",
         category_id: int | None = None,
         description: str | None = None
@@ -86,7 +86,7 @@ async def create_transaction_template(
 def transaction_payload(
         date: str = "2026-01-01",
         amount: str = "150.00",
-        transaction_type: str = "expense",
+        transaction_type: str = "EXPENSE",
         currency_code: str = "USD",
         category_id: int | None = None,
         description: str | None = None,

@@ -71,7 +71,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-01-15",
                 amount="10000.00",
-                transaction_type="income",
+                transaction_type="INCOME",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -81,7 +81,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-03-01",
                 amount="500.00",
-                transaction_type="income",
+                transaction_type="INCOME",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -91,7 +91,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-15",
                 amount="50.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -102,7 +102,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-10",
                 amount="350.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=second_currency["code"],
             ),
             authenticated_user["headers"],
@@ -148,7 +148,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-10",
                 amount="350.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
             ),
             authenticated_user["headers"],
@@ -158,7 +158,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-11",
                 amount="50.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
             ),
             authenticated_user["headers"],
@@ -189,7 +189,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-15",
                 amount="350.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -223,7 +223,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-15",
                 amount="350.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -234,7 +234,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-20",
                 amount="999.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             other_authenticated_user["headers"],
@@ -364,7 +364,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-10",
                 amount="50.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
             ),
             authenticated_user["headers"],
@@ -374,7 +374,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-11",
                 amount="350.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
             ),
             authenticated_user["headers"],
@@ -410,7 +410,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-02-15",
                 amount="100.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -421,7 +421,7 @@ class TestGetSummary:
             transaction_payload(
                 date="2026-05-15",
                 amount="999.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -479,7 +479,7 @@ class TestGetCategories:
             transaction_payload(
                 date="2026-02-10",
                 amount="150.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
             ),
@@ -490,7 +490,7 @@ class TestGetCategories:
             transaction_payload(
                 date="2026-02-15",
                 amount="200.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
             ),
@@ -501,7 +501,7 @@ class TestGetCategories:
             transaction_payload(
                 date="2026-03-01",
                 amount="500.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=None,
             ),
@@ -511,7 +511,7 @@ class TestGetCategories:
         response = await client.get(
             API_CATEGORIES,
             params={
-                "type": "expense",
+                "type": "EXPENSE",
                 "start_date": "2026-01-01",
                 "end_date": "2026-03-31",
             },
@@ -568,7 +568,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="100.00", transaction_type="expense",
+                date="2026-02-10", amount="100.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=small["id"],
             ),
             authenticated_user["headers"],
@@ -576,7 +576,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="900.00", transaction_type="expense",
+                date="2026-02-11", amount="900.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=big["id"],
             ),
             authenticated_user["headers"],
@@ -584,7 +584,7 @@ class TestGetCategories:
 
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense", "start_date": "2026-01-01", "end_date": "2026-03-31"},
+            params={"type": "EXPENSE", "start_date": "2026-01-01", "end_date": "2026-03-31"},
             headers=authenticated_user["headers"],
         )
 
@@ -605,7 +605,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="120.00", transaction_type="expense",
+                date="2026-02-10", amount="120.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=None,
             ),
             authenticated_user["headers"],
@@ -613,7 +613,7 @@ class TestGetCategories:
 
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense", "start_date": "2026-01-01", "end_date": "2026-03-31"},
+            params={"type": "EXPENSE", "start_date": "2026-01-01", "end_date": "2026-03-31"},
             headers=authenticated_user["headers"],
         )
 
@@ -639,7 +639,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="1000.00", transaction_type="income",
+                date="2026-02-10", amount="1000.00", transaction_type="INCOME",
                 currency_code=active_currency["code"], category_id=category["id"],
             ),
             authenticated_user["headers"],
@@ -647,7 +647,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="300.00", transaction_type="expense",
+                date="2026-02-11", amount="300.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=category["id"],
             ),
             authenticated_user["headers"],
@@ -655,7 +655,7 @@ class TestGetCategories:
 
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense", "start_date": "2026-01-01", "end_date": "2026-03-31"},
+            params={"type": "EXPENSE", "start_date": "2026-01-01", "end_date": "2026-03-31"},
             headers=authenticated_user["headers"],
         )
 
@@ -681,7 +681,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="100.00", transaction_type="expense",
+                date="2026-02-10", amount="100.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=my_category["id"],
             ),
             authenticated_user["headers"],
@@ -690,7 +690,7 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="999.00", transaction_type="expense",
+                date="2026-02-11", amount="999.00", transaction_type="EXPENSE",
                 currency_code=active_currency["code"], category_id=None,
             ),
             other_authenticated_user["headers"],
@@ -698,7 +698,7 @@ class TestGetCategories:
 
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense", "start_date": "2026-01-01", "end_date": "2026-03-31"},
+            params={"type": "EXPENSE", "start_date": "2026-01-01", "end_date": "2026-03-31"},
             headers=authenticated_user["headers"],
         )
 
@@ -717,7 +717,7 @@ class TestGetCategories:
     ):
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense", "start_date": "2026-01-01", "end_date": "2026-03-31"},
+            params={"type": "EXPENSE", "start_date": "2026-01-01", "end_date": "2026-03-31"},
             headers=authenticated_user["headers"],
         )
 
@@ -735,7 +735,7 @@ class TestGetCategories:
         response = await client.get(
             API_CATEGORIES,
             params={
-                "type": "expense",
+                "type": "EXPENSE",
                 "start_date": "2024-01-01",
                 "end_date": "2025-01-01",  # 366 days
             },
@@ -751,7 +751,7 @@ class TestGetCategories:
     ):
         response = await client.get(
             API_CATEGORIES,
-            params={"type": "expense"},
+            params={"type": "EXPENSE"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

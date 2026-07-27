@@ -716,7 +716,7 @@ class TestBudgetStatusWithRealTransactions:
             transaction_payload(
                 date="2026-07-10",
                 amount="2000.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),
@@ -728,7 +728,7 @@ class TestBudgetStatusWithRealTransactions:
             transaction_payload(
                 date="2026-07-12",
                 amount="9999.00",
-                transaction_type="income",
+                transaction_type="INCOME",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),
@@ -740,7 +740,7 @@ class TestBudgetStatusWithRealTransactions:
             transaction_payload(
                 date="2026-08-05",
                 amount="888.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),
@@ -752,7 +752,7 @@ class TestBudgetStatusWithRealTransactions:
             transaction_payload(
                 date="2026-07-15",
                 amount="777.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -786,7 +786,7 @@ class TestBudgetStatusWithRealTransactions:
             transaction_payload(
                 date="2026-07-10",
                 amount="6000.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),

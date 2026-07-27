@@ -102,7 +102,7 @@ class TestCreateTransactionFromTemplate:
     ):
         payload = transaction_from_template_payload(
             date="2025-11-05",
-            transaction_type="income",
+            transaction_type="INCOME",
             description="Coffee",
             amount="125.00",
             category_id=created_category["id"],
@@ -928,7 +928,7 @@ class TestGetTransactionsFilters:
         expense_transaction = await create_transaction(
             client,
             transaction_payload(
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 amount="100.00",
                 currency_code=active_currency["code"],
             ),
@@ -938,7 +938,7 @@ class TestGetTransactionsFilters:
         income_transaction = await create_transaction(
             client,
             transaction_payload(
-                transaction_type="income",
+                transaction_type="INCOME",
                 amount="500.00",
                 currency_code=active_currency["code"],
             ),
@@ -947,7 +947,7 @@ class TestGetTransactionsFilters:
 
         response = await client.get(
             API_TRANSACTIONS,
-            params={"type": "income"},
+            params={"type": "INCOME"},
             headers=authenticated_user["headers"],
         )
 
@@ -958,7 +958,7 @@ class TestGetTransactionsFilters:
 
         assert income_transaction["id"] in ids
         assert expense_transaction["id"] not in ids
-        assert all(transaction["type"] == "income" for transaction in body)
+        assert all(transaction["type"] == "INCOME" for transaction in body)
 
     async def test_get_transactions_filter_by_currency_code(
             self,
@@ -1227,7 +1227,7 @@ class TestGetTransactionsFilters:
             transaction_payload(
                 date="2026-02-15",
                 amount="100.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),
@@ -1239,7 +1239,7 @@ class TestGetTransactionsFilters:
             transaction_payload(
                 date="2026-02-15",
                 amount="200.00",
-                transaction_type="income",
+                transaction_type="INCOME",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
             ),
@@ -1251,7 +1251,7 @@ class TestGetTransactionsFilters:
             transaction_payload(
                 date="2026-02-15",
                 amount="300.00",
-                transaction_type="expense",
+                transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
             ),
             authenticated_user["headers"],
@@ -1260,7 +1260,7 @@ class TestGetTransactionsFilters:
         response = await client.get(
             API_TRANSACTIONS,
             params={
-                "type": "expense",
+                "type": "EXPENSE",
                 "currency_code": active_currency["code"],
                 "category_id": created_category["id"],
                 "start_date": "2026-02-01",
@@ -1445,7 +1445,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             date="2026-05-10",
             amount="250.00",
-            transaction_type="income",
+            transaction_type="INCOME",
             currency_code=active_currency["code"],
             category_id=created_category["id"],
             description="Updated transaction",
@@ -1480,7 +1480,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             date="2026-05-10",
             amount="250.00",
-            transaction_type="income",
+            transaction_type="INCOME",
             currency_code=active_currency["code"],
             category_id=None,
             description="Updated without category",

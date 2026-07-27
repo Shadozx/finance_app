@@ -719,7 +719,7 @@ class TestUpdateTransactionTemplate:
         payload = transaction_template_payload(
             name="Updated template",
             amount="250.00",
-            template_type="expense",
+            template_type="EXPENSE",
             currency_code=active_currency["code"],
             category_id=created_category["id"],
             description="Updated description",
@@ -755,7 +755,7 @@ class TestUpdateTransactionTemplate:
         payload = transaction_template_payload(
             name="Updated template",
             amount="250.00",
-            template_type="expense",
+            template_type="EXPENSE",
             currency_code=active_currency["code"],
             description="Updated description",
         )

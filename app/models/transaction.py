@@ -9,8 +9,8 @@ from app.core import Base
 
 
 class TransactionType(str, enum.Enum):
-    INCOME = "income"
-    EXPENSE = "expense"
+    INCOME = "INCOME"
+    EXPENSE = "EXPENSE"
 
 
 class Transaction(Base):
