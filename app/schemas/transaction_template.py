@@ -3,7 +3,7 @@ from datetime import datetime, date
 from pydantic import BaseModel, field_validator, ConfigDict, Field
 
 from app.models.transaction import TransactionType
-from app.schemas.validators import amount_validator, currency_code_validator, MAX_DESCRIPTION_LENGTH
+from app.schemas.validators import amount_validator, currency_code_validator, MAX_DESCRIPTION_LENGTH, name_validator
 from decimal import Decimal
 
 
@@ -23,15 +23,7 @@ class TransactionTemplateCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        v = v.strip()
-
-        if len(v) < 1:
-            raise ValueError("Template name must be at least 1 character")
-
-        if len(v) > 100:
-            raise ValueError("Template name must be less than 100 characters")
-
-        return v
+        return name_validator(v, "Template")
 
     @field_validator("amount")
     @classmethod

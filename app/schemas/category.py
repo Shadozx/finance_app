@@ -3,21 +3,15 @@ from enum import Enum
 from pydantic import BaseModel, field_validator, ConfigDict
 from datetime import datetime
 
+from app.schemas.validators import name_validator
+
 class CategoryCreate(BaseModel):
     name: str
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        v = v.strip()
-
-        if len(v) < 1:
-            raise ValueError("Category name must be at least 1 character")
-
-        if len(v) > 100:
-            raise ValueError("Category name must be less than 100 characters")
-
-        return v
+        return name_validator(v, "Category")
 
 class CategoryUpdate(CategoryCreate):
     pass

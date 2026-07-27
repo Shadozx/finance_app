@@ -9,6 +9,20 @@ MAX_DATE_RANGE_DAYS = 365
 
 MAX_DESCRIPTION_LENGTH = 1024
 
+MAX_NAME_LENGTH = 100
+
+
+def name_validator(name: str, entity: str) -> str:
+    name = name.strip()
+
+    if len(name) < 1:
+        raise ValueError(f"{entity} name must be at least 1 character")
+
+    if len(name) > MAX_NAME_LENGTH:
+        raise ValueError(f"{entity} name must be less than {MAX_NAME_LENGTH} characters")
+
+    return name
+
 
 def password_validator(
         password: str
