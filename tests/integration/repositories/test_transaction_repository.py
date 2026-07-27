@@ -588,6 +588,48 @@ class TestGetSummary:
         assert totals[(usd_currency.code, TransactionType.EXPENSE)] == Decimal("75.00")
         assert totals[(usd_currency.code, TransactionType.INCOME)] == Decimal("10000.00")
 
+    async def test_get_summary_excludes_adjustment(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("5000.00"),
+            description="Opening balance",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.INCOME)] == Decimal("100.00")
+
 
 class TestGetByCategory:
     async def test_get_by_category(
@@ -790,6 +832,51 @@ class TestGetByCategory:
 
         assert len(summary) == 0
 
+    async def test_get_by_category_excludes_adjustment(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("5000.00"),
+            description="Opening balance",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("100.00")
+        assert totals[("UAH", category.id)].category_name == category.name
+
 
 class TestGetSpent:
     async def test_get_spent(
@@ -970,6 +1057,46 @@ class TestGetSpent:
             uah_currency.code,
             date(2026, 1, 1),
             date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("100.00")
+
+    async def test_get_spent_excludes_adjustment(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("5000.00"),
+            description="Opening balance",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            date=date(2026, 2, 10),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 3, 31),
+
         )
 
         assert spent == Decimal("100.00")

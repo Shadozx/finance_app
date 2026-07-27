@@ -1,11 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, Select, func
+from sqlalchemy import select, Select, func, ColumnElement
 
 from decimal import Decimal
 
 from datetime import date
 
-from app.models import Transaction, Category, TransactionType
+from app.models import Transaction, Category, TransactionType, TransactionKind
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
 
 from app.repositories.types import SummaryRow, CategorySummaryRow, TransactionFilterProtocol
@@ -61,7 +61,8 @@ class TransactionRepository:
     ) -> list[SummaryRow]:
         query = (select(Transaction.currency_code, Transaction.type, func.sum(Transaction.amount))
                  .group_by(Transaction.currency_code, Transaction.type)
-                 .where(Transaction.user_id == user_id))
+                 .where(Transaction.user_id == user_id)
+                 .where(self._counts_in_totals()))
 
         query = self._apply_filters(query, filters)
 
@@ -80,7 +81,8 @@ class TransactionRepository:
         query = (select(Transaction.currency_code, Transaction.category_id, Category.name, func.sum(Transaction.amount))
                  .join(Category, Category.id == Transaction.category_id, isouter=True)
                  .group_by(Transaction.currency_code, Transaction.category_id, Category.name)
-                 .where(Transaction.user_id == user_id))
+                 .where(Transaction.user_id == user_id)
+                 .where(self._counts_in_totals()))
 
         query = self._apply_filters(query, filters)
 
@@ -107,6 +109,7 @@ class TransactionRepository:
             .where(Transaction.type == TransactionType.EXPENSE)
             .where(Transaction.date >= start_date)
             .where(Transaction.date <= end_date)
+            .where(self._counts_in_totals())
         )
         return (await self.session.execute(query)).scalar_one()
 
@@ -131,3 +134,13 @@ class TransactionRepository:
             query = query.where(Transaction.category_id == filters.category_id)
 
         return query
+
+    def _counts_in_totals(self) -> ColumnElement[bool]:
+        """Умова 'ця транзакція враховується в підрахунках'.
+
+        Реєстр показує ВСІ транзакції; агрегації (статистика, бюджети,
+        майбутні звіти) рахують тільки REGULAR: ADJUSTMENT — це виправлення
+        залишку, TRANSFER (v1.11) — переміщення між своїми рахунками.
+        Обидва не є доходом чи витратою.
+        """
+        return Transaction.kind == TransactionKind.REGULAR
