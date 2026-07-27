@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import String, DateTime
 from sqlalchemy.orm import mapped_column, Mapped, validates
@@ -18,7 +18,10 @@ class User(Base):
 
     hashed_password: Mapped[str] = mapped_column(String(255))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
 
     @validates("email")
     def validate_email(self, key, value):
