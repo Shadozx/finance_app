@@ -7,7 +7,7 @@ from pytest_mock import MockerFixture
 from app.services import TransactionService, validators
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
     TransactionTemplateRepository
-from app.models import Transaction, TransactionType, Currency, Category, TransactionTemplate
+from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, TransactionTemplate
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
 from app.core.exceptions import NotFoundException, NotAllowedActionException
@@ -151,6 +151,7 @@ class TestCreateTransaction:
         created = Transaction(
             id=1,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=data.currency_code,
             category_id=data.category_id,
@@ -176,6 +177,7 @@ class TestCreateTransaction:
             call_args,
             amount=data.amount,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             user_id=user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
@@ -212,6 +214,7 @@ class TestCreateTransaction:
         created = Transaction(
             id=1,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=data.currency_code,
             description=data.description,
@@ -233,6 +236,7 @@ class TestCreateTransaction:
             call_args,
             amount=data.amount,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             category_id=data.category_id,
             user_id=user_id,
             date=data.date
@@ -325,6 +329,7 @@ class TestCreateTransactionFromTemplate:
         created = Transaction(
             id=1,
             type=existing_template.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
             category_id=data.category_id,
@@ -351,6 +356,7 @@ class TestCreateTransactionFromTemplate:
         assert_model_fields(
             call_args,
             type=existing_template.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
             category_id=data.category_id,
@@ -395,6 +401,7 @@ class TestCreateTransactionFromTemplate:
         created = Transaction(
             id=1,
             type=existing_template.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
             description=data.description,
@@ -416,6 +423,7 @@ class TestCreateTransactionFromTemplate:
         assert_model_fields(
             call_args,
             type=existing_template.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
             category_id=data.category_id,
@@ -512,6 +520,7 @@ class TestGetUserTransactions:
             Transaction(
                 id=1,
                 type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
                 amount=Decimal("500.00"),
                 currency_code="UAH",
                 description="Foods",
@@ -521,6 +530,7 @@ class TestGetUserTransactions:
             Transaction(
                 id=2,
                 type=TransactionType.INCOME,
+                kind=TransactionKind.REGULAR,
                 amount=Decimal("20000.00"),
                 currency_code="UAH",
                 description="Salary",
@@ -606,6 +616,7 @@ class TestUpdateTransaction:
         updated = Transaction(
             id=existing_transaction.id,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=data.currency_code,
             category_id=data.category_id,
@@ -632,6 +643,7 @@ class TestUpdateTransaction:
             call_args,
             amount=data.amount,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             user_id=existing_transaction.user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
@@ -657,6 +669,31 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.assert_called_once()
 
         transaction_repo_mock.update.assert_called_once()
+
+    async def test_update_transaction_preserves_adjustment_kind(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_transaction: Transaction,
+            existing_currency: Currency,
+            data: TransactionUpdate,
+    ):
+        existing_transaction.kind = TransactionKind.ADJUSTMENT
+        data.category_id = None
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        transaction_repo_mock.update.return_value = existing_transaction
+
+        await transaction_service.update_transaction(
+            existing_transaction.id,
+            data,
+            existing_transaction.user_id,
+        )
+
+        call_args = transaction_repo_mock.update.call_args[0][0]
+        assert call_args.kind == TransactionKind.ADJUSTMENT
 
     async def test_update_transaction_not_found_transaction(
             self,
@@ -698,6 +735,7 @@ class TestUpdateTransaction:
         created = Transaction(
             id=1,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=data.currency_code,
             description=data.description,
@@ -720,6 +758,7 @@ class TestUpdateTransaction:
             call_args,
             amount=data.amount,
             type=data.type,
+            kind=TransactionKind.REGULAR,
             category_id=data.category_id,
             user_id=user_id,
             date=data.date

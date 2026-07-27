@@ -1,7 +1,7 @@
 from pydantic import BaseModel, field_validator, ConfigDict, model_validator, Field
 from datetime import date
 
-from app.models.transaction import TransactionType
+from app.models.transaction import TransactionType, TransactionKind
 from app.schemas.validators import amount_validator, currency_code_validator, MAX_DESCRIPTION_LENGTH
 from decimal import Decimal
 
@@ -39,6 +39,8 @@ class TransactionResponse(BaseModel):
     amount: Decimal
 
     type: TransactionType
+
+    kind: TransactionKind
 
     currency_code: str
 

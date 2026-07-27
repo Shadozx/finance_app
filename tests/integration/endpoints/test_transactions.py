@@ -412,6 +412,7 @@ class TestCreateTransaction:
         assert body["date"] == payload["date"]
         assert body["amount"] == payload["amount"]
         assert body["type"] == payload["type"]
+        assert body["kind"] == "REGULAR"
         assert body["currency_code"] == payload["currency_code"]
         assert body["category_id"] == payload["category_id"]
         assert body["description"] == payload["description"]

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import UserRepository, TransactionRepository
-from app.models import User, Transaction, TransactionType, Category, Currency
+from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
 
 
@@ -17,6 +17,7 @@ async def transaction(
 ):
     return await transaction_repository.create(Transaction(
         type=TransactionType.EXPENSE,
+        kind=TransactionKind.REGULAR,
         description="Morning Coffee",
         amount=Decimal("100.00"),
         currency_code=uah_currency.code,
@@ -37,6 +38,7 @@ class TestCreate:
     ):
         transaction = Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             description="Morning Coffee",
             amount=Decimal("100.00"),
             currency_code=uah_currency.code,
@@ -90,6 +92,7 @@ class TestGetByUser:
     ):
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             description="Foods",
             amount=Decimal("550.00"),
             currency_code=uah_currency.code,
@@ -99,6 +102,7 @@ class TestGetByUser:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("35000.00"),
             description="Salary",
             currency_code=uah_currency.code,
@@ -139,6 +143,7 @@ class TestGetByUser:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("50.00"),
             description="Netflix",
             currency_code=usd_currency.code,
@@ -162,6 +167,7 @@ class TestGetByUser:
     ):
         t_old = await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
             description="Old",
             currency_code=uah_currency.code,
@@ -171,6 +177,7 @@ class TestGetByUser:
 
         t_new = await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("200.00"),
             description="New",
             currency_code=uah_currency.code,
@@ -180,6 +187,7 @@ class TestGetByUser:
 
         t_mid = await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("150.00"),
             description="Mid",
             currency_code=uah_currency.code,
@@ -206,6 +214,7 @@ async def transactions(
 ):
     t1 = await transaction_repository.create(Transaction(
         type=TransactionType.INCOME,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("10000.00"),
         description="Salary",
         currency_code=usd_currency.code,
@@ -216,6 +225,7 @@ async def transactions(
 
     t2 = await transaction_repository.create(Transaction(
         type=TransactionType.EXPENSE,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("150.00"),
         description="Coffee",
         currency_code=uah_currency.code,
@@ -226,6 +236,7 @@ async def transactions(
 
     t3 = await transaction_repository.create(Transaction(
         type=TransactionType.EXPENSE,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("50.00"),
         description="Netflix",
         currency_code=usd_currency.code,
@@ -236,6 +247,7 @@ async def transactions(
 
     t4 = await transaction_repository.create(Transaction(
         type=TransactionType.INCOME,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("500.00"),
         description="Freelance",
         currency_code=usd_currency.code,
@@ -246,6 +258,7 @@ async def transactions(
 
     t5 = await transaction_repository.create(Transaction(
         type=TransactionType.EXPENSE,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("200.00"),
         description="Lunch",
         currency_code=uah_currency.code,
@@ -447,6 +460,7 @@ class TestGetSummary:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
             description="Other user expense",
             currency_code=uah_currency.code,
@@ -536,6 +550,7 @@ class TestGetSummary:
         await transaction_repository.create(
             Transaction(
                 type=TransactionType.INCOME,
+                kind=TransactionKind.REGULAR,
                 amount=Decimal("450.00"),
                 description="Refund from a friend",
                 currency_code=uah_currency.code,
@@ -546,6 +561,7 @@ class TestGetSummary:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("75.00"),
             description="Gym membership",
             currency_code=usd_currency.code,
@@ -612,6 +628,7 @@ class TestGetByCategory:
     ):
         await transaction_repository.create(Transaction(
             type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
             description="Salary",
             currency_code=uah_currency.code,
@@ -622,6 +639,7 @@ class TestGetByCategory:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
             description="Coffee",
             currency_code=uah_currency.code,
@@ -668,6 +686,7 @@ class TestGetByCategory:
     ):
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("250.00"),
             description="Ice cream",
             currency_code=uah_currency.code,
@@ -678,6 +697,7 @@ class TestGetByCategory:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
             description="Coffee",
             currency_code=uah_currency.code,
@@ -719,6 +739,7 @@ class TestGetByCategory:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
             description="Other user expense",
             currency_code=uah_currency.code,
@@ -729,6 +750,7 @@ class TestGetByCategory:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("150.00"),
             description="Coffee",
             currency_code=uah_currency.code,
@@ -797,6 +819,7 @@ class TestGetSpent:
     ):
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("500.00"),
             description="Coffee",
             currency_code=uah_currency.code,
@@ -807,6 +830,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
             description="Salary",
             currency_code=uah_currency.code,
@@ -835,6 +859,7 @@ class TestGetSpent:
     ):
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
             description="Target",
             currency_code=uah_currency.code,
@@ -845,6 +870,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("40.00"),
             description="Other currency",
             currency_code=usd_currency.code,
@@ -855,6 +881,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
             description="Uncategorized",
             currency_code=uah_currency.code,
@@ -865,6 +892,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("888.00"),
             description="Out of range",
             currency_code=uah_currency.code,
@@ -916,6 +944,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("777.00"),
             description="Other user expense",
             currency_code=uah_currency.code,
@@ -926,6 +955,7 @@ class TestGetSpent:
 
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
             description="Own expense",
             currency_code=uah_currency.code,

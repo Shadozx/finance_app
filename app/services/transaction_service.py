@@ -6,7 +6,7 @@ from app.repositories import (
     CategoryRepository,
     TransactionTemplateRepository
 )
-from app.models import Transaction
+from app.models import Transaction, TransactionKind
 from app.schemas import (
     TransactionResponse,
     TransactionCreate,
@@ -42,6 +42,7 @@ class TransactionService:
 
         new_transaction = Transaction(
             type=data.type,
+            kind=TransactionKind.REGULAR,
             amount=data.amount,
             description=data.description,
             user_id=user_id,
@@ -99,6 +100,7 @@ class TransactionService:
 
         new_transaction = Transaction(
             type=final_type,
+            kind=TransactionKind.REGULAR,
             amount=final_amount,
             description=final_description,
             currency_code=final_currency_code,

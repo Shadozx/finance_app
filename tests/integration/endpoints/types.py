@@ -44,6 +44,7 @@ class TransactionData(TypedDict):
     date: str
     amount: str
     type: str
+    kind: str
     currency_code: str
     category_id: int | None
     description: str | None

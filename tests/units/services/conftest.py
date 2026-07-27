@@ -8,7 +8,7 @@ from app.services import TransactionService, CategoryService, CurrencyService, U
     BudgetService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
     TransactionTemplateRepository, BudgetRepository
-from app.models import Transaction, TransactionType, Currency, Category, User, TransactionTemplate, Budget
+from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, Budget
 
 
 @pytest.fixture
@@ -107,6 +107,7 @@ def existing_transaction(
     return Transaction(
         id=1,
         type=TransactionType.INCOME,
+        kind=TransactionKind.REGULAR,
         amount=Decimal("5000.00"),
         currency_code=existing_currency.code,
         description="Salary",

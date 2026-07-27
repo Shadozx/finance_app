@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from app.repositories import BudgetRepository, TransactionRepository, UserRepository
-from app.models import Budget, Transaction, TransactionType, User, Category, Currency
+from app.models import Budget, Transaction, TransactionType, TransactionKind, User, Category, Currency
 
 
 @pytest.fixture
@@ -240,12 +240,12 @@ class TestGetSpent:
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("2000.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("2000.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 5),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("1000.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("1000.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 20),
         ))
@@ -265,12 +265,12 @@ class TestGetSpent:
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("500.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("500.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 5),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.INCOME, amount=Decimal("10000.00"),
+            type=TransactionType.INCOME, kind=TransactionKind.REGULAR, amount=Decimal("10000.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 10),
         ))
@@ -291,22 +291,22 @@ class TestGetSpent:
             usd_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("300.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("300.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("40.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("40.00"),
             currency_code=usd_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("999.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("999.00"),
             currency_code=uah_currency.code, category_id=None,
             user_id=user.id, date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("888.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("888.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 8, 1),
         ))
@@ -344,12 +344,12 @@ class TestGetSpent:
             email="other2@test.com", username="other2", hashed_password="hashed",
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("777.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("777.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=other_user.id, date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, amount=Decimal("100.00"),
+            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("100.00"),
             currency_code=uah_currency.code, category_id=category.id,
             user_id=user.id, date=date(2026, 7, 10),
         ))

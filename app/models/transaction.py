@@ -12,6 +12,9 @@ class TransactionType(str, enum.Enum):
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
 
+class TransactionKind(str, enum.Enum):
+    REGULAR = "REGULAR"
+    ADJUSTMENT = "ADJUSTMENT"
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -19,6 +22,8 @@ class Transaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     type: Mapped[TransactionType] = mapped_column(Enum(TransactionType))
+
+    kind: Mapped[TransactionKind] = mapped_column(Enum(TransactionKind))
 
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
 

@@ -1,4 +1,4 @@
-from .transaction import TransactionType, Transaction
+from .transaction import TransactionType, Transaction, TransactionKind
 from .category import Category
 from .user import User
 from .currency import Currency
