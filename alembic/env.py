@@ -13,6 +13,7 @@ from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.transaction_template import TransactionTemplate
 from app.models.budget import Budget
+from app.models.account import Account
 
 # Alembic Config
 config = context.config

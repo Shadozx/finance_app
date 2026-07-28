@@ -6,7 +6,7 @@ from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
 from app.models import User, Category, Currency
-from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository, BudgetRepository
+from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository, BudgetRepository, AccountRepository
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +28,6 @@ async def test_engine(postgres_container):
     engine = create_async_engine(postgres_url)
 
     async with engine.begin() as conn:
-        from app.models import User, Currency, Category, Transaction, TransactionTemplate
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -154,3 +153,7 @@ def user_repository(test_session):
 @pytest.fixture
 def budget_repository(test_session):
     return BudgetRepository(test_session)
+
+@pytest.fixture
+def account_repository(test_session: AsyncSession) -> AccountRepository:
+    return AccountRepository(test_session)

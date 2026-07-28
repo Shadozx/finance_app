@@ -4,3 +4,4 @@ from .transaction_repository import TransactionRepository
 from .currency_repository import CurrencyRepository
 from .transaction_template_repository import TransactionTemplateRepository
 from .budget_repository import BudgetRepository
+from .account_repository import AccountRepository

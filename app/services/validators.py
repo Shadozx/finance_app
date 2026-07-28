@@ -1,7 +1,8 @@
 from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository, \
-    TransactionRepository, BudgetRepository, UserRepository
-from app.models import Category, TransactionTemplate, Transaction, Currency, Budget, User
-from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, AuthenticationException
+    TransactionRepository, BudgetRepository, UserRepository, AccountRepository
+from app.models import Category, TransactionTemplate, Transaction, Currency, Budget, User, Account
+from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, \
+    AuthenticationException
 
 
 async def validate_category(
@@ -168,11 +169,67 @@ async def validate_budget(
 
     return existing_budget
 
+
 async def validate_user(
-    user_repository: UserRepository,
-    user_id: int,
+        user_repository: UserRepository,
+        user_id: int,
 ) -> User:
+    """
+    Validate that the user from the token still exists.
+
+    Args:
+        user_repository: Repository to fetch user
+        user_id: User id taken from the JWT token
+
+    Returns:
+        Validated User instance
+
+    Raises:
+        AuthenticationException: User no longer exists. 401, not 404 —
+            the token is valid but points to a deleted user, so the
+            correct action is to re-login, not "resource not found".
+    """
     user = await user_repository.get_by_id(user_id)
     if user is None:
         raise AuthenticationException("User no longer exists")
     return user
+
+
+async def validate_account(
+        account_repository: AccountRepository,
+        user_id: int,
+        account_id: int,
+        allow_archived: bool = False,
+) -> Account:
+    """
+    Validate account exists, is owned by user, and (optionally) not archived.
+
+    Args:
+        account_repository: Repository to fetch account
+        user_id: User who should own the account
+        account_id: Account to validate
+        allow_archived: Skip the archived check. Editing an existing
+            transaction must stay possible even if its account was
+            archived later; only attaching a transaction TO an archived
+            account is forbidden.
+
+    Returns:
+        Validated Account instance
+
+    Raises:
+        NotFoundException: Account doesn't exist
+        PermissionException: Account not owned by user
+        NotAllowedActionException: Account is archived and allow_archived is False
+    """
+    existing_account = await account_repository.get_by_id(account_id)
+
+    if not existing_account:
+        raise NotFoundException("Account not found")
+
+    if existing_account.user_id != user_id:
+        raise PermissionException("You don't have permission to this account")
+
+    if not allow_archived and existing_account.archived_at:
+        raise NotAllowedActionException("Archived account is not allowed to use")
+
+    return existing_account

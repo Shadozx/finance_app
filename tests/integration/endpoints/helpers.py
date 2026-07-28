@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from fastapi import status
 
-from tests.integration.endpoints.types import CategoryData, TransactionTemplateData, TransactionData
+from tests.integration.endpoints.types import CategoryData, TransactionTemplateData, TransactionData, AccountData
 
 
 def register_payload(
@@ -114,4 +114,16 @@ async def create_transaction(
 
     assert response.status_code == status.HTTP_201_CREATED
 
+    return response.json()
+
+def account_payload(
+        name: str = "Monobank",
+        currency_code: str = "USD",
+) -> dict[str, str]:
+    return {"name": name, "currency_code": currency_code}
+
+
+async def create_account(client, payload, headers) -> AccountData:
+    response = await client.post("/api/v1/accounts", json=payload, headers=headers)
+    assert response.status_code == status.HTTP_201_CREATED
     return response.json()

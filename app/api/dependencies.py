@@ -4,8 +4,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core import get_session, verify_token
 from app.core.exceptions import AuthenticationException
-from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, StatisticsService, BudgetService
-from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository, TransactionTemplateRepository, BudgetRepository
+from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, \
+    StatisticsService, BudgetService, AccountService
+from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository, \
+    TransactionTemplateRepository, BudgetRepository, AccountRepository
 from app.models import User
 
 
@@ -54,6 +56,7 @@ def get_transaction_template_service(
         currency_repository=currency_repository
     )
 
+
 def get_statistics_service(
         session: AsyncSession = Depends(get_session)
 ) -> StatisticsService:
@@ -83,6 +86,18 @@ def get_budget_service(
         transaction_repository=transaction_repository,
         category_repository=category_repository,
         currency_repository=currency_repository,
+    )
+
+
+def get_account_service(
+        session: AsyncSession = Depends(get_session)
+) -> AccountService:
+    account_repository = AccountRepository(session)
+    currency_repository = CurrencyRepository(session)
+
+    return AccountService(
+        account_repository,
+        currency_repository
     )
 
 

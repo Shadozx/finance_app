@@ -49,3 +49,11 @@ class TransactionData(TypedDict):
     category_id: int | None
     description: str | None
     user_id: int
+
+class AccountData(TypedDict):
+    id: int
+    name: str
+    user_id: int
+    currency_code: str
+    created_at: str
+    archived_at: str | None

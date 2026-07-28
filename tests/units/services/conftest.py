@@ -5,10 +5,10 @@ import datetime
 from decimal import Decimal
 
 from app.services import TransactionService, CategoryService, CurrencyService, UserService, TransactionTemplateService, \
-    BudgetService
+    BudgetService, AccountService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
-    TransactionTemplateRepository, BudgetRepository
-from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, Budget
+    TransactionTemplateRepository, BudgetRepository, AccountRepository
+from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, Budget, Account
 
 
 @pytest.fixture
@@ -205,4 +205,34 @@ def zero_budget(
         start_date=datetime.date(2026, 7, 1),
         end_date=datetime.date(2026, 7, 31),
         user_id=existing_user.id,
+    )
+
+@pytest.fixture
+def account_repo_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=AccountRepository)
+
+
+@pytest.fixture
+def account_service(
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository,
+):
+    return AccountService(
+        account_repository=account_repo_mock,
+        currency_repository=currency_repo_mock,
+    )
+
+
+@pytest.fixture
+def existing_account(
+        existing_user: User,
+        existing_currency: Currency,
+):
+    return Account(
+        id=1,
+        name="Monobank",
+        currency_code=existing_currency.code,
+        user_id=existing_user.id,
+        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
+        archived_at=None,
     )

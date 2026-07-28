@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,7 +75,7 @@ class CategoryRepository:
             self,
             category: Category
     ) -> None:
-        category.archived_at = datetime.utcnow()
+        category.archived_at = datetime.now(timezone.utc)
 
         await self.session.commit()
 

@@ -1,0 +1,612 @@
+from datetime import datetime, timezone
+
+import pytest
+from pytest_mock import MockerFixture
+
+from app.models import Account, Currency
+from app.repositories import AccountRepository, CurrencyRepository
+from app.services import AccountService, validators
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
+from app.core.exceptions import (
+    NotFoundException,
+    ValueExistsException,
+    NotAllowedActionException,
+    PermissionException,
+)
+from tests.units.services.helpers import assert_model_fields
+
+
+class TestCreateAccount:
+
+    @pytest.fixture
+    def data(self, existing_currency: Currency):
+        return AccountCreate(
+            name="Cash",
+            currency_code=existing_currency.code,
+        )
+
+    async def test_create_account_success(
+            self,
+            mocker: MockerFixture,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+            archived_at=None,
+        )
+        account_repo_mock.create.return_value = created
+
+        validate_currency_spy = mocker.spy(validators, "validate_currency")
+
+        result = await account_service.create_account(data, user_id)
+
+        assert result == AccountResponse.model_validate(created)
+
+        call_args = account_repo_mock.create.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+        )
+
+        validate_currency_spy.assert_called_once_with(
+            account_service.currency_repository,
+            data.currency_code,
+        )
+
+        account_repo_mock.get_by_user_and_name.assert_called_once_with(
+            user_id,
+            data.name,
+        )
+
+        account_repo_mock.create.assert_called_once()
+
+    async def test_create_account_duplicate_name(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        data.name = existing_account.name
+        user_id = existing_account.user_id
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = existing_account
+
+        with pytest.raises(ValueExistsException, match="Account with this name exists"):
+            await account_service.create_account(data, user_id)
+
+        account_repo_mock.create.assert_not_called()
+
+    async def test_create_account_unknown_currency(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            currency_repo_mock: CurrencyRepository,
+            data: AccountCreate,
+    ):
+        user_id = 1
+
+        account_repo_mock.get_by_user_and_name.return_value = None
+        currency_repo_mock.get_by_code.return_value = None
+
+        with pytest.raises(NotFoundException, match="Currency not found"):
+            await account_service.create_account(data, user_id)
+
+        account_repo_mock.create.assert_not_called()
+
+    async def test_create_account_inactive_currency(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+        account_repo_mock.get_by_user_and_name.return_value = None
+        existing_currency.is_active = False
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+
+        with pytest.raises(NotAllowedActionException, match="Currency is not active"):
+            await account_service.create_account(data, user_id)
+
+        account_repo_mock.create.assert_not_called()
+
+
+class TestGetAccount:
+    async def test_get_account_success(
+            self,
+            mocker: MockerFixture,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        validate_account_spy = mocker.spy(validators, "validate_account")
+
+        result = await account_service.get_account(
+            existing_account.id,
+            existing_account.user_id,
+        )
+
+        assert result == AccountResponse.model_validate(existing_account)
+
+        validate_account_spy.assert_called_once_with(
+            account_service.account_repository,
+            existing_account.user_id,
+            existing_account.id,
+            allow_archived=True,
+        )
+
+    async def test_get_account_not_found(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+    ):
+        account_repo_mock.get_by_id.return_value = None
+
+        with pytest.raises(NotFoundException, match="Account not found"):
+            await account_service.get_account(999, 1)
+
+    async def test_get_account_wrong_owner(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        wrong_user_id = existing_account.user_id + 1
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+            await account_service.get_account(existing_account.id, wrong_user_id)
+
+    async def test_get_account_archived_allowed(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        result = await account_service.get_account(
+            existing_account.id,
+            existing_account.user_id,
+        )
+
+        assert result.id == existing_account.id
+        assert result.archived_at is not None
+
+
+class TestGetUserAccounts:
+    async def test_get_user_accounts_success(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_currency: Currency,
+    ):
+        user_id = 1
+
+        user_accounts = [
+            Account(
+                id=1,
+                name="Monobank",
+                currency_code=existing_currency.code,
+                user_id=user_id,
+                created_at=datetime.now(timezone.utc),
+            ),
+            Account(
+                id=2,
+                name="Cash",
+                currency_code=existing_currency.code,
+                user_id=user_id,
+                created_at=datetime.now(timezone.utc),
+            ),
+        ]
+
+        account_repo_mock.get_by_user.return_value = user_accounts
+
+        result = await account_service.get_user_accounts(user_id)
+
+        assert result == [AccountResponse.model_validate(a) for a in user_accounts]
+
+        account_repo_mock.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            status=AccountStatus.ACTIVE,
+        )
+
+    async def test_get_user_accounts_empty(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+    ):
+        user_id = 1
+
+        account_repo_mock.get_by_user.return_value = []
+
+        result = await account_service.get_user_accounts(user_id)
+
+        assert result == []
+
+        account_repo_mock.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            status=AccountStatus.ACTIVE,
+        )
+
+    async def test_get_user_accounts_passes_status(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+    ):
+        user_id = 1
+
+        account_repo_mock.get_by_user.return_value = []
+
+        await account_service.get_user_accounts(user_id, AccountStatus.ALL)
+
+        account_repo_mock.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            status=AccountStatus.ALL,
+        )
+
+
+class TestUpdateAccount:
+
+    @pytest.fixture
+    def data(self):
+        return AccountUpdate(name="Renamed Account")
+
+    async def test_update_account_success(
+            self,
+            mocker: MockerFixture,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            data: AccountUpdate,
+    ):
+        user_id = existing_account.user_id
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        updated = Account(
+            id=existing_account.id,
+            name=data.name,
+            currency_code=existing_account.currency_code,
+            user_id=user_id,
+            created_at=existing_account.created_at,
+        )
+        account_repo_mock.update.return_value = updated
+
+        validate_account_spy = mocker.spy(validators, "validate_account")
+
+        result = await account_service.update_account(
+            existing_account.id,
+            data,
+            user_id,
+        )
+
+        assert result == AccountResponse.model_validate(updated)
+
+        call_args = account_repo_mock.update.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            name=data.name,
+            user_id=user_id,
+        )
+
+        validate_account_spy.assert_called_once_with(
+            account_service.account_repository,
+            user_id,
+            existing_account.id,
+            allow_archived=True,
+        )
+
+        account_repo_mock.update.assert_called_once()
+
+    async def test_update_account_does_not_change_currency(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            data: AccountUpdate,
+    ):
+        original_currency = existing_account.currency_code
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = None
+        account_repo_mock.update.return_value = existing_account
+
+        await account_service.update_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        call_args = account_repo_mock.update.call_args[0][0]
+
+        assert call_args.currency_code == original_currency
+
+    async def test_update_account_archived_allowed(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            data: AccountUpdate,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = None
+        account_repo_mock.update.return_value = existing_account
+
+        result = await account_service.update_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.name == data.name
+
+        account_repo_mock.update.assert_called_once()
+
+    async def test_update_account_not_found(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            data: AccountUpdate,
+    ):
+        account_repo_mock.get_by_id.return_value = None
+
+        with pytest.raises(NotFoundException, match="Account not found"):
+            await account_service.update_account(999, data, 1)
+
+        account_repo_mock.update.assert_not_called()
+
+    async def test_update_account_wrong_owner(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            data: AccountUpdate,
+    ):
+        wrong_user_id = existing_account.user_id + 1
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+            await account_service.update_account(
+                existing_account.id,
+                data,
+                wrong_user_id,
+            )
+
+        account_repo_mock.update.assert_not_called()
+
+    async def test_update_account_duplicate_name(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            existing_currency: Currency,
+            data: AccountUpdate,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        duplicate = Account(
+            id=existing_account.id + 1,
+            name=data.name,
+            currency_code=existing_currency.code,
+            user_id=existing_account.user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        account_repo_mock.get_by_user_and_name.return_value = duplicate
+
+        with pytest.raises(ValueExistsException, match="Account with this name exists"):
+            await account_service.update_account(
+                existing_account.id,
+                data,
+                existing_account.user_id,
+            )
+
+        account_repo_mock.update.assert_not_called()
+
+    async def test_update_account_same_name_allowed(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            data: AccountUpdate,
+    ):
+        data.name = existing_account.name
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = existing_account
+        account_repo_mock.update.return_value = existing_account
+
+        result = await account_service.update_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.name == existing_account.name
+
+        account_repo_mock.update.assert_called_once()
+
+
+class TestArchiveAccount:
+    async def test_archive_account_success(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        await account_service.archive_account(
+            existing_account.id,
+            existing_account.user_id,
+        )
+
+        account_repo_mock.archive.assert_called_once()
+
+    async def test_archive_account_not_found(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+    ):
+        account_repo_mock.get_by_id.return_value = None
+
+        with pytest.raises(NotFoundException, match="Account not found"):
+            await account_service.archive_account(999, 1)
+
+        account_repo_mock.archive.assert_not_called()
+
+    async def test_archive_account_wrong_owner(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        wrong_user_id = existing_account.user_id + 1
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+            await account_service.archive_account(existing_account.id, wrong_user_id)
+
+        account_repo_mock.archive.assert_not_called()
+
+    async def test_archive_account_already_archived(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(NotAllowedActionException, match="Account is archived"):
+            await account_service.archive_account(
+                existing_account.id,
+                existing_account.user_id,
+            )
+
+        account_repo_mock.archive.assert_not_called()
+
+
+class TestRestoreAccount:
+    async def test_restore_account_success(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = existing_account
+
+        await account_service.restore_account(
+            existing_account.id,
+            existing_account.user_id,
+        )
+
+        account_repo_mock.restore.assert_called_once()
+
+    async def test_restore_account_not_found(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+    ):
+        account_repo_mock.get_by_id.return_value = None
+
+        with pytest.raises(NotFoundException, match="Account not found"):
+            await account_service.restore_account(999, 1)
+
+        account_repo_mock.restore.assert_not_called()
+
+    async def test_restore_account_wrong_owner(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+        wrong_user_id = existing_account.user_id + 1
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+            await account_service.restore_account(existing_account.id, wrong_user_id)
+
+        account_repo_mock.restore.assert_not_called()
+
+    async def test_restore_account_not_archived(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(NotAllowedActionException, match="Account is not archived"):
+            await account_service.restore_account(
+                existing_account.id,
+                existing_account.user_id,
+            )
+
+        account_repo_mock.restore.assert_not_called()
+
+    async def test_restore_account_duplicate_active_name(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            existing_account: Account,
+            existing_currency: Currency,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        active_duplicate = Account(
+            id=existing_account.id + 1,
+            name=existing_account.name,
+            currency_code=existing_currency.code,
+            user_id=existing_account.user_id,
+            created_at=datetime.now(timezone.utc),
+            archived_at=None,
+        )
+
+        account_repo_mock.get_by_id.return_value = existing_account
+        account_repo_mock.get_by_user_and_name.return_value = active_duplicate
+
+        with pytest.raises(ValueExistsException, match="Active account with this name already exists"):
+            await account_service.restore_account(
+                existing_account.id,
+                existing_account.user_id,
+            )
+
+        account_repo_mock.restore.assert_not_called()
