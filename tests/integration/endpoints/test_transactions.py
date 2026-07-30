@@ -1,6 +1,9 @@
 import pytest
 from httpx import AsyncClient
 from fastapi import status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Currency
 
 from tests.integration.endpoints.helpers import (
     transaction_template_payload,
@@ -8,10 +11,13 @@ from tests.integration.endpoints.helpers import (
     create_category,
     category_payload,
     transaction_payload,
-    create_transaction
+    create_transaction,
+    account_payload,
+    create_account
 )
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
+    AccountData,
     TransactionTemplateData,
     CurrencyData,
     CategoryData,
@@ -28,6 +34,7 @@ def transaction_from_template_payload(
         currency_code: str | None = None,
         category_id: int | None = None,
         description: str | None = None,
+        account_id: int | None = None,
 ) -> dict[str, object]:
     payload = {"date": date}
 
@@ -41,6 +48,9 @@ def transaction_from_template_payload(
         payload["category_id"] = category_id
     if description is not None:
         payload["description"] = description
+
+    if account_id is not None:
+        payload["account_id"] = account_id
 
     return payload
 
@@ -62,14 +72,61 @@ async def created_transaction_template(
     )
 
 
+@pytest.fixture
+async def archived_account(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+) -> AccountData:
+    account = await create_account(
+        client,
+        account_payload(name="Closed Card", currency_code=active_currency["code"]),
+        authenticated_user["headers"],
+    )
+
+    response = await client.delete(
+        f"/api/v1/accounts/{account['id']}",
+        headers=authenticated_user["headers"],
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    return account
+
+@pytest.fixture
+async def second_currency(
+        test_session: AsyncSession,
+) -> CurrencyData:
+    currency = Currency(
+        code="UAH",
+        name="Ukrainian Hryvnia",
+        symbol="\u20b4",
+        is_active=True,
+    )
+
+    test_session.add(currency)
+    await test_session.commit()
+    await test_session.refresh(currency)
+
+    return {
+        "code": currency.code,
+        "name": currency.name,
+        "symbol": currency.symbol,
+        "is_active": currency.is_active,
+    }
+
+
 class TestCreateTransactionFromTemplate:
     async def test_create_transaction_from_template_success_without_overrides(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData
     ):
-        payload = transaction_from_template_payload()
+        payload = transaction_from_template_payload(
+            account_id=created_account["id"],
+        )
 
         response = await client.post(
             f"{API_TRANSACTIONS}/from-template/{created_transaction_template['id']}",
@@ -90,12 +147,14 @@ class TestCreateTransactionFromTemplate:
         assert body["amount"] == created_transaction_template["amount"]
         assert body["description"] == created_transaction_template["description"]
 
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_create_transaction_from_template_success_with_overrides(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
             created_category: CategoryData,
             active_currency: CurrencyData
@@ -107,6 +166,7 @@ class TestCreateTransactionFromTemplate:
             amount="125.00",
             category_id=created_category["id"],
             currency_code=active_currency["code"],
+            account_id=created_account["id"],
         )
 
         response = await client.post(
@@ -126,16 +186,19 @@ class TestCreateTransactionFromTemplate:
         assert body["type"] == payload["type"]
         assert body["category_id"] == payload["category_id"]
         assert body["currency_code"] == payload["currency_code"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_create_transaction_from_template_zero_amount_override_success(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData
     ):
         payload = transaction_from_template_payload(
-            amount="0.00"
+            amount="0.00",
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -151,16 +214,18 @@ class TestCreateTransactionFromTemplate:
 
         assert body["date"] == payload["date"]
         assert body["amount"] == payload["amount"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_create_transaction_from_template_template_not_found(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
     ):
         response = await client.post(
             f"{API_TRANSACTIONS}/from-template/999",
-            json=transaction_from_template_payload(),
+            json=transaction_from_template_payload(account_id=created_account["id"]),
             headers=authenticated_user["headers"],
         )
 
@@ -172,11 +237,18 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData
+            created_transaction_template: TransactionTemplateData,
+            active_currency: CurrencyData
     ):
+        other_account = await create_account(
+            client,
+            account_payload(currency_code=active_currency["code"]),
+            other_authenticated_user["headers"],
+        )
+
         response = await client.post(
             f"{API_TRANSACTIONS}/from-template/{created_transaction_template['id']}",
-            json=transaction_from_template_payload(),
+            json=transaction_from_template_payload(account_id=other_account["id"]),
             headers=other_authenticated_user["headers"],
         )
 
@@ -189,7 +261,9 @@ class TestCreateTransactionFromTemplate:
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData
+            created_account: AccountData,
+            created_transaction_template: TransactionTemplateData,
+            active_currency: CurrencyData
     ):
         other_category = await create_category(
             client,
@@ -205,6 +279,7 @@ class TestCreateTransactionFromTemplate:
                 date="2026-05-25",
                 amount="115.00",
                 category_id=other_category["id"],
+                account_id=created_account["id"],
             ),
             headers=authenticated_user["headers"],
         )
@@ -217,6 +292,7 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
             archived_category: CategoryData
     ):
@@ -224,6 +300,7 @@ class TestCreateTransactionFromTemplate:
             f"{API_TRANSACTIONS}/from-template/{created_transaction_template['id']}",
             json=transaction_from_template_payload(
                 category_id=archived_category["id"],
+                account_id=created_account["id"],
             ),
             headers=authenticated_user["headers"],
         )
@@ -236,6 +313,7 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
             inactive_currency: CurrencyData
     ):
@@ -243,6 +321,7 @@ class TestCreateTransactionFromTemplate:
             f"{API_TRANSACTIONS}/from-template/{created_transaction_template['id']}",
             json=transaction_from_template_payload(
                 currency_code=inactive_currency["code"],
+                account_id=created_account["id"],
             ),
             headers=authenticated_user["headers"],
         )
@@ -255,6 +334,7 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
     ):
         response = await client.post(
@@ -263,6 +343,7 @@ class TestCreateTransactionFromTemplate:
                 currency_code="XXX",
                 date="2026-05-25",
                 amount="115.00",
+                account_id=created_account["id"],
             ),
             headers=authenticated_user["headers"],
         )
@@ -275,9 +356,10 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData
     ):
-        payload = transaction_from_template_payload()
+        payload = transaction_from_template_payload(account_id=created_account["id"])
 
         payload.pop("date")
 
@@ -295,10 +377,11 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
     ):
         response = await client.post(
             f"{API_TRANSACTIONS}/from-template/abc",
-            json=transaction_from_template_payload(),
+            json=transaction_from_template_payload(account_id=created_account["id"]),
             headers=authenticated_user["headers"],
         )
 
@@ -310,9 +393,10 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
     ):
-        payload = transaction_from_template_payload()
+        payload = transaction_from_template_payload(account_id=created_account["id"])
 
         payload.update({
             "amount": None,
@@ -337,6 +421,7 @@ class TestCreateTransactionFromTemplate:
         assert body["currency_code"] == created_transaction_template["currency_code"]
         assert body["category_id"] == created_transaction_template["category_id"]
         assert body["description"] == created_transaction_template["description"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     @pytest.mark.parametrize("payload_update, reason", [
@@ -352,11 +437,12 @@ class TestCreateTransactionFromTemplate:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
             payload_update: dict[str, object],
             reason: str,
     ):
-        payload = transaction_from_template_payload()
+        payload = transaction_from_template_payload(account_id=created_account["id"])
 
         payload.update(payload_update)
 
@@ -372,11 +458,12 @@ class TestCreateTransactionFromTemplate:
     async def test_create_transaction_from_template_without_token(
             self,
             client: AsyncClient,
+            created_account: AccountData,
             created_transaction_template: TransactionTemplateData,
     ):
         response = await client.post(
             f"{API_TRANSACTIONS}/from-template/{created_transaction_template['id']}",
-            json=transaction_from_template_payload(),
+            json=transaction_from_template_payload(account_id=created_account["id"]),
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -390,12 +477,14 @@ class TestCreateTransaction:
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             created_category: CategoryData,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=created_category["id"],
             description="Lunch",
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -416,16 +505,19 @@ class TestCreateTransaction:
         assert body["currency_code"] == payload["currency_code"]
         assert body["category_id"] == payload["category_id"]
         assert body["description"] == payload["description"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_create_transaction_without_category_success(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -445,17 +537,20 @@ class TestCreateTransaction:
         assert body["currency_code"] == payload["currency_code"]
         assert body["category_id"] is None
         assert body["description"] == payload["description"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_create_transaction_zero_amount_success(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             amount="0.00",
             currency_code=active_currency["code"],
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -472,16 +567,17 @@ class TestCreateTransaction:
         assert body["amount"] == payload["amount"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
-
     async def test_create_transaction_description_at_max_length_success(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
             description="x" * 1024,
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -496,14 +592,15 @@ class TestCreateTransaction:
 
         assert body["id"] is not None
         assert body["description"] == payload["description"]
+        assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
-
 
     async def test_create_transaction_with_other_user_category_forbidden(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             other_authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         other_category = await create_category(
@@ -517,6 +614,7 @@ class TestCreateTransaction:
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=other_category["id"],
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -532,12 +630,14 @@ class TestCreateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             archived_category: CategoryData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=archived_category["id"],
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -553,11 +653,13 @@ class TestCreateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=999,
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -573,10 +675,12 @@ class TestCreateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             inactive_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=inactive_currency["code"],
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -592,9 +696,11 @@ class TestCreateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
     ):
         payload = transaction_payload(
             currency_code="XXX",
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -610,10 +716,12 @@ class TestCreateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"].lower(),
+            account_id=created_account["id"]
         )
 
         response = await client.post(
@@ -629,6 +737,95 @@ class TestCreateTransaction:
         assert body["currency_code"] == active_currency["code"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
+    async def test_create_transaction_with_other_user_account_forbidden(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            other_authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        other_account = await create_account(
+            client,
+            account_payload(currency_code=active_currency["code"]),
+            other_authenticated_user["headers"],
+        )
+
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            account_id=other_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "detail" in response.json()
+
+    async def test_create_transaction_with_unknown_account_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            account_id=999,
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "detail" in response.json()
+
+    async def test_create_transaction_with_archived_account_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            archived_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            account_id=archived_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
+    async def test_create_transaction_currency_must_match_account(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            second_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=second_currency["code"],
+            account_id=created_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
     @pytest.mark.parametrize("payload_update, reason", [
         ({"date": "not-a-date"}, "invalid_date_format"),
         ({"date": None}, "date_null"),
@@ -640,17 +837,21 @@ class TestCreateTransaction:
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
         ({"description": "x" * 1025}, "description_too_long"),
+        ({"account_id": None}, "account_id_null"),
+        ({"account_id": "abc"}, "account_id_not_int"),
     ])
     async def test_create_transaction_validation_fails(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
             payload_update: dict[str, object],
             reason: str,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_account["id"]
         )
 
         payload.update(payload_update)
@@ -669,16 +870,19 @@ class TestCreateTransaction:
         "amount",
         "type",
         "currency_code",
+        "account_id",
     ])
     async def test_create_transaction_required_fields_missing(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
             missing_field: str,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_account["id"]
         )
 
         payload.pop(missing_field)
@@ -714,10 +918,12 @@ class TestCreateTransaction:
 async def created_transaction(
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
         active_currency: CurrencyData,
 ) -> TransactionData:
     payload = transaction_payload(
         currency_code=active_currency["code"],
+        account_id=created_account["id"]
     )
 
     return await create_transaction(
@@ -774,11 +980,18 @@ class TestGetTransactions:
             created_transaction: TransactionData,
             active_currency: CurrencyData,
     ):
+        other_account = await create_account(
+            client,
+            account_payload(currency_code=active_currency["code"]),
+            other_authenticated_user["headers"],
+        )
+
         other_transaction = await create_transaction(
             client,
             transaction_payload(
                 amount="999.00",
                 currency_code=active_currency["code"],
+                account_id=other_account["id"],
             ),
             other_authenticated_user["headers"],
         )
@@ -812,6 +1025,7 @@ class TestGetTransactions:
                 amount="200.00",
                 currency_code=active_currency["code"],
                 description="Second transaction",
+                account_id=created_transaction["account_id"],
             ),
             authenticated_user["headers"],
         )
@@ -822,6 +1036,7 @@ class TestGetTransactions:
                 amount="300.00",
                 currency_code=active_currency["code"],
                 description="Third transaction",
+                account_id=created_transaction["account_id"],
             ),
             authenticated_user["headers"],
         )
@@ -863,6 +1078,7 @@ class TestGetTransactions:
                 amount="200.00",
                 currency_code=active_currency["code"],
                 description="Second transaction",
+                account_id=created_transaction["account_id"],
             ),
             authenticated_user["headers"],
         )
@@ -873,6 +1089,7 @@ class TestGetTransactions:
                 amount="300.00",
                 currency_code=active_currency["code"],
                 description="Third transaction",
+                account_id=created_transaction["account_id"],
             ),
             authenticated_user["headers"],
         )
@@ -924,6 +1141,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         expense_transaction = await create_transaction(
@@ -932,6 +1150,7 @@ class TestGetTransactionsFilters:
                 transaction_type="EXPENSE",
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -942,6 +1161,7 @@ class TestGetTransactionsFilters:
                 transaction_type="INCOME",
                 amount="500.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -965,6 +1185,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         usd_transaction = await create_transaction(
@@ -972,6 +1193,7 @@ class TestGetTransactionsFilters:
             transaction_payload(
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -997,6 +1219,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         created_transaction = await create_transaction(
@@ -1004,6 +1227,7 @@ class TestGetTransactionsFilters:
             transaction_payload(
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1029,6 +1253,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_category: CategoryData,
             active_currency: CurrencyData,
     ):
@@ -1038,6 +1263,7 @@ class TestGetTransactionsFilters:
                 amount="100.00",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1048,6 +1274,7 @@ class TestGetTransactionsFilters:
                 amount="200.00",
                 currency_code=active_currency["code"],
                 category_id=None,
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1074,6 +1301,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         old_transaction = await create_transaction(
@@ -1082,6 +1310,7 @@ class TestGetTransactionsFilters:
                 date="2026-01-01",
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1092,6 +1321,7 @@ class TestGetTransactionsFilters:
                 date="2026-02-01",
                 amount="200.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1118,6 +1348,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         old_transaction = await create_transaction(
@@ -1126,6 +1357,7 @@ class TestGetTransactionsFilters:
                 date="2026-01-01",
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1136,6 +1368,7 @@ class TestGetTransactionsFilters:
                 date="2026-02-01",
                 amount="200.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1162,6 +1395,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         before_range_transaction = await create_transaction(
@@ -1170,6 +1404,7 @@ class TestGetTransactionsFilters:
                 date="2026-01-01",
                 amount="100.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1180,6 +1415,7 @@ class TestGetTransactionsFilters:
                 date="2026-02-15",
                 amount="200.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1190,6 +1426,7 @@ class TestGetTransactionsFilters:
                 date="2026-03-10",
                 amount="300.00",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1220,6 +1457,7 @@ class TestGetTransactionsFilters:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             created_category: CategoryData,
             active_currency: CurrencyData,
     ):
@@ -1231,6 +1469,7 @@ class TestGetTransactionsFilters:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1243,6 +1482,7 @@ class TestGetTransactionsFilters:
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1254,6 +1494,7 @@ class TestGetTransactionsFilters:
                 amount="300.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -1320,6 +1561,7 @@ class TestGetTransactionsFilters:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
+
 class TestPaginationBoundaries:
     @pytest.mark.parametrize("params, reason", [
         ({"limit": 101}, "limit_above_max"),
@@ -1355,6 +1597,7 @@ class TestPaginationBoundaries:
         )
 
         assert response.status_code == status.HTTP_200_OK
+
 
 class TestGetTransactionById:
     async def test_get_transaction_success(
@@ -1450,6 +1693,7 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             category_id=created_category["id"],
             description="Updated transaction",
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1469,6 +1713,7 @@ class TestUpdateTransaction:
         assert body["currency_code"] == payload["currency_code"]
         assert body["category_id"] == payload["category_id"]
         assert body["description"] == payload["description"]
+        assert body["account_id"] == created_transaction["account_id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_update_transaction_without_category_success(
@@ -1485,6 +1730,7 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             category_id=None,
             description="Updated without category",
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1500,6 +1746,8 @@ class TestUpdateTransaction:
         assert body["id"] == created_transaction["id"]
         assert body["category_id"] is None
         assert body["description"] == payload["description"]
+        assert body["account_id"] == created_transaction["account_id"]
+        assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_update_transaction_zero_amount_success(
             self,
@@ -1511,6 +1759,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             amount="0.00",
             currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1530,10 +1779,12 @@ class TestUpdateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_account["id"]
         )
 
         response = await client.put(
@@ -1554,6 +1805,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1584,6 +1836,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=other_category["id"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1606,6 +1859,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=archived_category["id"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1627,6 +1881,7 @@ class TestUpdateTransaction:
         payload = transaction_payload(
             currency_code=active_currency["code"],
             category_id=999,
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1647,6 +1902,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=inactive_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1666,6 +1922,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code="XXX",
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1686,6 +1943,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"].lower(),
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(
@@ -1711,6 +1969,8 @@ class TestUpdateTransaction:
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
         ({"description": "x" * 1025}, "description_too_long"),
+        ({"account_id": None}, "account_id_null"),
+        ({"account_id": "abc"}, "account_id_not_int"),
     ])
     async def test_update_transaction_validation_fails(
             self,
@@ -1723,6 +1983,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         payload.update(payload_update)
@@ -1741,6 +2002,7 @@ class TestUpdateTransaction:
         "amount",
         "type",
         "currency_code",
+        "account_id",
     ])
     async def test_update_transaction_required_fields_missing(
             self,
@@ -1752,6 +2014,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         payload.pop(missing_field)
@@ -1769,10 +2032,12 @@ class TestUpdateTransaction:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_account["id"],
         )
 
         response = await client.put(
@@ -1784,6 +2049,105 @@ class TestUpdateTransaction:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
+    async def test_update_transaction_change_account_success(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_transaction: TransactionData,
+            active_currency: CurrencyData,
+    ):
+        another_account = await create_account(
+            client,
+            account_payload(name="Cash", currency_code=active_currency["code"]),
+            authenticated_user["headers"],
+        )
+
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            account_id=another_account["id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["account_id"] == another_account["id"]
+
+    async def test_update_transaction_to_archived_account_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_transaction: TransactionData,
+            archived_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=active_currency["code"],
+            account_id=archived_account["id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
+    async def test_update_transaction_on_archived_account_allowed(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_transaction: TransactionData,
+            active_currency: CurrencyData,
+    ):
+        archive_response = await client.delete(
+            f"/api/v1/accounts/{created_transaction['account_id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert archive_response.status_code == status.HTTP_204_NO_CONTENT
+
+        payload = transaction_payload(
+            amount="777.00",
+            currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["amount"] == "777.00"
+
+    async def test_update_transaction_currency_must_match_account(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_transaction: TransactionData,
+            second_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            currency_code=second_currency["code"],
+            account_id=created_transaction["account_id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
     async def test_update_transaction_without_token(
             self,
             client: AsyncClient,
@@ -1792,6 +2156,7 @@ class TestUpdateTransaction:
     ):
         payload = transaction_payload(
             currency_code=active_currency["code"],
+            account_id=created_transaction["account_id"],
         )
 
         response = await client.put(

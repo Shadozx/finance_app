@@ -9,19 +9,6 @@ API_ACCOUNTS = "/api/v1/accounts"
 
 
 @pytest.fixture
-async def created_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
-) -> AccountData:
-    return await create_account(
-        client,
-        account_payload(currency_code=active_currency["code"]),
-        authenticated_user["headers"],
-    )
-
-
-@pytest.fixture
 async def archived_account(
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,

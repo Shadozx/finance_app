@@ -49,6 +49,16 @@ class TransactionData(TypedDict):
     category_id: int | None
     description: str | None
     user_id: int
+    account_id: int
+
+class BudgetData(TypedDict):
+    id: int
+    name: str | None
+    amount: str
+    currency_code: str
+    category_id: int
+    start_date: str
+    end_date: str
 
 class AccountData(TypedDict):
     id: int

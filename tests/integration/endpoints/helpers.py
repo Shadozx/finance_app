@@ -88,6 +88,7 @@ def transaction_payload(
         amount: str = "150.00",
         transaction_type: str = "EXPENSE",
         currency_code: str = "USD",
+        account_id: int | None = None,
         category_id: int | None = None,
         description: str | None = None,
 ) -> dict[str, object]:
@@ -98,6 +99,7 @@ def transaction_payload(
         "currency_code": currency_code,
         "category_id": category_id,
         "description": description,
+        "account_id": account_id,
     }
 
 

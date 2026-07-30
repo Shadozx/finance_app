@@ -9,8 +9,8 @@ from app.main import app
 from app.api.dependencies import get_session
 from app.models import Currency
 
-from tests.integration.endpoints.helpers import register_payload, category_payload, create_category, archive_category
-from tests.integration.endpoints.types import AuthenticatedUser, CategoryData, CurrencyData, UserData
+from tests.integration.endpoints.helpers import register_payload, category_payload, create_category, archive_category, create_account, account_payload
+from tests.integration.endpoints.types import AuthenticatedUser, CategoryData, CurrencyData, UserData, AccountData
 
 
 @pytest.fixture
@@ -192,3 +192,15 @@ async def inactive_currency(
         "symbol": currency.symbol,
         "is_active": currency.is_active,
     }
+
+@pytest.fixture
+async def created_account(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+) -> AccountData:
+    return await create_account(
+        client,
+        account_payload(currency_code=active_currency["code"]),
+        authenticated_user["headers"],
+    )

@@ -4,7 +4,8 @@ from app.repositories import (
     TransactionRepository,
     CurrencyRepository,
     CategoryRepository,
-    TransactionTemplateRepository
+    TransactionTemplateRepository,
+    AccountRepository
 )
 from app.models import Transaction, TransactionKind
 from app.schemas import (
@@ -15,6 +16,7 @@ from app.schemas import (
     UseTemplateRequest
 )
 from app.services import validators
+from app.core.exceptions import NotAllowedActionException
 
 logger = structlog.get_logger()
 
@@ -24,11 +26,13 @@ class TransactionService:
             self,
             transaction_repository: TransactionRepository,
             transaction_template_repository: TransactionTemplateRepository,
+            account_repository: AccountRepository,
             category_repository: CategoryRepository,
             currency_repository: CurrencyRepository
     ):
         self.transaction_repository = transaction_repository
         self.transaction_template_repository = transaction_template_repository
+        self.account_repository = account_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
 
@@ -40,11 +44,19 @@ class TransactionService:
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
+        account = await validators.validate_account(
+            self.account_repository, user_id, data.account_id
+        )
+
+        if account.currency_code != data.currency_code:
+            raise NotAllowedActionException("Transaction currency must match account currency")
+
         new_transaction = Transaction(
             type=data.type,
             kind=TransactionKind.REGULAR,
             amount=data.amount,
             description=data.description,
+            account_id=data.account_id,
             user_id=user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
@@ -98,12 +110,20 @@ class TransactionService:
         await validators.validate_category(self.category_repository, user_id, final_category_id)
         await validators.validate_currency(self.currency_repository, final_currency_code)
 
+        account = await validators.validate_account(
+            self.account_repository, user_id, data.account_id
+        )
+
+        if account.currency_code != final_currency_code:
+            raise NotAllowedActionException("Transaction currency must match account currency")
+
         new_transaction = Transaction(
             type=final_type,
             kind=TransactionKind.REGULAR,
             amount=final_amount,
             description=final_description,
             currency_code=final_currency_code,
+            account_id=data.account_id,
             user_id=user_id,
             category_id=final_category_id,
             date=data.date,
@@ -157,12 +177,25 @@ class TransactionService:
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
+        account_changed = data.account_id != existing_transaction.account_id
+
+        account = await validators.validate_account(
+            self.account_repository,
+            user_id,
+            data.account_id,
+            allow_archived=not account_changed,
+        )
+
+        if account.currency_code != data.currency_code:
+            raise NotAllowedActionException("Transaction currency must match account currency")
+
         existing_transaction.category_id = data.category_id
         existing_transaction.currency_code = data.currency_code
         existing_transaction.date = data.date
         existing_transaction.description = data.description
         existing_transaction.type = data.type
         existing_transaction.amount = data.amount
+        existing_transaction.account_id = data.account_id
 
         updated_transaction = await self.transaction_repository.update(existing_transaction)
 

@@ -34,12 +34,14 @@ def get_transaction_service(
     currency_repository = CurrencyRepository(session)
     transaction_repository = TransactionRepository(session)
     transaction_template_repository = TransactionTemplateRepository(session)
+    account_repository = AccountRepository(session)
 
     return TransactionService(
         transaction_repository=transaction_repository,
         transaction_template_repository=transaction_template_repository,
         category_repository=category_repository,
-        currency_repository=currency_repository
+        currency_repository=currency_repository,
+        account_repository=account_repository,
     )
 
 

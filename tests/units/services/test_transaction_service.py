@@ -6,8 +6,8 @@ from pytest_mock import MockerFixture
 
 from app.services import TransactionService, validators
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
-    TransactionTemplateRepository
-from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, TransactionTemplate
+    TransactionTemplateRepository, AccountRepository
+from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, TransactionTemplate, Account
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
 from app.core.exceptions import NotFoundException, NotAllowedActionException
@@ -122,6 +122,7 @@ class TestCreateTransaction:
             self,
             existing_transaction: Transaction,
             existing_currency: Currency,
+            existing_account: Account
     ):
         return TransactionCreate(
             type=existing_transaction.type,
@@ -129,15 +130,18 @@ class TestCreateTransaction:
             currency_code=existing_transaction.currency_code,
             description=existing_transaction.description,
             date=existing_transaction.date,
+            account_id=existing_transaction.account_id,
         )
 
     async def test_create_transaction_success(
             self,
             mocker: MockerFixture,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_currency: Currency,
             existing_category: Category,
             data: TransactionCreate
@@ -147,6 +151,7 @@ class TestCreateTransaction:
 
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
 
         created = Transaction(
             id=1,
@@ -158,12 +163,14 @@ class TestCreateTransaction:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.create.return_value = created
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
+        validate_account_spy = mocker.spy(validators, "validate_account")
 
         result = await transaction_service.create_transaction(
             data,
@@ -194,14 +201,22 @@ class TestCreateTransaction:
             existing_currency.code
         )
 
+        validate_account_spy.assert_called_once_with(
+            transaction_service.account_repository,
+            user_id,
+            existing_account.id
+        )
+
         transaction_repo_mock.create.assert_called_once()
 
     async def test_create_transaction_without_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_currency: Currency,
             data: TransactionCreate
     ):
@@ -210,6 +225,7 @@ class TestCreateTransaction:
 
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = None
+        account_repo_mock.get_by_id.return_value = existing_account
 
         created = Transaction(
             id=1,
@@ -220,6 +236,7 @@ class TestCreateTransaction:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.create.return_value = created
@@ -251,8 +268,10 @@ class TestCreateTransaction:
     async def test_create_transaction_archived_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_category: Category,
             data: TransactionCreate
     ):
@@ -261,6 +280,7 @@ class TestCreateTransaction:
         existing_category.archived_at = datetime.now(timezone.utc)
 
         category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
             await transaction_service.create_transaction(
@@ -275,8 +295,10 @@ class TestCreateTransaction:
     async def test_create_transaction_inactive_currency(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
             existing_currency: Currency,
             data: TransactionCreate
     ):
@@ -284,6 +306,7 @@ class TestCreateTransaction:
         existing_currency.is_active = False
 
         currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await transaction_service.create_transaction(
@@ -300,21 +323,24 @@ class TestCreateTransactionFromTemplate:
     @pytest.fixture
     def data(
             self,
-
+            existing_account: Account
     ):
         return UseTemplateRequest(
             amount=Decimal("500.00"),
             description="Early Morning Coffee expense",
-            date=date(2026, 3, 1)
+            date=date(2026, 3, 1),
+            account_id=existing_account.id,
         )
 
     async def test_create_transaction_from_template_success(
             self,
             mocker: MockerFixture,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_template: TransactionTemplate,
             existing_category: Category,
             data: UseTemplateRequest,
@@ -325,6 +351,7 @@ class TestCreateTransactionFromTemplate:
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
 
         created = Transaction(
             id=1,
@@ -336,6 +363,7 @@ class TestCreateTransactionFromTemplate:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.create.return_value = created
@@ -343,6 +371,7 @@ class TestCreateTransactionFromTemplate:
         validate_template_spy = mocker.spy(validators, "validate_template")
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
+        validate_account_spy = mocker.spy(validators, "validate_account")
 
         result = await transaction_service.create_transaction_from_template(
             template_id,
@@ -363,6 +392,7 @@ class TestCreateTransactionFromTemplate:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         validate_template_spy.assert_called_once_with(
@@ -382,13 +412,21 @@ class TestCreateTransactionFromTemplate:
             existing_template.currency_code
         )
 
+        validate_account_spy.assert_called_once_with(
+            transaction_service.account_repository,
+            user_id,
+            existing_account.id
+        )
+
         transaction_repo_mock.create.assert_called_once()
 
     async def test_create_transaction_from_template_without_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
+            existing_account: Account,
             existing_template: TransactionTemplate,
             data: UseTemplateRequest,
     ):
@@ -397,6 +435,7 @@ class TestCreateTransactionFromTemplate:
         template_id = existing_template.id
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
+        account_repo_mock.get_by_id.return_value = existing_account
 
         created = Transaction(
             id=1,
@@ -407,6 +446,7 @@ class TestCreateTransactionFromTemplate:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.create.return_value = created
@@ -430,6 +470,7 @@ class TestCreateTransactionFromTemplate:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.create.assert_called_once()
@@ -458,9 +499,11 @@ class TestCreateTransactionFromTemplate:
     async def test_create_transaction_archived_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_template: TransactionTemplate,
             existing_category: Category,
             data: UseTemplateRequest
@@ -471,6 +514,7 @@ class TestCreateTransactionFromTemplate:
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
             await transaction_service.create_transaction_from_template(
@@ -484,9 +528,11 @@ class TestCreateTransactionFromTemplate:
     async def test_create_transaction_inactive_currency(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
             existing_template: TransactionTemplate,
             existing_currency: Currency,
             data: UseTemplateRequest
@@ -496,6 +542,7 @@ class TestCreateTransactionFromTemplate:
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await transaction_service.create_transaction_from_template(
@@ -513,6 +560,7 @@ class TestGetUserTransactions:
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
     ):
         user_id = 1
 
@@ -526,6 +574,7 @@ class TestGetUserTransactions:
                 description="Foods",
                 user_id=user_id,
                 date=date(2026, 3, 1),
+                account_id=existing_account.id,
             ),
             Transaction(
                 id=2,
@@ -536,6 +585,7 @@ class TestGetUserTransactions:
                 description="Salary",
                 user_id=user_id,
                 date=date(2026, 3, 1),
+                account_id=existing_account.id,
             )
         ]
 
@@ -585,6 +635,7 @@ class TestUpdateTransaction:
     def data(
             self,
             existing_transaction: Transaction,
+            existing_account: Account,
     ):
         return TransactionUpdate(
             type=TransactionType.EXPENSE,
@@ -592,16 +643,19 @@ class TestUpdateTransaction:
             currency_code=existing_transaction.currency_code,
             description="Foods",
             date=date(2026, 3, 1),
+            account_id=existing_account.id
         )
 
     async def test_update_transaction_success(
             self,
             mocker: MockerFixture,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
             existing_transaction: Transaction,
+            existing_account: Account,
             existing_currency: Currency,
             existing_category: Category,
             data: TransactionUpdate
@@ -612,6 +666,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         category_repo_mock.get_by_id.return_value = existing_category
         currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
 
         updated = Transaction(
             id=existing_transaction.id,
@@ -623,12 +678,14 @@ class TestUpdateTransaction:
             description=data.description,
             date=data.date,
             user_id=existing_transaction.user_id,
+            account_id=data.account_id,
         )
         transaction_repo_mock.update.return_value = updated
 
         validate_transaction_spy = mocker.spy(validators, "validate_transaction")
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
+        validate_account_spy = mocker.spy(validators, "validate_account")
 
         result = await transaction_service.update_transaction(
             existing_transaction.id,
@@ -647,7 +704,8 @@ class TestUpdateTransaction:
             user_id=existing_transaction.user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
-            date=data.date
+            date=data.date,
+            account_id=data.account_id,
         )
 
         validate_transaction_spy.assert_called_once_with(
@@ -661,9 +719,17 @@ class TestUpdateTransaction:
             user_id,
             existing_category.id
         )
+
         validate_currency_spy.assert_called_once_with(
             transaction_service.currency_repository,
             data.currency_code
+        )
+
+        validate_account_spy.assert_called_once_with(
+            transaction_service.account_repository,
+            user_id,
+            existing_account.id,
+            allow_archived=True,
         )
 
         transaction_repo_mock.get_by_id.assert_called_once()
@@ -673,8 +739,10 @@ class TestUpdateTransaction:
     async def test_update_transaction_preserves_adjustment_kind(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
             existing_transaction: Transaction,
             existing_currency: Currency,
             data: TransactionUpdate,
@@ -685,6 +753,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_currency
         transaction_repo_mock.update.return_value = existing_transaction
+        account_repo_mock.get_by_id.return_value = existing_account
 
         await transaction_service.update_transaction(
             existing_transaction.id,
@@ -718,9 +787,11 @@ class TestUpdateTransaction:
     async def test_update_transaction_without_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_transaction: Transaction,
             existing_currency: Currency,
             data: TransactionUpdate
@@ -731,6 +802,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = None
+        account_repo_mock.get_by_id.return_value = existing_account
 
         created = Transaction(
             id=1,
@@ -741,6 +813,7 @@ class TestUpdateTransaction:
             description=data.description,
             date=data.date,
             user_id=user_id,
+            account_id=data.account_id,
         )
 
         transaction_repo_mock.update.return_value = created
@@ -761,7 +834,8 @@ class TestUpdateTransaction:
             kind=TransactionKind.REGULAR,
             category_id=data.category_id,
             user_id=user_id,
-            date=data.date
+            date=data.date,
+            account_id=data.account_id,
         )
 
         currency_repo_mock.get_by_code.assert_called_once()
@@ -773,8 +847,10 @@ class TestUpdateTransaction:
     async def test_update_transaction_archived_category(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             category_repo_mock: CategoryRepository,
+            existing_account: Account,
             existing_transaction: Transaction,
             existing_category: Category,
             data: TransactionUpdate
@@ -784,6 +860,7 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
             await transaction_service.update_transaction(
@@ -797,8 +874,10 @@ class TestUpdateTransaction:
     async def test_update_transaction_inactive_currency(
             self,
             transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
             existing_transaction: Transaction,
             existing_currency: Currency,
             data: TransactionUpdate
@@ -807,6 +886,7 @@ class TestUpdateTransaction:
 
         currency_repo_mock.get_by_code.return_value = existing_currency
         transaction_repo_mock.get_by_id.return_value = existing_transaction
+        account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await transaction_service.update_transaction(

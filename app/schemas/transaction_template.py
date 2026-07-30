@@ -73,6 +73,8 @@ class UseTemplateRequest(BaseModel):
 
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
 
+    account_id: int
+
     date: date
 
     @field_validator("amount")

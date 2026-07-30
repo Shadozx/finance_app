@@ -31,6 +31,8 @@ class Transaction(Base):
 
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
 
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
@@ -51,5 +53,6 @@ class Transaction(Base):
     __table_args__ = (
         CheckConstraint("amount >= 0", name="check_transaction_amount_non_negative"),
         Index("ix_transactions_user_id_date", "user_id", "date"),
+        Index("ix_transactions_account_id_date", "account_id", "date"),
         Index("ix_transactions_category_id","category_id"),
     )

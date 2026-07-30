@@ -13,10 +13,13 @@ from tests.integration.endpoints.helpers import (
     create_transaction,
     category_payload,
     create_category,
+    account_payload,
+    create_account,
 )
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
     CurrencyData,
+    AccountData,
 )
 
 API_SUMMARY = "/api/v1/statistics/summary"
@@ -52,6 +55,19 @@ async def second_currency(
     }
 
 
+@pytest.fixture
+async def second_account(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        second_currency: CurrencyData,
+) -> AccountData:
+    return await create_account(
+        client,
+        account_payload(name="UAH Account", currency_code=second_currency["code"]),
+        authenticated_user["headers"],
+    )
+
+
 def summaries_by_code(body: dict) -> dict[str, dict]:
     """Index the currencies list by currency_code for order-independent lookup."""
     return {c["currency_code"]: c for c in body["currencies"]}
@@ -62,6 +78,8 @@ class TestGetSummary:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            second_account: AccountData,
             active_currency: CurrencyData,
             second_currency: CurrencyData,
     ):
@@ -73,6 +91,7 @@ class TestGetSummary:
                 amount="10000.00",
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -83,6 +102,7 @@ class TestGetSummary:
                 amount="500.00",
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -93,6 +113,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -104,6 +125,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],
+                account_id=second_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -139,6 +161,8 @@ class TestGetSummary:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            second_account: AccountData,
             active_currency: CurrencyData,
             second_currency: CurrencyData,
     ):
@@ -150,6 +174,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
+                account_id=second_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -160,6 +185,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -181,6 +207,7 @@ class TestGetSummary:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         # Only an expense — income must still be present as "0.00".
@@ -191,6 +218,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -215,6 +243,7 @@ class TestGetSummary:
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             other_authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         # Our expense: 350 USD
@@ -225,9 +254,17 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
+
+        other_account = await create_account(
+            client,
+            account_payload(currency_code=active_currency["code"]),
+            other_authenticated_user["headers"],
+        )
+
         # Other user's expense in the SAME currency+type — must NOT leak into our sum.
         await create_transaction(
             client,
@@ -236,6 +273,7 @@ class TestGetSummary:
                 amount="999.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=other_account["id"]
             ),
             other_authenticated_user["headers"],
         )
@@ -356,6 +394,8 @@ class TestGetSummary:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            second_account: AccountData,
             active_currency: CurrencyData,
             second_currency: CurrencyData,
     ):
@@ -366,6 +406,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -376,6 +417,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
+                account_id=second_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -402,6 +444,7 @@ class TestGetSummary:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         # In range
@@ -412,6 +455,7 @@ class TestGetSummary:
                 amount="100.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -423,6 +467,7 @@ class TestGetSummary:
                 amount="999.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -464,6 +509,7 @@ class TestGetCategories:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         category = await create_category(
@@ -482,6 +528,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -493,6 +540,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -504,6 +552,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=None,
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -560,24 +609,40 @@ class TestGetCategories:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
-        big = await create_category(client, category_payload(name="Big"), authenticated_user["headers"])
-        small = await create_category(client, category_payload(name="Small"), authenticated_user["headers"])
+        big = await create_category(
+            client,
+            category_payload(name="Big"),
+            authenticated_user["headers"]
+        )
+        small = await create_category(
+            client,
+            category_payload(name="Small"),
+            authenticated_user["headers"]
+        )
 
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="100.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=small["id"],
+                date="2026-02-10",
+                amount="100.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=small["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="900.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=big["id"],
+                date="2026-02-11", amount="900.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=big["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -600,13 +665,18 @@ class TestGetCategories:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="120.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=None,
+                date="2026-02-10",
+                amount="120.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=None,
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -629,6 +699,7 @@ class TestGetCategories:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         category = await create_category(
@@ -639,16 +710,24 @@ class TestGetCategories:
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="1000.00", transaction_type="INCOME",
-                currency_code=active_currency["code"], category_id=category["id"],
+                date="2026-02-10",
+                amount="1000.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                category_id=category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="300.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=category["id"],
+                date="2026-02-11",
+                amount="300.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
@@ -672,26 +751,44 @@ class TestGetCategories:
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             other_authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
             active_currency: CurrencyData,
     ):
         my_category = await create_category(
-            client, category_payload(name="Mine"), authenticated_user["headers"],
+            client,
+            category_payload(name="Mine"),
+            authenticated_user["headers"],
         )
 
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-10", amount="100.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=my_category["id"],
+                date="2026-02-10",
+                amount="100.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=my_category["id"],
+                account_id=created_account["id"]
             ),
             authenticated_user["headers"],
         )
+
+        other_account = await create_account(
+            client,
+            account_payload(currency_code=active_currency["code"]),
+            other_authenticated_user["headers"],
+        )
+
         # Other user's expense in same currency, no category.
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="999.00", transaction_type="EXPENSE",
-                currency_code=active_currency["code"], category_id=None,
+                date="2026-02-11",
+                amount="999.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=None,
+                account_id=other_account["id"]
             ),
             other_authenticated_user["headers"],
         )

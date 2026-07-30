@@ -46,13 +46,15 @@ def transaction_service(
         transaction_repo_mock: TransactionRepository,
         currency_repo_mock: CurrencyRepository,
         transaction_template_repo_mock: TransactionTemplateRepository,
-        category_repo_mock: CategoryRepository
+        category_repo_mock: CategoryRepository,
+        account_repo_mock: AccountRepository,
 ):
     return TransactionService(
         transaction_repository=transaction_repo_mock,
         transaction_template_repository=transaction_template_repo_mock,
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
+        account_repository=account_repo_mock,
     )
 
 
@@ -103,6 +105,7 @@ def budget_service(
 def existing_transaction(
         existing_user: User,
         existing_currency: Currency,
+        existing_account: Account,
 ):
     return Transaction(
         id=1,
@@ -113,6 +116,7 @@ def existing_transaction(
         description="Salary",
         date=datetime.date(2026, 2, 10),
         user_id=existing_user.id,
+        account_id=existing_account.id
     )
 
 

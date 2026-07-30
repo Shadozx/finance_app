@@ -10,6 +10,8 @@ from tests.integration.endpoints.types import (
     AuthenticatedUser,
     CurrencyData,
     CategoryData,
+    BudgetData,
+    AccountData
 )
 
 API_BUDGETS = "/api/v1/budgets"
@@ -42,7 +44,7 @@ async def created_budget(
         authenticated_user: AuthenticatedUser,
         active_currency: CurrencyData,
         created_category: CategoryData,
-) -> dict:
+) -> BudgetData:
     payload = budget_payload(
         currency_code=active_currency["code"],
         category_id=created_category["id"],
@@ -123,7 +125,7 @@ class TestCreateBudget:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -253,7 +255,7 @@ class TestGetBudgets:
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
             other_authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(
             API_BUDGETS,
@@ -294,7 +296,7 @@ class TestGetBudgetById:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -317,7 +319,7 @@ class TestGetBudgetById:
             self,
             client: AsyncClient,
             other_authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -328,7 +330,7 @@ class TestGetBudgetById:
     async def test_get_budget_without_token(
             self,
             client: AsyncClient,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(f"{API_BUDGETS}/{created_budget['id']}")
 
@@ -341,7 +343,7 @@ class TestGetBudgetStatus:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}/status",
@@ -370,7 +372,7 @@ class TestGetBudgetStatus:
             self,
             client: AsyncClient,
             other_authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}/status",
@@ -381,7 +383,7 @@ class TestGetBudgetStatus:
     async def test_budget_status_without_token(
             self,
             client: AsyncClient,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.get(f"{API_BUDGETS}/{created_budget['id']}/status")
 
@@ -394,7 +396,7 @@ class TestUpdateBudget:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -434,7 +436,7 @@ class TestUpdateBudget:
             self,
             client: AsyncClient,
             other_authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
     ):
         payload = budget_payload(currency_code=active_currency["code"], category_id=1)
@@ -448,7 +450,7 @@ class TestUpdateBudget:
     async def test_update_budget_without_token(
             self,
             client: AsyncClient,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -471,7 +473,7 @@ class TestDeleteBudget:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.delete(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -500,7 +502,7 @@ class TestDeleteBudget:
             self,
             client: AsyncClient,
             other_authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.delete(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -511,7 +513,7 @@ class TestDeleteBudget:
     async def test_delete_budget_without_token(
             self,
             client: AsyncClient,
-            created_budget: dict,
+            created_budget: BudgetData,
     ):
         response = await client.delete(f"{API_BUDGETS}/{created_budget['id']}")
 
@@ -585,7 +587,7 @@ class TestBudgetEdgeCases:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -605,7 +607,7 @@ class TestBudgetEdgeCases:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -639,7 +641,7 @@ class TestBudgetEdgeCases:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -705,7 +707,8 @@ class TestBudgetStatusWithRealTransactions:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
+            created_account: AccountData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -719,6 +722,7 @@ class TestBudgetStatusWithRealTransactions:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -731,6 +735,7 @@ class TestBudgetStatusWithRealTransactions:
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -743,6 +748,7 @@ class TestBudgetStatusWithRealTransactions:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -754,6 +760,7 @@ class TestBudgetStatusWithRealTransactions:
                 amount="777.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -775,7 +782,8 @@ class TestBudgetStatusWithRealTransactions:
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
-            created_budget: dict,
+            created_budget: BudgetData,
+            created_account: AccountData,
             active_currency: CurrencyData,
             created_category: CategoryData,
     ):
@@ -789,6 +797,7 @@ class TestBudgetStatusWithRealTransactions:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=created_category["id"],
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )

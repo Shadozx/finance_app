@@ -17,6 +17,8 @@ class TransactionCreate(BaseModel):
 
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
 
+    account_id: int
+
     date: date
 
     @field_validator("amount")
@@ -51,6 +53,8 @@ class TransactionResponse(BaseModel):
     date: date
 
     user_id: int
+
+    account_id: int
 
     model_config = ConfigDict(from_attributes=True)
 
