@@ -3,8 +3,8 @@ from datetime import date
 
 import pytest
 
-from app.repositories import BudgetRepository, TransactionRepository, UserRepository
-from app.models import Budget, Transaction, TransactionType, TransactionKind, User, Category, Currency
+from app.repositories import BudgetRepository, TransactionRepository, UserRepository, AccountRepository
+from app.models import Budget, Transaction, TransactionType, TransactionKind, User, Category, Currency, Account
 
 
 @pytest.fixture
@@ -178,14 +178,20 @@ class TestGetByPeriod:
             usd_currency: Currency,
     ):
         b_mar = await budget_repository.create(Budget(
-            amount=Decimal("100.00"), currency_code=uah_currency.code,
-            category_id=category.id, user_id=user.id,
-            start_date=date(2026, 3, 1), end_date=date(2026, 3, 31),
+            amount=Decimal("100.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            start_date=date(2026, 3, 1),
+            end_date=date(2026, 3, 31),
         ))
         b_jan = await budget_repository.create(Budget(
-            amount=Decimal("100.00"), currency_code=usd_currency.code,
-            category_id=category.id, user_id=user.id,
-            start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
+            amount=Decimal("100.00"),
+            currency_code=usd_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
         ))
 
         result = await budget_repository.get_by_period(
@@ -208,9 +214,12 @@ class TestGetByPeriod:
             email="other@test.com", username="other", hashed_password="hashed",
         ))
         await budget_repository.create(Budget(
-            amount=Decimal("9999.00"), currency_code=uah_currency.code,
-            category_id=category.id, user_id=other_user.id,
-            start_date=date(2026, 7, 1), end_date=date(2026, 7, 31),
+            amount=Decimal("9999.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=other_user.id,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
         ))
 
         result = await budget_repository.get_by_period(
@@ -236,23 +245,37 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("2000.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 5),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("2000.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 5),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("1000.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 20),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("1000.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 20),
         ))
 
         spent = await transaction_repository.get_spent(
-            user.id, category.id, uah_currency.code,
-            date(2026, 7, 1), date(2026, 7, 31),
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
         )
 
         assert spent == Decimal("3000.00")
@@ -261,23 +284,37 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("500.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 5),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("500.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 5),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.INCOME, kind=TransactionKind.REGULAR, amount=Decimal("10000.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 10),
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("10000.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 10),
         ))
 
         spent = await transaction_repository.get_spent(
-            user.id, category.id, uah_currency.code,
-            date(2026, 7, 1), date(2026, 7, 31),
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
         )
 
         assert spent == Decimal("500.00")
@@ -286,34 +323,59 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
+            usd_account: Account,
             category: Category,
             uah_currency: Currency,
             usd_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("300.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 10),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("300.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("40.00"),
-            currency_code=usd_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 10),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("40.00"),
+            currency_code=usd_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=usd_account.id,
+            date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("999.00"),
-            currency_code=uah_currency.code, category_id=None,
-            user_id=user.id, date=date(2026, 7, 10),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("999.00"),
+            currency_code=uah_currency.code,
+            category_id=None,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("888.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 8, 1),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("888.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 8, 1),
         ))
 
         spent = await transaction_repository.get_spent(
-            user.id, category.id, uah_currency.code,
-            date(2026, 7, 1), date(2026, 7, 31),
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
         )
 
         assert spent == Decimal("300.00")
@@ -326,37 +388,63 @@ class TestGetSpent:
             uah_currency: Currency,
     ):
         spent = await transaction_repository.get_spent(
-            user.id, category.id, uah_currency.code,
-            date(2026, 7, 1), date(2026, 7, 31),
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
         )
 
         assert spent == 0
 
     async def test_spent_returns_only_own(
             self,
+            account_repository: AccountRepository,
             transaction_repository: TransactionRepository,
             user_repository: UserRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
         other_user = await user_repository.create(User(
             email="other2@test.com", username="other2", hashed_password="hashed",
         ))
+        other_account = await account_repository.create(
+            Account(
+                name="Other user account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id
+            )
+        )
+
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("777.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=other_user.id, date=date(2026, 7, 10),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("777.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=other_user.id,
+            account_id=other_account.id,
+            date=date(2026, 7, 10),
         ))
         await transaction_repository.create(Transaction(
-            type=TransactionType.EXPENSE, kind=TransactionKind.REGULAR, amount=Decimal("100.00"),
-            currency_code=uah_currency.code, category_id=category.id,
-            user_id=user.id, date=date(2026, 7, 10),
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            currency_code=uah_currency.code,
+            category_id=category.id,
+            user_id=user.id,
+            account_id=uah_account.id,
+            date=date(2026, 7, 10),
         ))
 
         spent = await transaction_repository.get_spent(
-            user.id, category.id, uah_currency.code,
-            date(2026, 7, 1), date(2026, 7, 31),
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
         )
 
         assert spent == Decimal("100.00")

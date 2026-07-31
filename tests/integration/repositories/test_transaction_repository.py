@@ -3,8 +3,8 @@ from datetime import date
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories import UserRepository, TransactionRepository
-from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency
+from app.repositories import UserRepository, TransactionRepository, AccountRepository
+from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency, Account
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
 
 
@@ -12,6 +12,7 @@ from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatistic
 async def transaction(
         transaction_repository: TransactionRepository,
         user: User,
+        uah_account: Account,
         category: Category,
         uah_currency: Currency,
 ):
@@ -23,6 +24,7 @@ async def transaction(
         currency_code=uah_currency.code,
         category_id=category.id,
         user_id=user.id,
+        account_id=uah_account.id,
         date=date(2025, 3, 1)
     ))
 
@@ -33,6 +35,7 @@ class TestCreate:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -44,6 +47,7 @@ class TestCreate:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2025, 3, 1)
         )
 
@@ -57,6 +61,7 @@ class TestCreate:
         assert created_transaction.currency_code == transaction.currency_code
         assert created_transaction.category_id == transaction.category_id
         assert created_transaction.user_id == transaction.user_id
+        assert created_transaction.account_id == transaction.account_id
         assert created_transaction.date == transaction.date
 
 
@@ -87,6 +92,7 @@ class TestGetByUser:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             transaction: Transaction,
             uah_currency: Currency,
     ):
@@ -97,6 +103,7 @@ class TestGetByUser:
             amount=Decimal("550.00"),
             currency_code=uah_currency.code,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2025, 3, 3)
         ))
 
@@ -107,6 +114,7 @@ class TestGetByUser:
             description="Salary",
             currency_code=uah_currency.code,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 1, 15),
         ))
 
@@ -130,6 +138,7 @@ class TestGetByUser:
             self,
             test_session: AsyncSession,
             transaction_repository: TransactionRepository,
+            account_repository: AccountRepository,
             user: User,
             transaction: Transaction,
             usd_currency: Currency,
@@ -141,6 +150,14 @@ class TestGetByUser:
             hashed_password="hashed",
         ))
 
+        other_account = await account_repository.create(
+            Account(
+                name="Other user account",
+                currency_code=usd_currency.code,
+                user_id=other_user.id
+            )
+        )
+
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
@@ -148,6 +165,7 @@ class TestGetByUser:
             description="Netflix",
             currency_code=usd_currency.code,
             user_id=other_user.id,
+            account_id=other_account.id,
             date=date(2026, 2, 15),
         ))
 
@@ -158,11 +176,13 @@ class TestGetByUser:
         assert transactions[0].id == transaction.id
         assert transactions[0].description == transaction.description
         assert transactions[0].user_id == transaction.user_id
+        assert transactions[0].account_id == transaction.account_id
 
     async def test_get_by_user_ordered_by_date_desc(
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             uah_currency: Currency,
     ):
         t_old = await transaction_repository.create(Transaction(
@@ -172,6 +192,7 @@ class TestGetByUser:
             description="Old",
             currency_code=uah_currency.code,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 1, 1),
         ))
 
@@ -182,6 +203,7 @@ class TestGetByUser:
             description="New",
             currency_code=uah_currency.code,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 3, 1),
         ))
 
@@ -192,6 +214,7 @@ class TestGetByUser:
             description="Mid",
             currency_code=uah_currency.code,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 1),
         ))
 
@@ -208,6 +231,8 @@ class TestGetByUser:
 async def transactions(
         transaction_repository: TransactionRepository,
         user: User,
+        uah_account: Account,
+        usd_account: Account,
         uah_currency: Currency,
         usd_currency: Currency,
         category: Category
@@ -220,6 +245,7 @@ async def transactions(
         currency_code=usd_currency.code,
         user_id=user.id,
         category_id=category.id,
+        account_id=usd_account.id,
         date=date(2026, 1, 15),
     ))
 
@@ -231,6 +257,7 @@ async def transactions(
         currency_code=uah_currency.code,
         user_id=user.id,
         category_id=category.id,
+        account_id=uah_account.id,
         date=date(2026, 2, 10),
     ))
 
@@ -242,6 +269,7 @@ async def transactions(
         currency_code=usd_currency.code,
         user_id=user.id,
         category_id=None,
+        account_id=usd_account.id,
         date=date(2026, 2, 15),
     ))
 
@@ -253,6 +281,7 @@ async def transactions(
         currency_code=usd_currency.code,
         user_id=user.id,
         category_id=None,
+        account_id=usd_account.id,
         date=date(2026, 3, 1),
     ))
 
@@ -264,6 +293,7 @@ async def transactions(
         currency_code=uah_currency.code,
         user_id=user.id,
         category_id=category.id,
+        account_id=uah_account.id,
         date=date(2026, 3, 10),
     ))
 
@@ -445,6 +475,7 @@ class TestGetSummary:
 
     async def test_get_summary_returns_only_own(
             self,
+            account_repository: AccountRepository,
             transaction_repository: TransactionRepository,
             user_repository: UserRepository,
             user: User,
@@ -458,6 +489,14 @@ class TestGetSummary:
             hashed_password="hashed_password",
         ))
 
+        other_account = await account_repository.create(
+            Account(
+                name="Other user account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id
+            )
+        )
+
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
@@ -466,6 +505,7 @@ class TestGetSummary:
             currency_code=uah_currency.code,
             user_id=other_user.id,
             category_id=None,
+            account_id=other_account.id,
             date=date(2026, 2, 20),
         ))
 
@@ -542,6 +582,8 @@ class TestGetSummary:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
+            usd_account: Account,
             transactions,
             category: Category,
             uah_currency: Currency,
@@ -556,6 +598,7 @@ class TestGetSummary:
                 currency_code=uah_currency.code,
                 user_id=user.id,
                 category_id=category.id,
+                account_id=uah_account.id,
                 date=date(2026, 3, 1),
             ))
 
@@ -567,6 +610,7 @@ class TestGetSummary:
             currency_code=usd_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=usd_account.id,
             date=date(2026, 1, 20),
         ))
 
@@ -592,6 +636,7 @@ class TestGetSummary:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
@@ -602,6 +647,7 @@ class TestGetSummary:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=None,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -613,6 +659,7 @@ class TestGetSummary:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=None,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -665,6 +712,7 @@ class TestGetByCategory:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -676,6 +724,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 1, 15),
         ))
 
@@ -687,6 +736,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -724,6 +774,7 @@ class TestGetByCategory:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             uah_currency: Currency,
     ):
         await transaction_repository.create(Transaction(
@@ -734,6 +785,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=None,
+            account_id=uah_account.id,
             date=date(2026, 1, 15),
         ))
 
@@ -745,6 +797,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=None,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -768,8 +821,10 @@ class TestGetByCategory:
     async def test_get_by_category_returns_only_own(
             self,
             user_repository: UserRepository,
+            account_repository: AccountRepository,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             uah_currency: Currency,
             category: Category,
     ):
@@ -779,6 +834,14 @@ class TestGetByCategory:
             hashed_password="hashed_password",
         ))
 
+        other_account = await account_repository.create(
+            Account(
+                name="Other user account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id
+            )
+        )
+
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
@@ -787,6 +850,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=other_user.id,
             category_id=None,
+            account_id=other_account.id,
             date=date(2026, 2, 20),
         ))
 
@@ -798,6 +862,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -836,6 +901,7 @@ class TestGetByCategory:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -847,6 +913,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -858,6 +925,7 @@ class TestGetByCategory:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -901,6 +969,7 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -912,6 +981,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -923,6 +993,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 15),
         ))
 
@@ -940,6 +1011,8 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
+            usd_account: Account,
             category: Category,
             uah_currency: Currency,
             usd_currency: Currency,
@@ -952,6 +1025,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -963,6 +1037,7 @@ class TestGetSpent:
             currency_code=usd_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=usd_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -974,6 +1049,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=None,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -985,6 +1061,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 5, 1),
         ))
 
@@ -1017,9 +1094,11 @@ class TestGetSpent:
 
     async def test_get_spent_returns_only_own(
             self,
+            account_repository: AccountRepository,
             transaction_repository: TransactionRepository,
             user_repository: UserRepository,
             user: User,
+            uah_account:Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -1029,6 +1108,14 @@ class TestGetSpent:
             hashed_password="hashed_password",
         ))
 
+        other_account = await account_repository.create(
+            Account(
+                name="Other user account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id
+            )
+        )
+
         await transaction_repository.create(Transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
@@ -1037,6 +1124,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=other_user.id,
+            account_id=other_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -1048,6 +1136,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             category_id=category.id,
             user_id=user.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 12),
         ))
 
@@ -1065,6 +1154,7 @@ class TestGetSpent:
             self,
             transaction_repository: TransactionRepository,
             user: User,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -1076,6 +1166,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 
@@ -1087,6 +1178,7 @@ class TestGetSpent:
             currency_code=uah_currency.code,
             user_id=user.id,
             category_id=category.id,
+            account_id=uah_account.id,
             date=date(2026, 2, 10),
         ))
 

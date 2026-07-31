@@ -31,7 +31,7 @@ class Transaction(Base):
 
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
 
-    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 

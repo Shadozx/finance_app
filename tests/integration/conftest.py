@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
-from app.models import User, Category, Currency
+from app.models import User, Category, Currency, Account
 from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository, BudgetRepository, AccountRepository
 
 
@@ -125,6 +125,43 @@ async def usd_currency(test_session):
     await test_session.refresh(currency)
 
     return currency
+
+@pytest.fixture
+async def uah_account(
+        test_session: AsyncSession,
+        user: User,
+        uah_currency: Currency,
+):
+    account = Account(
+        name="UAH Account",
+        currency_code=uah_currency.code,
+        user_id=user.id,
+    )
+
+    test_session.add(account)
+    await test_session.commit()
+    await test_session.refresh(account)
+
+    return account
+
+
+@pytest.fixture
+async def usd_account(
+        test_session: AsyncSession,
+        user: User,
+        usd_currency: Currency,
+):
+    account = Account(
+        name="USD Account",
+        currency_code=usd_currency.code,
+        user_id=user.id,
+    )
+
+    test_session.add(account)
+    await test_session.commit()
+    await test_session.refresh(account)
+
+    return account
 
 
 @pytest.fixture
