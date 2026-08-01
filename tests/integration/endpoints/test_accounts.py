@@ -2,7 +2,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from tests.integration.endpoints.helpers import account_payload, create_account
+from tests.integration.endpoints.helpers import account_payload, create_account, create_transaction, transaction_payload
 from tests.integration.endpoints.types import AuthenticatedUser, CurrencyData, AccountData
 
 API_ACCOUNTS = "/api/v1/accounts"
@@ -55,6 +55,7 @@ class TestCreateAccount:
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["created_at"] is not None
         assert body["archived_at"] is None
+        assert body["balance"] == "0.00"
 
     @pytest.mark.parametrize("name, reason", [
         ("a", "min_length_allowed"),
@@ -398,6 +399,39 @@ class TestGetAccounts:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
+    async def test_get_accounts_returns_balances(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        empty_account = await create_account(
+            client,
+            account_payload(name="Empty", currency_code=active_currency["code"]),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="500.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(API_ACCOUNTS, headers=authenticated_user["headers"])
+
+        assert response.status_code == status.HTTP_200_OK
+
+        by_id = {account["id"]: account for account in response.json()}
+
+        assert by_id[created_account["id"]]["balance"] == "500.00"
+        assert by_id[empty_account["id"]]["balance"] == "0.00"
+
     async def test_get_accounts_without_token(
             self,
             client: AsyncClient,
@@ -482,6 +516,43 @@ class TestGetAccountById:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
+
+    async def test_get_account_by_id_returns_balance(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="1000.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="300.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_ACCOUNTS}/{created_account['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["balance"] == "700.00"
 
     async def test_get_account_by_id_without_token(
             self,

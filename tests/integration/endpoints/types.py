@@ -67,3 +67,5 @@ class AccountData(TypedDict):
     currency_code: str
     created_at: str
     archived_at: str | None
+
+    balance: str

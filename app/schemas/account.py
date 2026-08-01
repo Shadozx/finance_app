@@ -1,8 +1,9 @@
 from datetime import datetime
+from decimal import Decimal
 
 from enum import Enum
 
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, field_validator, ConfigDict, field_serializer
 
 from app.schemas.validators import name_validator, currency_code_validator
 
@@ -45,4 +46,8 @@ class AccountResponse(BaseModel):
     created_at: datetime
     archived_at: datetime | None
 
-    model_config = ConfigDict(from_attributes=True)
+    balance: Decimal
+
+    @field_serializer("balance")
+    def serialize_money(self, value: Decimal) -> Decimal:
+        return value.quantize(Decimal("0.01"))

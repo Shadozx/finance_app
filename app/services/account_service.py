@@ -1,7 +1,9 @@
 import structlog
 
+from decimal import Decimal
+
 from app.models import Account
-from app.repositories import AccountRepository, CurrencyRepository
+from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
 from app.core.exceptions import ValueExistsException, NotAllowedActionException
 from app.services import validators
@@ -11,11 +13,14 @@ logger = structlog.get_logger()
 
 class AccountService:
 
-    def __init__(self,
-                 account_repository: AccountRepository,
-                 currency_repository: CurrencyRepository,
-                 ):
+    def __init__(
+            self,
+            account_repository: AccountRepository,
+            transaction_repository: TransactionRepository,
+            currency_repository: CurrencyRepository,
+    ):
         self.account_repository = account_repository
+        self.transaction_repository = transaction_repository
         self.currency_repository = currency_repository
 
     async def create_account(
@@ -38,21 +43,23 @@ class AccountService:
 
         logger.info("account_create_success", user_id=user_id, account_id=created_account.id)
 
-        return AccountResponse.model_validate(created_account)
+        return self._to_response(created_account, Decimal("0"))
 
     async def get_account(
             self,
             account_id: int,
             user_id: int
     ) -> AccountResponse:
-        account = await validators.validate_account(
+        existing_account = await validators.validate_account(
             self.account_repository,
             user_id,
             account_id,
             allow_archived=True,
         )
 
-        return AccountResponse.model_validate(account)
+        balance = await self.transaction_repository.get_balance(account_id)
+
+        return self._to_response(existing_account, balance)
 
     async def get_user_accounts(
             self,
@@ -64,7 +71,13 @@ class AccountService:
             status=status,
         )
 
-        return [AccountResponse.model_validate(account) for account in accounts]
+        balances = await self.transaction_repository.get_balances_by_account(user_id)
+
+        return [
+            self._to_response(
+                account,
+                balance=balances.get(account.id, Decimal("0"))
+            ) for account in accounts]
 
     async def update_account(
             self,
@@ -90,7 +103,9 @@ class AccountService:
 
         logger.info("account_update_success", user_id=user_id, account_id=updated_account.id)
 
-        return AccountResponse.model_validate(updated_account)
+        balance = await self.transaction_repository.get_balance(account_id)
+
+        return self._to_response(updated_account, balance)
 
     async def archive_account(
             self,
@@ -138,4 +153,17 @@ class AccountService:
 
         logger.info("account_restore_success", user_id=user_id, account_id=existing_account.id)
 
-        return AccountResponse.model_validate(existing_account)
+        balance = await self.transaction_repository.get_balance(account_id)
+
+        return self._to_response(existing_account, balance)
+
+    def _to_response(self, account: Account, balance: Decimal) -> AccountResponse:
+        return AccountResponse(
+            id=account.id,
+            name=account.name,
+            currency_code=account.currency_code,
+            balance=balance,
+            archived_at=account.archived_at,
+            created_at=account.created_at,
+            user_id=account.user_id,
+        )

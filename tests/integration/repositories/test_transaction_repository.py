@@ -1192,3 +1192,270 @@ class TestGetSpent:
         )
 
         assert spent == Decimal("100.00")
+
+class TestGetBalance:
+    async def test_get_balance_empty_account_returns_zero(
+            self,
+            transaction_repository: TransactionRepository,
+            uah_account: Account,
+    ):
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("0")
+
+    async def test_get_balance_income_adds_expense_subtracts(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("1000.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("300.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 11),
+        ))
+
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("700.00")
+
+    async def test_get_balance_includes_adjustment(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("5000.00"),
+            description="Opening balance",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 11),
+        ))
+
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("4900.00")
+
+    async def test_get_balance_includes_future_dates(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Future income",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2099, 1, 1),
+        ))
+
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("100.00")
+
+    async def test_get_balance_returns_only_own_account(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            usd_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="UAH income",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("999.00"),
+            description="USD income",
+            currency_code=usd_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=usd_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("100.00")
+
+
+class TestGetBalancesByAccount:
+    async def test_get_balances_by_account(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            usd_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("1000.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("300.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 11),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("50.00"),
+            description="Refund",
+            currency_code=usd_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=usd_account.id,
+            date=date(2026, 2, 12),
+        ))
+
+        balances = await transaction_repository.get_balances_by_account(user.id)
+
+        assert balances[uah_account.id] == Decimal("700.00")
+        assert balances[usd_account.id] == Decimal("50.00")
+
+    async def test_get_balances_by_account_skips_accounts_without_transactions(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            usd_account: Account,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        balances = await transaction_repository.get_balances_by_account(user.id)
+
+        assert balances[uah_account.id] == Decimal("100.00")
+        assert usd_account.id not in balances
+
+    async def test_get_balances_by_account_returns_only_own(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            account_repository: AccountRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+    ):
+        other_user = await user_repository.create(User(
+            email="otherbalance@test.com",
+            username="otherbalance",
+            hashed_password="hashed_password",
+        ))
+
+        other_account = await account_repository.create(Account(
+            name="Other user account",
+            currency_code=uah_currency.code,
+            user_id=other_user.id,
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("999.00"),
+            description="Other user income",
+            currency_code=uah_currency.code,
+            user_id=other_user.id,
+            category_id=None,
+            account_id=other_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Own income",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        balances = await transaction_repository.get_balances_by_account(user.id)
+
+        assert balances[uah_account.id] == Decimal("100.00")
+        assert other_account.id not in balances

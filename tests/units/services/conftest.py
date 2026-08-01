@@ -8,7 +8,8 @@ from app.services import TransactionService, CategoryService, CurrencyService, U
     BudgetService, AccountService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
     TransactionTemplateRepository, BudgetRepository, AccountRepository
-from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, Budget, Account
+from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, \
+    Budget, Account
 
 
 @pytest.fixture
@@ -39,6 +40,11 @@ def user_repo_mock(mocker: MockerFixture):
 @pytest.fixture
 def budget_repo_mock(mocker: MockerFixture):
     return mocker.AsyncMock(spec=BudgetRepository)
+
+
+@pytest.fixture
+def account_repo_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=AccountRepository)
 
 
 @pytest.fixture
@@ -96,6 +102,19 @@ def budget_service(
     return BudgetService(
         budget_repository=budget_repo_mock,
         category_repository=category_repo_mock,
+        currency_repository=currency_repo_mock,
+        transaction_repository=transaction_repo_mock,
+    )
+
+
+@pytest.fixture
+def account_service(
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository,
+        transaction_repo_mock: TransactionRepository,
+):
+    return AccountService(
+        account_repository=account_repo_mock,
         currency_repository=currency_repo_mock,
         transaction_repository=transaction_repo_mock,
     )
@@ -209,21 +228,6 @@ def zero_budget(
         start_date=datetime.date(2026, 7, 1),
         end_date=datetime.date(2026, 7, 31),
         user_id=existing_user.id,
-    )
-
-@pytest.fixture
-def account_repo_mock(mocker: MockerFixture):
-    return mocker.AsyncMock(spec=AccountRepository)
-
-
-@pytest.fixture
-def account_service(
-        account_repo_mock: AccountRepository,
-        currency_repo_mock: CurrencyRepository,
-):
-    return AccountService(
-        account_repository=account_repo_mock,
-        currency_repository=currency_repo_mock,
     )
 
 

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, Select, func, ColumnElement
+from sqlalchemy import select, Select, func, ColumnElement, case
 
 from decimal import Decimal
 
@@ -144,3 +144,47 @@ class TransactionRepository:
         Обидва не є доходом чи витратою.
         """
         return Transaction.kind == TransactionKind.REGULAR
+
+    async def get_balance(
+            self,
+            account_id: int
+    ) -> Decimal:
+        query = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        self._signed_amount(),
+                    ),
+                    Decimal("0")))
+            .where(Transaction.account_id == account_id)
+        )
+
+        return (await self.session.execute(query)).scalar_one()
+
+    async def get_balances_by_account(
+            self,
+            user_id: int
+    ) -> dict[int, Decimal]:
+        query = (
+            select(
+                Transaction.account_id,
+                    func.sum(self._signed_amount())
+            )
+            .where(Transaction.user_id == user_id)
+            .group_by(Transaction.account_id)
+        )
+
+        rows = (await self.session.execute(query)).all()
+
+        return {row[0]: row[1] for row in rows}
+
+    def _signed_amount(self) -> ColumnElement[Decimal]:
+        """Сума зі знаком: дохід додає, витрата віднімає.
+
+        Використовується для балансу рахунку, де важливий напрямок,
+        а не абсолютна величина.
+        """
+        return case(
+            (Transaction.type == TransactionType.INCOME, Transaction.amount),
+            else_=-Transaction.amount,
+        )

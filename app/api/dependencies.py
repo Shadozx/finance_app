@@ -96,10 +96,12 @@ def get_account_service(
 ) -> AccountService:
     account_repository = AccountRepository(session)
     currency_repository = CurrencyRepository(session)
+    transaction_repository = TransactionRepository(session)
 
     return AccountService(
-        account_repository,
-        currency_repository
+        account_repository=account_repository,
+        currency_repository=currency_repository,
+        transaction_repository=transaction_repository,
     )
 
 
