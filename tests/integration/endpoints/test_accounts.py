@@ -1049,3 +1049,287 @@ class TestRestoreAccount:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
+
+class TestReconcileAccount:
+    async def test_reconcile_account_positive_difference(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="1000.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "1300.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["adjusted"] is True
+        assert body["difference"] == "300.00"
+        assert body["account"]["balance"] == "1300.00"
+
+        get_response = await client.get(
+            f"{API_ACCOUNTS}/{created_account['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert get_response.json()["balance"] == "1300.00"
+
+    async def test_reconcile_account_negative_difference(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="1000.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "700.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["adjusted"] is True
+        assert body["difference"] == "-300.00"
+        assert body["account"]["balance"] == "700.00"
+
+    async def test_reconcile_account_creates_adjustment_transaction(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "500.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        transactions_response = await client.get(
+            "/api/v1/transactions",
+            headers=authenticated_user["headers"],
+        )
+
+        body = transactions_response.json()
+
+        assert len(body) == 1
+        assert body[0]["kind"] == "ADJUSTMENT"
+        assert body[0]["type"] == "INCOME"
+        assert body[0]["amount"] == "500.00"
+        assert body[0]["account_id"] == created_account["id"]
+        assert body[0]["currency_code"] == created_account["currency_code"]
+
+    async def test_reconcile_account_excluded_from_statistics(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+    ):
+        await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "5000.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            "/api/v1/statistics/summary",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["currencies"] == []
+
+    async def test_reconcile_account_no_difference(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="1000.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "1000.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["adjusted"] is False
+        assert body["difference"] == "0.00"
+        assert body["account"]["balance"] == "1000.00"
+
+        transactions_response = await client.get(
+            "/api/v1/transactions",
+            headers=authenticated_user["headers"],
+        )
+
+        assert len(transactions_response.json()) == 1
+
+    async def test_reconcile_account_to_zero(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="500.00",
+                transaction_type="INCOME",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "0"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["adjusted"] is True
+        assert body["difference"] == "-500.00"
+        assert body["account"]["balance"] == "0.00"
+
+    async def test_reconcile_account_archived_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            archived_account: AccountData,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{archived_account['id']}/reconcile",
+            json={"actual_balance": "500.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
+    async def test_reconcile_account_other_user_forbidden(
+            self,
+            client: AsyncClient,
+            other_authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "500.00"},
+            headers=other_authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "detail" in response.json()
+
+    async def test_reconcile_account_not_found(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/999/reconcile",
+            json={"actual_balance": "500.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "detail" in response.json()
+
+    @pytest.mark.parametrize("payload, reason", [
+        ({}, "missing_actual_balance"),
+        ({"actual_balance": None}, "actual_balance_null"),
+        ({"actual_balance": "abc"}, "actual_balance_not_decimal"),
+    ])
+    async def test_reconcile_account_validation_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            payload: dict[str, object],
+            reason: str,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
+        assert "detail" in response.json()
+
+    async def test_reconcile_account_invalid_id(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/abc/reconcile",
+            json={"actual_balance": "500.00"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "detail" in response.json()
+
+    async def test_reconcile_account_without_token(
+            self,
+            client: AsyncClient,
+            created_account: AccountData,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": "500.00"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "detail" in response.json()

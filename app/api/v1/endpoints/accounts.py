@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies import get_account_service, get_current_user
 from app.models import User
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, AccountReconcile, AccountReconcileResponse
 from app.services import AccountService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -80,3 +80,15 @@ async def restore_account(
         current_user: User = Depends(get_current_user),
 ):
     return await account_service.restore_account(account_id, current_user.id)
+
+@router.post(
+    "/{account_id}/reconcile",
+    response_model=AccountReconcileResponse,
+)
+async def reconcile_account(
+        account_id: int,
+        data: AccountReconcile,
+        current_user: User = Depends(get_current_user),
+        account_service: AccountService = Depends(get_account_service),
+):
+    return await account_service.reconcile_account(account_id, data, current_user.id)

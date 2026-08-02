@@ -6,7 +6,7 @@ from datetime import date
 
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
 from app.core.exceptions import ValueExistsException, NotAllowedActionException
 from app.services import validators
 
@@ -124,6 +124,62 @@ class AccountService:
         balance = await self.transaction_repository.get_balance(account_id)
 
         return self._to_response(updated_account, balance)
+
+    async def reconcile_account(
+            self,
+            account_id: int,
+            data: AccountReconcile,
+            user_id: int,
+    ) -> AccountReconcileResponse:
+        existing_account = await validators.validate_account(
+            self.account_repository,
+            user_id,
+            account_id,
+        )
+
+        current_balance = await self.transaction_repository.get_balance(account_id)
+
+        difference = data.actual_balance - current_balance
+
+        if difference == 0:
+            logger.info(
+                "account_reconcile_no_change",
+                user_id=user_id,
+                account_id=account_id,
+            )
+
+            return AccountReconcileResponse(
+                account=self._to_response(existing_account, current_balance),
+                difference=Decimal("0"),
+                adjusted=False,
+            )
+
+        adjustment = Transaction(
+            type=TransactionType.INCOME if difference > 0 else TransactionType.EXPENSE,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=abs(difference),
+            description="Balance reconciliation",
+            currency_code=existing_account.currency_code,
+            user_id=user_id,
+            category_id=None,
+            account_id=account_id,
+            date=date.today(),
+        )
+
+        await self.transaction_repository.create(adjustment)
+
+        logger.info(
+            "account_reconcile_success",
+            user_id=user_id,
+            account_id=account_id,
+            difference=str(difference),
+        )
+
+        return AccountReconcileResponse(
+            account=self._to_response(existing_account, data.actual_balance),
+            difference=difference,
+            adjusted=True,
+        )
 
     async def archive_account(
             self,

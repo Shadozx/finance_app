@@ -8,7 +8,7 @@ from pytest_mock import MockerFixture
 from app.models import Account, Currency, TransactionType, TransactionKind
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.services import AccountService, validators
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
 from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
@@ -826,3 +826,173 @@ class TestRestoreAccount:
             )
 
         account_repo_mock.restore.assert_not_called()
+
+class TestReconcileAccount:
+    async def test_reconcile_account_positive_difference(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.get_balance.return_value = Decimal("4700.00")
+
+        data = AccountReconcile(actual_balance=Decimal("5000.00"))
+
+        result = await account_service.reconcile_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.adjusted is True
+        assert result.difference == Decimal("300.00")
+        assert result.account.balance == Decimal("5000.00")
+
+        call_args = transaction_repo_mock.create.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            type=TransactionType.INCOME,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("300.00"),
+            currency_code=existing_account.currency_code,
+            account_id=existing_account.id,
+            user_id=existing_account.user_id,
+            category_id=None,
+        )
+
+    async def test_reconcile_account_negative_difference(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.get_balance.return_value = Decimal("5000.00")
+
+        data = AccountReconcile(actual_balance=Decimal("4700.00"))
+
+        result = await account_service.reconcile_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.adjusted is True
+        assert result.difference == Decimal("-300.00")
+        assert result.account.balance == Decimal("4700.00")
+
+        call_args = transaction_repo_mock.create.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("300.00"),
+        )
+
+    async def test_reconcile_account_no_difference_creates_nothing(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.get_balance.return_value = Decimal("5000.00")
+
+        data = AccountReconcile(actual_balance=Decimal("5000.00"))
+
+        result = await account_service.reconcile_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.adjusted is False
+        assert result.difference == Decimal("0")
+        assert result.account.balance == Decimal("5000.00")
+
+        transaction_repo_mock.create.assert_not_called()
+
+    async def test_reconcile_account_to_zero(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.get_balance.return_value = Decimal("500.00")
+
+        data = AccountReconcile(actual_balance=Decimal("0"))
+
+        result = await account_service.reconcile_account(
+            existing_account.id,
+            data,
+            existing_account.user_id,
+        )
+
+        assert result.adjusted is True
+        assert result.difference == Decimal("-500.00")
+        assert result.account.balance == Decimal("0")
+
+    async def test_reconcile_account_archived_fails(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        existing_account.archived_at = datetime.now(timezone.utc)
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        data = AccountReconcile(actual_balance=Decimal("5000.00"))
+
+        with pytest.raises(NotAllowedActionException, match="Archived account is not allowed to use"):
+            await account_service.reconcile_account(
+                existing_account.id,
+                data,
+                existing_account.user_id,
+            )
+
+        transaction_repo_mock.create.assert_not_called()
+
+    async def test_reconcile_account_not_found(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+    ):
+        account_repo_mock.get_by_id.return_value = None
+
+        data = AccountReconcile(actual_balance=Decimal("5000.00"))
+
+        with pytest.raises(NotFoundException, match="Account not found"):
+            await account_service.reconcile_account(999, data, 1)
+
+        transaction_repo_mock.create.assert_not_called()
+
+    async def test_reconcile_account_wrong_owner(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        wrong_user_id = existing_account.user_id + 1
+
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        data = AccountReconcile(actual_balance=Decimal("5000.00"))
+
+        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+            await account_service.reconcile_account(
+                existing_account.id,
+                data,
+                wrong_user_id,
+            )
+
+        transaction_repo_mock.create.assert_not_called()

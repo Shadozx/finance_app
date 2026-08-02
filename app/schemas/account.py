@@ -51,6 +51,10 @@ class AccountUpdate(BaseModel):
         return name_validator(v, "Account")
 
 
+class AccountReconcile(BaseModel):
+    actual_balance: Decimal
+
+
 class AccountResponse(BaseModel):
     id: int
     name: str
@@ -62,5 +66,14 @@ class AccountResponse(BaseModel):
     balance: Decimal
 
     @field_serializer("balance")
+    def serialize_money(self, value: Decimal) -> Decimal:
+        return value.quantize(Decimal("0.01"))
+
+class AccountReconcileResponse(BaseModel):
+    account: AccountResponse
+    difference: Decimal
+    adjusted: bool
+
+    @field_serializer("difference")
     def serialize_money(self, value: Decimal) -> Decimal:
         return value.quantize(Decimal("0.01"))
