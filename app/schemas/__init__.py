@@ -7,4 +7,4 @@ from .transaction_template import TransactionTemplateCreate, TransactionTemplate
     UseTemplateRequest
 from .statistics import StatisticsFilters, CategoryStatisticsFilters, CurrencySummary, SummaryResponse, SummaryPeriod, CategoryAmount, CurrencyCategories, CategorySummaryResponse
 from .budget import BudgetCreate, BudgetUpdate, BudgetResponse, BudgetFilters, BudgetStatusResponse
-from .account import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
+from .account import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind

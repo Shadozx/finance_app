@@ -2,9 +2,11 @@ import structlog
 
 from decimal import Decimal
 
-from app.models import Account
+from datetime import date
+
+from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind
 from app.core.exceptions import ValueExistsException, NotAllowedActionException
 from app.services import validators
 
@@ -39,11 +41,27 @@ class AccountService:
             user_id=user_id,
         )
 
-        created_account = await self.account_repository.create(new_account)
+        created_account = await self.account_repository.add(new_account)
+
+        initial_balance = data.initial_balance if data.initial_balance != 0 else Decimal("0")
+
+        if initial_balance != 0:
+            adjustment = Transaction(
+                account_id=created_account.id,
+                kind=TransactionKind.ADJUSTMENT if data.initial_balance_kind == InitialBalanceKind.EXISTING else TransactionKind.REGULAR,
+                type=TransactionType.EXPENSE if initial_balance < 0 else TransactionType.INCOME,
+                amount=abs(initial_balance),
+                currency_code=data.currency_code,
+                user_id=user_id,
+                date=date.today(),
+            )
+            await self.transaction_repository.add(adjustment)
+
+        await self.account_repository.commit()
 
         logger.info("account_create_success", user_id=user_id, account_id=created_account.id)
 
-        return self._to_response(created_account, Decimal("0"))
+        return self._to_response(created_account, initial_balance)
 
     async def get_account(
             self,

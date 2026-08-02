@@ -14,9 +14,22 @@ class AccountStatus(str, Enum):
     ALL = "all"
 
 
+class InitialBalanceKind(str, Enum):
+    """How to treat the opening balance of a new account.
+
+    EXISTING — the money was already there (ADJUSTMENT, excluded from stats).
+    RECEIVED — the money just arrived (REGULAR, counted as income/expense).
+    """
+    EXISTING = "EXISTING"
+    RECEIVED = "RECEIVED"
+
+
 class AccountCreate(BaseModel):
     name: str
     currency_code: str
+
+    initial_balance: Decimal = Decimal("0")
+    initial_balance_kind: InitialBalanceKind = InitialBalanceKind.EXISTING
 
     @field_validator("name")
     @classmethod

@@ -86,3 +86,18 @@ class AccountRepository:
         account.archived_at = None
 
         await self.session.commit()
+
+    async def add(self, account: Account) -> Account:
+        self.session.add(account)
+
+        await self.session.flush()
+
+        return account
+
+    async def commit(self) -> None:
+        """Commit the current unit of work.
+
+        Used when one operation spans two tables (account + its opening
+        balance transaction) and both must be written atomically.
+        """
+        await self.session.commit()

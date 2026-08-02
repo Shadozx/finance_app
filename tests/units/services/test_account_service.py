@@ -5,10 +5,10 @@ from decimal import Decimal
 import pytest
 from pytest_mock import MockerFixture
 
-from app.models import Account, Currency
+from app.models import Account, Currency, TransactionType, TransactionKind
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.services import AccountService, validators
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind
 from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
@@ -63,7 +63,7 @@ class TestCreateAccount:
             created_at=datetime.now(timezone.utc),
             archived_at=None,
         )
-        account_repo_mock.create.return_value = created
+        account_repo_mock.add.return_value = created
 
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
@@ -71,7 +71,7 @@ class TestCreateAccount:
 
         assert result == to_response(created, Decimal("0"))
 
-        call_args = account_repo_mock.create.call_args[0][0]
+        call_args = account_repo_mock.add.call_args[0][0]
         assert_model_fields(
             call_args,
             name=data.name,
@@ -89,9 +89,157 @@ class TestCreateAccount:
             data.name,
         )
 
-        account_repo_mock.create.assert_called_once()
+        account_repo_mock.add.assert_called_once()
+
+        account_repo_mock.commit.assert_called_once()
 
         transaction_repo_mock.get_balance.assert_not_called()
+
+    async def test_create_account_with_positive_existing_balance(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+        data.initial_balance = Decimal("5000.00")
+        data.initial_balance_kind = InitialBalanceKind.EXISTING
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+            archived_at=None,
+        )
+        account_repo_mock.add.return_value = created
+
+        result = await account_service.create_account(data, user_id)
+
+        assert result.balance == Decimal("5000.00")
+
+        call_args = transaction_repo_mock.add.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            type=TransactionType.INCOME,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("5000.00"),
+            currency_code=data.currency_code,
+            account_id=created.id,
+            user_id=user_id,
+        )
+
+        account_repo_mock.commit.assert_called_once()
+
+    async def test_create_account_with_positive_received_balance(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+        data.initial_balance = Decimal("5000.00")
+        data.initial_balance_kind = InitialBalanceKind.RECEIVED
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        account_repo_mock.add.return_value = created
+
+        await account_service.create_account(data, user_id)
+
+        call_args = transaction_repo_mock.add.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("5000.00"),
+        )
+
+    async def test_create_account_with_negative_balance_creates_expense(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+        data.initial_balance = Decimal("-2000.00")
+        data.initial_balance_kind = InitialBalanceKind.EXISTING
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        account_repo_mock.add.return_value = created
+
+        result = await account_service.create_account(data, user_id)
+
+        assert result.balance == Decimal("-2000.00")
+
+        call_args = transaction_repo_mock.add.call_args[0][0]
+        assert_model_fields(
+            call_args,
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.ADJUSTMENT,
+            amount=Decimal("2000.00"),
+        )
+
+    async def test_create_account_with_zero_balance_creates_no_transaction(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        user_id = 1
+        data.initial_balance = Decimal("0")
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        account_repo_mock.add.return_value = created
+
+        result = await account_service.create_account(data, user_id)
+
+        assert result.balance == Decimal("0")
+
+        transaction_repo_mock.add.assert_not_called()
+        account_repo_mock.commit.assert_called_once()
 
     async def test_create_account_duplicate_name(
             self,
@@ -111,7 +259,8 @@ class TestCreateAccount:
         with pytest.raises(ValueExistsException, match="Account with this name exists"):
             await account_service.create_account(data, user_id)
 
-        account_repo_mock.create.assert_not_called()
+        account_repo_mock.add.assert_not_called()
+        account_repo_mock.commit.assert_not_called()
 
     async def test_create_account_unknown_currency(
             self,
@@ -128,7 +277,8 @@ class TestCreateAccount:
         with pytest.raises(NotFoundException, match="Currency not found"):
             await account_service.create_account(data, user_id)
 
-        account_repo_mock.create.assert_not_called()
+        account_repo_mock.add.assert_not_called()
+        account_repo_mock.commit.assert_not_called()
 
     async def test_create_account_inactive_currency(
             self,
@@ -147,7 +297,8 @@ class TestCreateAccount:
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await account_service.create_account(data, user_id)
 
-        account_repo_mock.create.assert_not_called()
+        account_repo_mock.add.assert_not_called()
+        account_repo_mock.commit.assert_not_called()
 
 
 class TestGetAccount:

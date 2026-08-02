@@ -188,3 +188,10 @@ class TransactionRepository:
             (Transaction.type == TransactionType.INCOME, Transaction.amount),
             else_=-Transaction.amount,
         )
+
+    async def add(self, transaction: Transaction) -> Transaction:
+        self.session.add(transaction)
+
+        await self.session.flush()
+
+        return transaction

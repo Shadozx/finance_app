@@ -229,6 +229,8 @@ class TestCreateAccount:
         ({"currency_code": None}, "currency_code_null"),
         ({"currency_code": "US"}, "currency_code_too_short"),
         ({"currency_code": "USDD"}, "currency_code_too_long"),
+        ({"initial_balance": "abc"}, "initial_balance_not_decimal"),
+        ({"initial_balance_kind": "WRONG"}, "initial_balance_kind_invalid"),
     ])
     async def test_create_account_validation_fails(
             self,
@@ -274,6 +276,134 @@ class TestCreateAccount:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, missing_field
         assert "detail" in response.json()
+
+    async def test_create_account_with_existing_initial_balance(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = "5000.00"
+        payload["initial_balance_kind"] = "EXISTING"
+
+        response = await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["balance"] == "5000.00"
+
+        account_id = response.json()["id"]
+
+        get_response = await client.get(
+            f"{API_ACCOUNTS}/{account_id}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert get_response.json()["balance"] == "5000.00"
+
+    async def test_create_account_with_negative_initial_balance(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = "-2000.00"
+
+        response = await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["balance"] == "-2000.00"
+
+    async def test_create_account_existing_balance_excluded_from_statistics(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = "5000.00"
+        payload["initial_balance_kind"] = "EXISTING"
+
+        await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            "/api/v1/statistics/summary",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["currencies"] == []
+
+    async def test_create_account_received_balance_counted_in_statistics(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = "5000.00"
+        payload["initial_balance_kind"] = "RECEIVED"
+
+        await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            "/api/v1/statistics/summary",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        currencies = response.json()["currencies"]
+
+        assert len(currencies) == 1
+        assert currencies[0]["income"] == "5000.00"
+
+    async def test_create_account_initial_balance_appears_in_transactions(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            active_currency: CurrencyData,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = "5000.00"
+
+        create_response = await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        account_id = create_response.json()["id"]
+
+        response = await client.get(
+            "/api/v1/transactions",
+            headers=authenticated_user["headers"],
+        )
+
+        body = response.json()
+
+        assert len(body) == 1
+        assert body[0]["kind"] == "ADJUSTMENT"
+        assert body[0]["type"] == "INCOME"
+        assert body[0]["amount"] == "5000.00"
+        assert body[0]["account_id"] == account_id
 
     async def test_create_account_without_token(
             self,
