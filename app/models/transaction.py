@@ -2,7 +2,8 @@ import enum
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index
+import uuid
+from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.core import Base
@@ -11,6 +12,7 @@ from app.core import Base
 class TransactionType(str, enum.Enum):
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
+    TRANSFER = "TRANSFER"
 
 class TransactionKind(str, enum.Enum):
     REGULAR = "REGULAR"
@@ -39,6 +41,8 @@ class Transaction(Base):
 
     date: Mapped[date] = mapped_column(Date)
 
+    transfer_group_id: Mapped[uuid.UUID | None] = mapped_column(Uuid())
+
     @validates("amount")
     def validate_amount(self, key, value):
 
@@ -55,4 +59,5 @@ class Transaction(Base):
         Index("ix_transactions_user_id_date", "user_id", "date"),
         Index("ix_transactions_account_id_date", "account_id", "date"),
         Index("ix_transactions_category_id","category_id"),
+        Index("ix_transactions_transfer_group_id", "transfer_group_id"),
     )
