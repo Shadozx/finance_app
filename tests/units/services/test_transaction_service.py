@@ -717,12 +717,14 @@ class TestUpdateTransaction:
         validate_category_spy.assert_called_once_with(
             transaction_service.category_repository,
             user_id,
-            existing_category.id
+            existing_category.id,
+            allow_archived=False
         )
 
         validate_currency_spy.assert_called_once_with(
             transaction_service.currency_repository,
-            data.currency_code
+            data.currency_code,
+            allow_inactive=True
         )
 
         validate_account_spy.assert_called_once_with(
@@ -882,6 +884,10 @@ class TestUpdateTransaction:
             existing_currency: Currency,
             data: TransactionUpdate
     ):
+        """Switching to an inactive currency → NotAllowedActionException"""
+
+        data.currency_code = "USD"
+        existing_currency.code = "USD"
         existing_currency.is_active = False
 
         currency_repo_mock.get_by_code.return_value = existing_currency
@@ -896,3 +902,80 @@ class TestUpdateTransaction:
             )
 
         transaction_repo_mock.update.assert_not_called()
+
+    async def test_update_transaction_keeps_inactive_currency_allowed(
+            self,
+            mocker: MockerFixture,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            account_repo_mock: AccountRepository,
+            existing_transaction: Transaction,
+            existing_category: Category,
+            existing_currency: Currency,
+            existing_account: Account,
+            data: TransactionUpdate,
+    ):
+        existing_currency.is_active = False
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.update.return_value = existing_transaction
+
+        validate_currency_spy = mocker.spy(validators, "validate_currency")
+
+        await transaction_service.update_transaction(
+            existing_transaction.id,
+            data,
+            existing_transaction.user_id,
+        )
+
+        validate_currency_spy.assert_called_once_with(
+            transaction_service.currency_repository,
+            data.currency_code,
+            allow_inactive=True,
+        )
+
+        transaction_repo_mock.update.assert_called_once()
+
+    async def test_update_transaction_keeps_archived_category_allowed(
+            self,
+            mocker: MockerFixture,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            account_repo_mock: AccountRepository,
+            existing_transaction: Transaction,
+            existing_category: Category,
+            existing_currency: Currency,
+            existing_account: Account,
+            data: TransactionUpdate,
+    ):
+        existing_category.archived_at = datetime.now(timezone.utc)
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.update.return_value = existing_transaction
+
+        validate_category_spy = mocker.spy(validators, "validate_category")
+
+        await transaction_service.update_transaction(
+            existing_transaction.id,
+            data,
+            existing_transaction.user_id,
+        )
+
+        validate_category_spy.assert_called_once_with(
+            transaction_service.category_repository,
+            existing_transaction.user_id,
+            data.category_id,
+            allow_archived=True,
+        )
+
+        transaction_repo_mock.update.assert_called_once()

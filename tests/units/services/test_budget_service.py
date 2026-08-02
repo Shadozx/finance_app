@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -365,6 +365,143 @@ class TestUpdateBudget:
         assert result == BudgetResponse.model_validate(existing_budget)
         budget_repo_mock.update.assert_called_once()
 
+    async def test_update_budget_keeps_archived_category_allowed(
+            self,
+            mocker: MockerFixture,
+            budget_service: BudgetService,
+            budget_repo_mock: BudgetRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_budget: Budget,
+            existing_category: Category,
+            existing_currency: Currency,
+            data: BudgetUpdate,
+    ):
+        data.category_id = existing_budget.category_id
+        data.currency_code = existing_budget.currency_code
+
+        existing_category.archived_at = datetime.now(timezone.utc)
+
+        budget_repo_mock.find_same_budget.return_value = None
+        budget_repo_mock.get_by_id.return_value = existing_budget
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        budget_repo_mock.update.return_value = existing_budget
+
+        validate_category_spy = mocker.spy(validators, "validate_category")
+
+        await budget_service.update_budget(
+            existing_budget.id,
+            data,
+            existing_budget.user_id,
+        )
+
+        validate_category_spy.assert_called_once_with(
+            budget_service.category_repository,
+            existing_budget.user_id,
+            data.category_id,
+            allow_archived=True,
+        )
+
+        budget_repo_mock.update.assert_called_once()
+
+    async def test_update_budget_keeps_inactive_currency_allowed(
+            self,
+            mocker: MockerFixture,
+            budget_service: BudgetService,
+            budget_repo_mock: BudgetRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_budget: Budget,
+            existing_category: Category,
+            existing_currency: Currency,
+            data: BudgetUpdate,
+    ):
+        data.category_id = existing_budget.category_id
+        data.currency_code = existing_budget.currency_code
+
+        existing_currency.is_active = False
+
+        budget_repo_mock.find_same_budget.return_value = None
+        budget_repo_mock.get_by_id.return_value = existing_budget
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        budget_repo_mock.update.return_value = existing_budget
+
+        validate_currency_spy = mocker.spy(validators, "validate_currency")
+
+        await budget_service.update_budget(
+            existing_budget.id,
+            data,
+            existing_budget.user_id,
+        )
+
+        validate_currency_spy.assert_called_once_with(
+            budget_service.currency_repository,
+            data.currency_code,
+            allow_inactive=True,
+        )
+
+        budget_repo_mock.update.assert_called_once()
+
+    async def test_update_budget_to_archived_category_fails(
+            self,
+            budget_service: BudgetService,
+            budget_repo_mock: BudgetRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_budget: Budget,
+            existing_category: Category,
+            existing_currency: Currency,
+            data: BudgetUpdate,
+    ):
+        data.category_id = existing_budget.category_id + 1
+        existing_category.id = data.category_id
+        existing_category.archived_at = datetime.now(timezone.utc)
+
+        budget_repo_mock.find_same_budget.return_value = None
+        budget_repo_mock.get_by_id.return_value = existing_budget
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+
+        with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
+            await budget_service.update_budget(
+                existing_budget.id,
+                data,
+                existing_budget.user_id,
+            )
+
+        budget_repo_mock.update.assert_not_called()
+
+    async def test_update_budget_to_inactive_currency_fails(
+            self,
+            budget_service: BudgetService,
+            budget_repo_mock: BudgetRepository,
+            category_repo_mock: CategoryRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_budget: Budget,
+            existing_category: Category,
+            existing_currency: Currency,
+            data: BudgetUpdate,
+    ):
+        data.category_id = existing_budget.category_id
+        data.currency_code = "USD"
+        existing_currency.code = "USD"
+        existing_currency.is_active = False
+
+        budget_repo_mock.find_same_budget.return_value = None
+        budget_repo_mock.get_by_id.return_value = existing_budget
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+
+        with pytest.raises(NotAllowedActionException, match="Currency is not active"):
+            await budget_service.update_budget(
+                existing_budget.id,
+                data,
+                existing_budget.user_id,
+            )
+
+        budget_repo_mock.update.assert_not_called()
 
 class TestDeleteBudget:
     async def test_delete_budget_success(

@@ -88,9 +88,18 @@ class TransactionTemplateService:
         existing_template = await validators.validate_template(self.transaction_template_repository, user_id,
                                                                template_id)
 
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
+        category_changed = data.category_id != existing_template.category_id
+        currency_changed = data.currency_code != existing_template.currency_code
 
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        await validators.validate_category(
+            self.category_repository, user_id, data.category_id,
+            allow_archived=not category_changed,
+        )
+
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code,
+            allow_inactive=not currency_changed,
+        )
 
         existing_template.type = data.type
         existing_template.amount = data.amount

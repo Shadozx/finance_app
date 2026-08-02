@@ -5,6 +5,7 @@ from fastapi import status
 from tests.integration.endpoints.helpers import (
     create_category,
     category_payload,
+    archive_category
 )
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
@@ -446,6 +447,35 @@ class TestUpdateBudget:
             headers=other_authenticated_user["headers"],
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_update_budget_keeps_archived_category_allowed(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_budget: BudgetData,
+            created_category: CategoryData,
+            active_currency: CurrencyData,
+    ):
+        await archive_category(
+            client,
+            created_category["id"],
+            authenticated_user["headers"],
+        )
+
+        payload = budget_payload(
+            amount="999.00",
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+        )
+
+        response = await client.put(
+            f"{API_BUDGETS}/{created_budget['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["amount"] == "999.00"
 
     async def test_update_budget_without_token(
             self,

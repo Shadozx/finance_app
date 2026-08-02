@@ -3,8 +3,9 @@ from fastapi import status
 
 from httpx import AsyncClient
 
-from tests.integration.endpoints.types import CategoryData, CurrencyData, AuthenticatedUser, TransactionTemplateData
-from tests.integration.endpoints.helpers import transaction_template_payload, create_transaction_template
+from tests.integration.endpoints.types import CategoryData, CurrencyData, AuthenticatedUser, TransactionTemplateData, \
+    AccountData
+from tests.integration.endpoints.helpers import transaction_template_payload, create_transaction_template, archive_category
 
 API_TRANSACTION_TEMPLATES = "/api/v1/transactions/templates"
 
@@ -1118,6 +1119,46 @@ class TestUpdateTransactionTemplate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
+
+    async def test_update_template_keeps_archived_category_allowed(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_category: CategoryData,
+            active_currency: CurrencyData,
+    ):
+        created_transaction_template = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            authenticated_user["headers"],
+        )
+        await archive_category(
+            client,
+            created_category["id"],
+            authenticated_user["headers"],
+        )
+
+        payload = transaction_template_payload(
+            name="Renamed template",
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["name"] == "Renamed template"
+        assert body["category_id"] == created_category["id"]
 
     async def test_update_template_without_token(
             self,

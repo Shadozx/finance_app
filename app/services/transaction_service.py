@@ -173,11 +173,22 @@ class TransactionService:
             transaction_id
         )
 
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
-
-        await validators.validate_currency(self.currency_repository, data.currency_code)
-
+        category_changed = data.category_id != existing_transaction.category_id
+        currency_changed = data.currency_code != existing_transaction.currency_code
         account_changed = data.account_id != existing_transaction.account_id
+
+        await validators.validate_category(
+            self.category_repository,
+            user_id,
+            data.category_id,
+            allow_archived=not category_changed,
+        )
+
+        await validators.validate_currency(
+            self.currency_repository,
+            data.currency_code,
+            allow_inactive=not currency_changed,
+        )
 
         account = await validators.validate_account(
             self.account_repository,

@@ -13,7 +13,8 @@ from tests.integration.endpoints.helpers import (
     transaction_payload,
     create_transaction,
     account_payload,
-    create_account
+    create_account,
+    archive_category
 )
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
@@ -92,6 +93,7 @@ async def archived_account(
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
     return account
+
 
 @pytest.fixture
 async def second_currency(
@@ -2147,6 +2149,50 @@ class TestUpdateTransaction:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
+
+    async def test_update_transaction_keeps_archived_category_allowed(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            created_category: CategoryData,
+            active_currency: CurrencyData,
+    ):
+        created_transaction = await create_transaction(
+            client,
+            transaction_payload(
+                category_id=created_category["id"],
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await archive_category(
+            client,
+            created_category["id"],
+            authenticated_user["headers"],
+        )
+
+        payload = transaction_payload(
+            amount="777.00",
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+            account_id=created_transaction["account_id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["amount"] == "777.00"
+        assert body["category_id"] == created_category["id"]
 
     async def test_update_transaction_without_token(
             self,

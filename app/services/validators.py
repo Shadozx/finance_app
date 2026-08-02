@@ -8,7 +8,8 @@ from app.core.exceptions import NotFoundException, PermissionException, NotAllow
 async def validate_category(
         category_repository: CategoryRepository,
         user_id: int,
-        category_id: int | None
+        category_id: int | None,
+        allow_archived: bool = False,
 ) -> Category | None:
     """
     Validate category exists, is owned by user, and not archived.
@@ -38,7 +39,7 @@ async def validate_category(
     if existing_category.user_id != user_id:
         raise PermissionException("You don't have permission to this category")
 
-    if existing_category.archived_at:
+    if not allow_archived and existing_category.archived_at:
         raise NotAllowedActionException("Archived category is not allowed to use")
 
     return existing_category
@@ -46,7 +47,8 @@ async def validate_category(
 
 async def validate_currency(
         currency_repository: CurrencyRepository,
-        currency_code: str
+        currency_code: str,
+        allow_inactive: bool = False,
 ) -> Currency:
     """
     Validate currency exists and is active.
@@ -68,7 +70,7 @@ async def validate_currency(
     if not existing_currency:
         raise NotFoundException("Currency not found")
 
-    if not existing_currency.is_active:
+    if not allow_inactive and not existing_currency.is_active:
         raise NotAllowedActionException("Currency is not active")
 
     return existing_currency

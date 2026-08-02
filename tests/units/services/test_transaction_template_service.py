@@ -281,11 +281,13 @@ class TestUpdateTemplate:
         validate_category_spy.assert_called_once_with(
             transaction_template_service.category_repository,
             user_id,
-            existing_category.id
+            existing_category.id,
+            allow_archived=False,
         )
         validate_currency_spy.assert_called_once_with(
             transaction_template_service.currency_repository,
-            existing_currency.code
+            existing_currency.code,
+            allow_inactive=True,
         )
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -474,10 +476,13 @@ class TestUpdateTemplate:
             existing_currency: Currency,
             data: TransactionTemplateUpdate,
     ):
-        """Template uses inactive currency → NotAllowedActionException (smoke test)"""
+        """Switching to an inactive currency → NotAllowedActionException"""
 
         existing_template.category_id = None
         user_id = existing_template.user_id
+
+        data.currency_code = "USD"
+        existing_currency.code = "USD"
         existing_currency.is_active = False
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
@@ -487,11 +492,86 @@ class TestUpdateTemplate:
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await transaction_template_service.update_template(existing_template.id, data, user_id)
 
-        transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
-            data.name, user_id
+        transaction_template_repo_mock.update.assert_not_called()
+
+    async def test_update_template_keeps_archived_category_allowed(
+            self,
+            mocker: MockerFixture,
+            transaction_template_service: TransactionTemplateService,
+            transaction_template_repo_mock: TransactionTemplateRepository,
+            currency_repo_mock: CurrencyRepository,
+            category_repo_mock: CategoryRepository,
+            existing_template: TransactionTemplate,
+            existing_currency: Currency,
+            existing_category: Category,
+            data: TransactionTemplateUpdate,
+    ):
+        user_id = existing_template.user_id
+
+        data.category_id = existing_template.category_id
+        data.currency_code = existing_template.currency_code
+
+        existing_category.archived_at = datetime.now(timezone.utc)
+
+        transaction_template_repo_mock.get_by_user_and_name.return_value = None
+        transaction_template_repo_mock.get_by_id.return_value = existing_template
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        transaction_template_repo_mock.update.return_value = existing_template
+
+        validate_category_spy = mocker.spy(validators, "validate_category")
+
+        await transaction_template_service.update_template(
+            existing_template.id, data, user_id
         )
 
-        transaction_template_repo_mock.update.assert_not_called()
+        validate_category_spy.assert_called_once_with(
+            transaction_template_service.category_repository,
+            user_id,
+            data.category_id,
+            allow_archived=True,
+        )
+
+        transaction_template_repo_mock.update.assert_called_once()
+
+    async def test_update_template_keeps_inactive_currency_allowed(
+            self,
+            mocker: MockerFixture,
+            transaction_template_service: TransactionTemplateService,
+            transaction_template_repo_mock: TransactionTemplateRepository,
+            currency_repo_mock: CurrencyRepository,
+            category_repo_mock: CategoryRepository,
+            existing_template: TransactionTemplate,
+            existing_currency: Currency,
+            existing_category: Category,
+            data: TransactionTemplateUpdate,
+    ):
+        user_id = existing_template.user_id
+
+        data.category_id = existing_template.category_id
+        data.currency_code = existing_template.currency_code
+
+        existing_currency.is_active = False
+
+        transaction_template_repo_mock.get_by_user_and_name.return_value = None
+        transaction_template_repo_mock.get_by_id.return_value = existing_template
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        transaction_template_repo_mock.update.return_value = existing_template
+
+        validate_currency_spy = mocker.spy(validators, "validate_currency")
+
+        await transaction_template_service.update_template(
+            existing_template.id, data, user_id
+        )
+
+        validate_currency_spy.assert_called_once_with(
+            transaction_template_service.currency_repository,
+            data.currency_code,
+            allow_inactive=True,
+        )
+
+        transaction_template_repo_mock.update.assert_called_once()
 
 
 class TestDeleteTemplate:

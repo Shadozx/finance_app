@@ -32,7 +32,9 @@ class BudgetService:
             user_id: int,
     ) -> BudgetResponse:
         existing_budget = await validators.validate_budget(
-            self.budget_repository, user_id, budget_id
+            self.budget_repository,
+            user_id,
+            budget_id
         )
         return BudgetResponse.model_validate(existing_budget)
 
@@ -58,7 +60,11 @@ class BudgetService:
             user_id: int,
     ) -> BudgetResponse:
         if await self.budget_repository.find_same_budget(
-                user_id, data.category_id, data.currency_code, data.start_date, data.end_date
+                user_id,
+                data.category_id,
+                data.currency_code,
+                data.start_date,
+                data.end_date
         ):
             raise ValueExistsException("Budget for this category, currency and period already exists")
 
@@ -96,8 +102,18 @@ class BudgetService:
             self.budget_repository, user_id, budget_id
         )
 
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        category_changed = data.category_id != existing_budget.category_id
+        currency_changed = data.currency_code != existing_budget.currency_code
+
+        await validators.validate_category(
+            self.category_repository, user_id, data.category_id,
+            allow_archived=not category_changed,
+        )
+
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code,
+            allow_inactive=not currency_changed,
+        )
 
         existing_budget.name = data.name
         existing_budget.amount = data.amount
