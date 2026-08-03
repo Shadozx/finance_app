@@ -1,5 +1,7 @@
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, Select, func, ColumnElement, case
+from sqlalchemy import select, Select, func, ColumnElement, case, delete
 
 from decimal import Decimal
 
@@ -195,3 +197,34 @@ class TransactionRepository:
         await self.session.flush()
 
         return transaction
+
+    async def get_by_transfer_group(
+            self,
+            transfer_group_id: UUID,
+            user_id: int,
+    ) -> list[Transaction]:
+        query = (
+            select(Transaction)
+            .where(Transaction.transfer_group_id == transfer_group_id)
+            .where(Transaction.user_id == user_id)
+            .order_by(Transaction.type, Transaction.id)
+        )
+
+        return list((await self.session.execute(query)).scalars().all())
+
+    async def delete_by_transfer_group(
+            self,
+            transfer_group_id: UUID,
+            user_id: int,
+    ) -> None:
+        query = (
+            delete(Transaction)
+            .where(Transaction.transfer_group_id == transfer_group_id)
+            .where(Transaction.user_id == user_id)
+        )
+
+        await self.session.execute(query)
+        await self.session.commit()
+
+    async def commit(self) -> None:
+        await self.session.commit()

@@ -6,3 +6,4 @@ from .transaction_template_service import TransactionTemplateService
 from .statistics_service import StatisticsService
 from .budget_service import BudgetService
 from .account_service import AccountService
+from .transfer_service import TransferService

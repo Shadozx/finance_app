@@ -8,3 +8,4 @@ from .transaction_template import TransactionTemplateCreate, TransactionTemplate
 from .statistics import StatisticsFilters, CategoryStatisticsFilters, CurrencySummary, SummaryResponse, SummaryPeriod, CategoryAmount, CurrencyCategories, CategorySummaryResponse
 from .budget import BudgetCreate, BudgetUpdate, BudgetResponse, BudgetFilters, BudgetStatusResponse
 from .account import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
+from .transfer import TransferCreate, TransferUpdate, TransferResponse

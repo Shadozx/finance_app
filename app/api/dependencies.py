@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core import get_session, verify_token
 from app.core.exceptions import AuthenticationException
 from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, \
-    StatisticsService, BudgetService, AccountService
+    StatisticsService, BudgetService, AccountService, TransferService
 from app.repositories import UserRepository, CategoryRepository, TransactionRepository, CurrencyRepository, \
     TransactionTemplateRepository, BudgetRepository, AccountRepository
 from app.models import User
@@ -104,6 +104,16 @@ def get_account_service(
         transaction_repository=transaction_repository,
     )
 
+def get_transfer_service(
+        session: AsyncSession = Depends(get_session)
+) -> TransferService:
+    transaction_repository = TransactionRepository(session)
+    account_repository = AccountRepository(session)
+
+    return TransferService(
+        transaction_repository=transaction_repository,
+        account_repository=account_repository,
+    )
 
 security = HTTPBearer(auto_error=False)
 
