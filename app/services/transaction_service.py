@@ -173,6 +173,9 @@ class TransactionService:
             transaction_id
         )
 
+        if existing_transaction.kind == TransactionKind.TRANSFER:
+            raise NotAllowedActionException("Transfer cannot be edited one side at a time")
+
         category_changed = data.category_id != existing_transaction.category_id
         currency_changed = data.currency_code != existing_transaction.currency_code
         account_changed = data.account_id != existing_transaction.account_id
@@ -225,6 +228,19 @@ class TransactionService:
             transaction_id
         )
 
-        await self.transaction_repository.delete(existing_transaction)
+        if existing_transaction.kind == TransactionKind.TRANSFER:
+            await self.transaction_repository.delete_by_transfer_group(
+                existing_transaction.transfer_group_id,
+                user_id,
+            )
 
-        logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)
+            logger.info(
+                "transfer_delete_via_transaction_success",
+                user_id=user_id,
+                transaction_id=transaction_id,
+                transfer_group_id=str(existing_transaction.transfer_group_id),
+            )
+        else:
+            await self.transaction_repository.delete(existing_transaction)
+
+            logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)

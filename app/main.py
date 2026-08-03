@@ -4,7 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, statistics, budgets, accounts
+from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, \
+    statistics, budgets, accounts, transfers
 from app.core.config import settings, Environment
 from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
 from app.core.exceptions import AppException
@@ -45,17 +46,16 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(categories.router, prefix="/api/v1")
 app.include_router(currencies.router, prefix="/api/v1")
 app.include_router(transaction_templates.router, prefix="/api/v1")
-
 app.include_router(transactions.router, prefix="/api/v1")
+app.include_router(transfers.router, prefix="/api/v1")
 app.include_router(statistics.router, prefix="/api/v1")
-
 app.include_router(budgets.router, prefix="/api/v1")
-
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 
-app.add_exception_handler(ValidationError, validation_exception_handler) # type: ignore[arg-type]
-app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]  # Starlette types handler as (Request, Exception); ours narrows to AppException — safe, Starlette only dispatches matching type
+app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(AppException,
+                          app_exception_handler)  # type: ignore[arg-type]  # Starlette types handler as (Request, Exception); ours narrows to AppException — safe, Starlette only dispatches matching type
 app.add_exception_handler(Exception, global_exception_handler)
 
 if __name__ == "__main__":
