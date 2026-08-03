@@ -12,11 +12,13 @@ from app.core import Base
 class TransactionType(str, enum.Enum):
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
-    TRANSFER = "TRANSFER"
+
 
 class TransactionKind(str, enum.Enum):
     REGULAR = "REGULAR"
     ADJUSTMENT = "ADJUSTMENT"
+    TRANSFER = "TRANSFER"
+
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -58,6 +60,6 @@ class Transaction(Base):
         CheckConstraint("amount >= 0", name="check_transaction_amount_non_negative"),
         Index("ix_transactions_user_id_date", "user_id", "date"),
         Index("ix_transactions_account_id_date", "account_id", "date"),
-        Index("ix_transactions_category_id","category_id"),
+        Index("ix_transactions_category_id", "category_id"),
         Index("ix_transactions_transfer_group_id", "transfer_group_id"),
     )

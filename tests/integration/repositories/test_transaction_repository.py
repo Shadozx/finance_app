@@ -1,7 +1,9 @@
 from decimal import Decimal
 from datetime import date
+import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from app.repositories import UserRepository, TransactionRepository, AccountRepository
 from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency, Account
@@ -677,6 +679,69 @@ class TestGetSummary:
 
         assert totals[(uah_currency.code, TransactionType.INCOME)] == Decimal("100.00")
 
+    async def test_get_summary_excludes_transfer(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            usd_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        group_id = uuid.uuid4()
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Salary",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.TRANSFER,
+            amount=Decimal("1000.00"),
+            description="Transfer out",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            transfer_group_id=group_id,
+            date=date(2026, 2, 11),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.INCOME,
+            kind=TransactionKind.TRANSFER,
+            amount=Decimal("24.00"),
+            description="Transfer in",
+            currency_code=usd_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=usd_account.id,
+            transfer_group_id=group_id,
+            date=date(2026, 2, 11),
+        ))
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.INCOME)] == Decimal("100.00")
+
 
 class TestGetByCategory:
     async def test_get_by_category(
@@ -945,6 +1010,58 @@ class TestGetByCategory:
         assert totals[("UAH", category.id)].total == Decimal("100.00")
         assert totals[("UAH", category.id)].category_name == category.name
 
+    async def test_get_by_category_excludes_transfer(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.TRANSFER,
+            amount=Decimal("5000.00"),
+            description="Transfer out",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            # category_id is intentionally not None: a real transfer has NULL here,
+            # but then the row would be filtered out by category, not by kind —
+            # and the test would stop guarding _counts_in_totals()
+            category_id=category.id,
+            account_id=uah_account.id,
+            transfer_group_id=uuid.uuid4(),
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("100.00")
+        assert totals[("UAH", category.id)].category_name == category.name
+
 
 class TestGetSpent:
     async def test_get_spent(
@@ -1189,6 +1306,52 @@ class TestGetSpent:
             start_date=date(2026, 1, 1),
             end_date=date(2026, 3, 31),
 
+        )
+
+        assert spent == Decimal("100.00")
+
+    async def test_get_spent_excludes_transfer(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            category: Category,
+            uah_currency: Currency,
+    ):
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("100.00"),
+            description="Coffee",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        await transaction_repository.create(Transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.TRANSFER,
+            amount=Decimal("5000.00"),
+            description="Transfer out",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            # category_id is intentionally not None: a real transfer has NULL here,
+            # but then the row would be filtered out by category, not by kind —
+            # and the test would stop guarding _counts_in_totals()
+            category_id=category.id,
+            account_id=uah_account.id,
+            transfer_group_id=uuid.uuid4(),
+            date=date(2026, 2, 10),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 3, 31),
         )
 
         assert spent == Decimal("100.00")
