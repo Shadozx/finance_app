@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, field_validator, ConfigDict, model_validator, Field
 from datetime import date
 
@@ -38,6 +40,7 @@ class TransactionUpdate(TransactionCreate):
 
 class TransactionResponse(BaseModel):
     id: int
+
     amount: Decimal
 
     type: TransactionType
@@ -55,6 +58,10 @@ class TransactionResponse(BaseModel):
     user_id: int
 
     account_id: int
+
+    transfer_group_id: UUID | None = None
+
+    counterpart_account_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

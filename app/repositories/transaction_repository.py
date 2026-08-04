@@ -1,11 +1,13 @@
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, Select, func, ColumnElement, case, delete
+from sqlalchemy import select, Select, func, ColumnElement, case, delete, and_
 
 from decimal import Decimal
 
 from datetime import date
+
+from sqlalchemy.orm import aliased
 
 from app.models import Transaction, Category, TransactionType, TransactionKind
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
@@ -225,6 +227,31 @@ class TransactionRepository:
 
         await self.session.execute(query)
         await self.session.commit()
+
+    async def get_counterpart_account_ids(
+            self,
+            transfer_group_ids: list[UUID],
+            user_id: int,
+    ) -> dict[int, int]:
+        """Map transaction id -> account id of the other side of its transfer."""
+        counterpart = aliased(Transaction)
+
+        query = (
+            select(Transaction.id, counterpart.account_id)
+            .join(
+                counterpart,
+                and_(
+                    counterpart.transfer_group_id == Transaction.transfer_group_id,
+                    counterpart.id != Transaction.id,
+                ),
+            )
+            .where(Transaction.transfer_group_id.in_(transfer_group_ids))
+            .where(Transaction.user_id == user_id)
+        )
+
+        rows = (await self.session.execute(query)).all()
+
+        return {row[0]: row[1] for row in rows}
 
     async def commit(self) -> None:
         await self.session.commit()

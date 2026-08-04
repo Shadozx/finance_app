@@ -67,7 +67,7 @@ class TransactionService:
 
         logger.info("transaction_create_success", user_id=user_id, transaction_id=created_transaction.id)
 
-        return TransactionResponse.model_validate(created_transaction)
+        return self._to_response(created_transaction)
 
     async def create_transaction_from_template(
             self,
@@ -133,7 +133,7 @@ class TransactionService:
 
         logger.info("transaction_create_from_template_success", user_id=user_id, transaction_id=created_transaction.id)
 
-        return TransactionResponse.model_validate(created_transaction)
+        return self._to_response(created_transaction)
 
     async def get_transaction(
             self,
@@ -146,7 +146,15 @@ class TransactionService:
             transaction_id
         )
 
-        return TransactionResponse.model_validate(existing_transaction)
+        counterpart_account_id = None
+
+        if existing_transaction.transfer_group_id is not None:
+            counterparts = await self.transaction_repository.get_counterpart_account_ids(
+                [existing_transaction.transfer_group_id], user_id
+            )
+            counterpart_account_id = counterparts.get(existing_transaction.id)
+
+        return self._to_response(existing_transaction, counterpart_account_id)
 
     async def get_user_transactions(
             self,
@@ -155,10 +163,24 @@ class TransactionService:
             limit: int = 20,
             offset: int = 0,
     ) -> list[TransactionResponse]:
-        user_transactions = await self.transaction_repository.get_by_user(user_id, filters, limit, offset)
+        transactions = await self.transaction_repository.get_by_user(user_id, filters, limit, offset)
+
+        group_ids = [
+            transaction.transfer_group_id
+            for transaction in transactions
+            if transaction.transfer_group_id is not None
+        ]
+
+        counterparts: dict[int, int] = {}
+
+        if group_ids:
+            counterparts = await self.transaction_repository.get_counterpart_account_ids(
+                group_ids, user_id
+            )
 
         return [
-            TransactionResponse.model_validate(tr) for tr in user_transactions
+            self._to_response(transaction, counterparts.get(transaction.id))
+            for transaction in transactions
         ]
 
     async def update_transaction(
@@ -215,7 +237,7 @@ class TransactionService:
 
         logger.info("transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id)
 
-        return TransactionResponse.model_validate(updated_transaction)
+        return self._to_response(updated_transaction)
 
     async def delete_transaction(
             self,
@@ -244,3 +266,13 @@ class TransactionService:
             await self.transaction_repository.delete(existing_transaction)
 
             logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)
+
+    def _to_response(
+            self,
+            transaction: Transaction,
+            counterpart_account_id: int | None = None,
+    ) -> TransactionResponse:
+        response = TransactionResponse.model_validate(transaction)
+        response.counterpart_account_id = counterpart_account_id
+
+        return response
