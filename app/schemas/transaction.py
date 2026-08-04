@@ -77,6 +77,8 @@ class TransactionFilters(BaseModel):
 
     category_id: int | None = None
 
+    account_id: int | None = None
+
     @field_validator("currency_code")
     @classmethod
     def validate_currency_code_if_provided(cls, v: str | None) -> str | None:
