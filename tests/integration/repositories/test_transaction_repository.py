@@ -4,7 +4,6 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 from app.repositories import UserRepository, TransactionRepository, AccountRepository
 from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency, Account
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
@@ -385,6 +384,21 @@ class TestFilters:
         assert len(user_transactions) == 3
 
         assert all((start_date <= t.date <= end_date) for t in user_transactions)
+
+    async def test_filter_by_account_id(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            transactions,
+    ):
+        user_transactions = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(account_id=uah_account.id)
+        )
+
+        assert len(user_transactions) == 2
+
+        assert all(t.account_id == uah_account.id for t in user_transactions)
 
     async def test_filter_combined(
             self,
@@ -1215,7 +1229,7 @@ class TestGetSpent:
             transaction_repository: TransactionRepository,
             user_repository: UserRepository,
             user: User,
-            uah_account:Account,
+            uah_account: Account,
             category: Category,
             uah_currency: Currency,
     ):
@@ -1355,6 +1369,7 @@ class TestGetSpent:
         )
 
         assert spent == Decimal("100.00")
+
 
 class TestGetBalance:
     async def test_get_balance_empty_account_returns_zero(
@@ -1622,3 +1637,198 @@ class TestGetBalancesByAccount:
 
         assert balances[uah_account.id] == Decimal("100.00")
         assert other_account.id not in balances
+
+
+@pytest.fixture
+async def transfer(
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        usd_account: Account,
+        uah_currency: Currency,
+        usd_currency: Currency,
+):
+    """A cross-currency transfer pair: 1000 UAH out, 24 USD in."""
+    group_id = uuid.uuid4()
+
+    from_side = await transaction_repository.create(Transaction(
+        type=TransactionType.EXPENSE,
+        kind=TransactionKind.TRANSFER,
+        amount=Decimal("1000.00"),
+        description="Transfer",
+        currency_code=uah_currency.code,
+        user_id=user.id,
+        category_id=None,
+        account_id=uah_account.id,
+        transfer_group_id=group_id,
+        date=date(2026, 2, 10),
+    ))
+
+    to_side = await transaction_repository.create(Transaction(
+        type=TransactionType.INCOME,
+        kind=TransactionKind.TRANSFER,
+        amount=Decimal("24.00"),
+        description="Transfer",
+        currency_code=usd_currency.code,
+        user_id=user.id,
+        category_id=None,
+        account_id=usd_account.id,
+        transfer_group_id=group_id,
+        date=date(2026, 2, 10),
+    ))
+
+    return from_side, to_side
+
+
+class TestGetByTransferGroup:
+    async def test_get_by_transfer_group_returns_both_sides(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transfer,
+    ):
+        from_side, to_side = transfer
+
+        sides = await transaction_repository.get_by_transfer_group(
+            from_side.transfer_group_id, user.id
+        )
+
+        assert len(sides) == 2
+        assert {side.id for side in sides} == {from_side.id, to_side.id}
+
+    async def test_get_by_transfer_group_unknown_group_returns_empty(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transfer,
+    ):
+        sides = await transaction_repository.get_by_transfer_group(uuid.uuid4(), user.id)
+
+        assert sides == []
+
+    async def test_get_by_transfer_group_returns_only_own(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            transfer,
+    ):
+        from_side, _ = transfer
+
+        other_user = await user_repository.create(User(
+            email="othertransfer@test.com",
+            username="othertransfer",
+            hashed_password="hashed_password",
+        ))
+
+        sides = await transaction_repository.get_by_transfer_group(
+            from_side.transfer_group_id, other_user.id
+        )
+
+        assert sides == []
+
+
+class TestDeleteByTransferGroup:
+    async def test_delete_by_transfer_group_removes_both_sides(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transfer,
+    ):
+        from_side, to_side = transfer
+
+        await transaction_repository.delete_by_transfer_group(
+            from_side.transfer_group_id, user.id
+        )
+
+        assert await transaction_repository.get_by_id(from_side.id) is None
+        assert await transaction_repository.get_by_id(to_side.id) is None
+
+    async def test_delete_by_transfer_group_keeps_other_transactions(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transaction: Transaction,
+            transfer,
+    ):
+        from_side, _ = transfer
+
+        await transaction_repository.delete_by_transfer_group(
+            from_side.transfer_group_id, user.id
+        )
+
+        assert await transaction_repository.get_by_id(transaction.id) is not None
+
+    async def test_delete_by_transfer_group_does_not_delete_other_users_group(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            transfer,
+    ):
+        from_side, to_side = transfer
+
+        other_user = await user_repository.create(User(
+            email="otherdelete@test.com",
+            username="otherdelete",
+            hashed_password="hashed_password",
+        ))
+
+        await transaction_repository.delete_by_transfer_group(
+            from_side.transfer_group_id, other_user.id
+        )
+
+        assert await transaction_repository.get_by_id(from_side.id) is not None
+        assert await transaction_repository.get_by_id(to_side.id) is not None
+
+
+class TestGetCounterpartAccountIds:
+    async def test_get_counterpart_account_ids_maps_each_side_to_the_other(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            usd_account: Account,
+            transfer,
+    ):
+        from_side, to_side = transfer
+
+        counterparts = await transaction_repository.get_counterpart_account_ids(
+            [from_side.transfer_group_id], user.id
+        )
+
+        assert counterparts[from_side.id] == usd_account.id
+        assert counterparts[to_side.id] == uah_account.id
+
+    async def test_get_counterpart_account_ids_ignores_regular_transactions(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            transaction: Transaction,
+            transfer,
+    ):
+        from_side, _ = transfer
+
+        counterparts = await transaction_repository.get_counterpart_account_ids(
+            [from_side.transfer_group_id], user.id
+        )
+
+        assert transaction.id not in counterparts
+
+    async def test_get_counterpart_account_ids_returns_only_own(
+            self,
+            transaction_repository: TransactionRepository,
+            user_repository: UserRepository,
+            transfer,
+    ):
+        from_side, _ = transfer
+
+        other_user = await user_repository.create(User(
+            email="othercounterpart@test.com",
+            username="othercounterpart",
+            hashed_password="hashed_password",
+        ))
+
+        counterparts = await transaction_repository.get_counterpart_account_ids(
+            [from_side.transfer_group_id], other_user.id
+        )
+
+        assert counterparts == {}
