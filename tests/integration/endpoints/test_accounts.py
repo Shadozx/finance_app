@@ -8,28 +8,6 @@ from tests.integration.endpoints.types import AuthenticatedUser, CurrencyData, A
 API_ACCOUNTS = "/api/v1/accounts"
 
 
-@pytest.fixture
-async def archived_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
-) -> AccountData:
-    account = await create_account(
-        client,
-        account_payload(name="Closed Card", currency_code=active_currency["code"]),
-        authenticated_user["headers"],
-    )
-
-    response = await client.delete(
-        f"{API_ACCOUNTS}/{account['id']}",
-        headers=authenticated_user["headers"],
-    )
-
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-
-    return account
-
-
 class TestCreateAccount:
     async def test_create_account_success(
             self,
@@ -1049,6 +1027,7 @@ class TestRestoreAccount:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
+
 
 class TestReconcileAccount:
     async def test_reconcile_account_positive_difference(

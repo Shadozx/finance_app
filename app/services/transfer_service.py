@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from app.models import Account, Transaction, TransactionKind, TransactionType
-from app.repositories import AccountRepository, TransactionRepository
+from app.repositories import AccountRepository, TransactionRepository, CurrencyRepository
 from app.schemas import TransferCreate, TransferUpdate, TransferResponse
 from app.core.exceptions import NotFoundException, NotAllowedActionException
 from app.services import validators
@@ -18,9 +18,12 @@ class TransferService:
             self,
             transaction_repository: TransactionRepository,
             account_repository: AccountRepository,
+            currency_repository: CurrencyRepository,
     ):
         self.transaction_repository = transaction_repository
         self.account_repository = account_repository
+        self.currency_repository = currency_repository
+
 
     async def create_transfer(
             self,
@@ -34,6 +37,9 @@ class TransferService:
         to_account = await validators.validate_account(
             self.account_repository, user_id, data.to_account_id
         )
+
+        await validators.validate_currency(self.currency_repository, from_account.currency_code)
+        await validators.validate_currency(self.currency_repository, to_account.currency_code)
 
         self._validate_amounts(data, from_account, to_account)
 
@@ -75,7 +81,7 @@ class TransferService:
             transfer_group_id=str(transfer_group_id),
         )
 
-        return self._to_response(from_side, to_side, from_account, to_account)
+        return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def get_transfer(
             self,
@@ -92,7 +98,7 @@ class TransferService:
             self.account_repository, user_id, to_side.account_id, allow_archived=True
         )
 
-        return self._to_response(from_side, to_side, from_account, to_account)
+        return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def update_transfer(
             self,
@@ -118,6 +124,18 @@ class TransferService:
             allow_archived=data.to_account_id in current_account_ids,
         )
 
+        await validators.validate_currency(
+            self.currency_repository,
+            from_account.currency_code,
+            allow_inactive=data.from_account_id in current_account_ids,
+        )
+
+        await validators.validate_currency(
+            self.currency_repository,
+            to_account.currency_code,
+            allow_inactive=data.to_account_id in current_account_ids,
+        )
+
         self._validate_amounts(data, from_account, to_account)
 
         self._write_side(from_side, TransactionType.EXPENSE, from_account, data.from_amount, data)
@@ -131,7 +149,7 @@ class TransferService:
             transfer_group_id=str(transfer_group_id),
         )
 
-        return self._to_response(from_side, to_side, from_account, to_account)
+        return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def delete_transfer(
             self,
@@ -201,13 +219,14 @@ class TransferService:
 
     def _to_response(
             self,
+            transfer_group_id: UUID,
             from_side: Transaction,
             to_side: Transaction,
             from_account: Account,
             to_account: Account,
     ) -> TransferResponse:
         return TransferResponse(
-            transfer_group_id=from_side.transfer_group_id,
+            transfer_group_id=transfer_group_id,
             from_account_id=from_account.id,
             from_account_name=from_account.name,
             from_currency_code=from_account.currency_code,

@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from fastapi import status
 
-from tests.integration.endpoints.types import CategoryData, TransactionTemplateData, TransactionData, AccountData
+from tests.integration.endpoints.types import CategoryData, TransactionTemplateData, TransactionData, AccountData, TransferData
 
 
 def register_payload(
@@ -128,4 +128,50 @@ def account_payload(
 async def create_account(client, payload, headers) -> AccountData:
     response = await client.post("/api/v1/accounts", json=payload, headers=headers)
     assert response.status_code == status.HTTP_201_CREATED
+    return response.json()
+
+async def archive_account(
+        client: AsyncClient,
+        account_id: int,
+        headers: dict[str, str],
+) -> None:
+    response = await client.delete(
+        f"/api/v1/accounts/{account_id}",
+        headers=headers,
+    )
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def transfer_payload(
+        from_account_id: int,
+        to_account_id: int,
+        from_amount: str = "100.00",
+        to_amount: str = "100.00",
+        date: str = "2026-01-01",
+        description: str | None = None,
+) -> dict[str, object]:
+    return {
+        "from_account_id": from_account_id,
+        "to_account_id": to_account_id,
+        "from_amount": from_amount,
+        "to_amount": to_amount,
+        "date": date,
+        "description": description,
+    }
+
+
+async def create_transfer(
+        client: AsyncClient,
+        payload: dict[str, object],
+        headers: dict[str, str],
+) -> TransferData:
+    response = await client.post(
+        "/api/v1/transfers",
+        json=payload,
+        headers=headers,
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+
     return response.json()

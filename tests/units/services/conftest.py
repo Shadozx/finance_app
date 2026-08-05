@@ -5,7 +5,7 @@ import datetime
 from decimal import Decimal
 
 from app.services import TransactionService, CategoryService, CurrencyService, UserService, TransactionTemplateService, \
-    BudgetService, AccountService
+    BudgetService, AccountService, TransferService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
     TransactionTemplateRepository, BudgetRepository, AccountRepository
 from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, \
@@ -119,6 +119,17 @@ def account_service(
         transaction_repository=transaction_repo_mock,
     )
 
+@pytest.fixture
+def transfer_service(
+        transaction_repo_mock: TransactionRepository,
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository
+):
+    return TransferService(
+        transaction_repository=transaction_repo_mock,
+        account_repository=account_repo_mock,
+        currency_repository=currency_repo_mock
+    )
 
 @pytest.fixture
 def existing_transaction(
@@ -161,6 +172,14 @@ def existing_currency():
         is_active=True
     )
 
+@pytest.fixture
+def existing_usd_currency():
+    return Currency(
+        code="USD",
+        symbol="$",
+        name="US Dollar",
+        is_active=True
+    )
 
 @pytest.fixture
 def existing_template(
@@ -240,6 +259,20 @@ def existing_account(
         id=1,
         name="Monobank",
         currency_code=existing_currency.code,
+        user_id=existing_user.id,
+        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
+        archived_at=None,
+    )
+
+@pytest.fixture
+def existing_usd_account(
+        existing_user: User,
+        existing_usd_currency: Currency,
+):
+    return Account(
+        id=2,
+        name="Dollars",
+        currency_code=existing_usd_currency.code,
         user_id=existing_user.id,
         created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
         archived_at=None,

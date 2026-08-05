@@ -1,9 +1,6 @@
 import pytest
 from httpx import AsyncClient
 from fastapi import status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models import Currency
 
 from tests.integration.endpoints.helpers import (
     transaction_template_payload,
@@ -14,7 +11,7 @@ from tests.integration.endpoints.helpers import (
     create_transaction,
     account_payload,
     create_account,
-    archive_category
+    archive_category,
 )
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
@@ -22,10 +19,33 @@ from tests.integration.endpoints.types import (
     TransactionTemplateData,
     CurrencyData,
     CategoryData,
-    TransactionData
+    TransactionData,
+    TransferData
 )
 
 API_TRANSACTIONS = "/api/v1/transactions"
+
+
+@pytest.fixture
+async def created_transaction_template(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+):
+    payload = transaction_template_payload(
+        currency_code=active_currency["code"],
+    )
+
+    return await create_transaction_template(
+        client,
+        payload,
+        authenticated_user["headers"]
+    )
+
+
+def sides_by_account(body: list[dict]) -> dict[int, dict]:
+    """Index registry rows by account_id — a transfer has one row per account."""
+    return {row["account_id"]: row for row in body}
 
 
 def transaction_from_template_payload(
@@ -54,68 +74,6 @@ def transaction_from_template_payload(
         payload["account_id"] = account_id
 
     return payload
-
-
-@pytest.fixture
-async def created_transaction_template(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
-):
-    payload = transaction_template_payload(
-        currency_code=active_currency["code"],
-    )
-
-    return await create_transaction_template(
-        client,
-        payload,
-        authenticated_user["headers"]
-    )
-
-
-@pytest.fixture
-async def archived_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
-) -> AccountData:
-    account = await create_account(
-        client,
-        account_payload(name="Closed Card", currency_code=active_currency["code"]),
-        authenticated_user["headers"],
-    )
-
-    response = await client.delete(
-        f"/api/v1/accounts/{account['id']}",
-        headers=authenticated_user["headers"],
-    )
-
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-
-    return account
-
-
-@pytest.fixture
-async def second_currency(
-        test_session: AsyncSession,
-) -> CurrencyData:
-    currency = Currency(
-        code="UAH",
-        name="Ukrainian Hryvnia",
-        symbol="\u20b4",
-        is_active=True,
-    )
-
-    test_session.add(currency)
-    await test_session.commit()
-    await test_session.refresh(currency)
-
-    return {
-        "code": currency.code,
-        "name": currency.name,
-        "symbol": currency.symbol,
-        "is_active": currency.is_active,
-    }
 
 
 class TestCreateTransactionFromTemplate:
@@ -1126,6 +1084,113 @@ class TestGetTransactions:
 
         assert offset_ids.issubset(all_ids)
 
+    async def test_get_transactions_transfer_sides_with_counterpart(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            uah_account: AccountData,
+            created_transfer: TransferData,
+    ):
+        response = await client.get(
+            API_TRANSACTIONS,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert len(body) == 2
+
+        sides = sides_by_account(body)
+
+        from_side = sides[created_account["id"]]
+        to_side = sides[uah_account["id"]]
+
+        assert from_side["type"] == "EXPENSE"
+        assert from_side["kind"] == "TRANSFER"
+        assert from_side["amount"] == created_transfer["from_amount"]
+        assert from_side["currency_code"] == created_account["currency_code"]
+        assert from_side["category_id"] is None
+        assert from_side["transfer_group_id"] == created_transfer["transfer_group_id"]
+        assert from_side["counterpart_account_id"] == uah_account["id"]
+
+        assert to_side["type"] == "INCOME"
+        assert to_side["kind"] == "TRANSFER"
+        assert to_side["amount"] == created_transfer["to_amount"]
+        assert to_side["currency_code"] == uah_account["currency_code"]
+        assert to_side["transfer_group_id"] == created_transfer["transfer_group_id"]
+        assert to_side["counterpart_account_id"] == created_account["id"]
+
+    async def test_get_transactions_filter_by_account_id(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            uah_account: AccountData,
+            created_transfer: TransferData,
+    ):
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"account_id": uah_account["id"]},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert len(body) == 1
+        assert body[0]["account_id"] == uah_account["id"]
+        assert body[0]["type"] == "INCOME"
+
+    async def test_get_transactions_filter_by_account_id_excludes_others(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        another_account = await create_account(
+            client,
+            account_payload(name="Savings", currency_code=active_currency["code"]),
+            authenticated_user["headers"],
+        )
+
+        target_transaction = await create_transaction(
+            client,
+            transaction_payload(
+                amount="100.00",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        other_transaction = await create_transaction(
+            client,
+            transaction_payload(
+                amount="200.00",
+                currency_code=active_currency["code"],
+                account_id=another_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"account_id": created_account["id"]},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+        ids = {transaction["id"] for transaction in body}
+
+        assert target_transaction["id"] in ids
+        assert other_transaction["id"] not in ids
+
     async def test_get_transactions_without_token(
             self,
             client: AsyncClient,
@@ -1638,6 +1703,36 @@ class TestGetTransactionById:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
+
+    async def test_get_transaction_regular_without_counterpart(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        """Mirror of the test above: a normal transaction must not gain transfer fields."""
+        created = await create_transaction(
+            client,
+            transaction_payload(
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_TRANSACTIONS}/{created['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["kind"] == "REGULAR"
+        assert body["transfer_group_id"] is None
+        assert body["counterpart_account_id"] is None
 
     async def test_get_transaction_other_user_forbidden(
             self,
@@ -2194,6 +2289,34 @@ class TestUpdateTransaction:
         assert body["amount"] == "777.00"
         assert body["category_id"] == created_category["id"]
 
+    async def test_update_transaction_transfer_side_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            created_transfer: TransferData,
+    ):
+        """One side cannot be edited alone: the pair would go out of balance."""
+        headers = authenticated_user["headers"]
+
+        registry = await client.get(API_TRANSACTIONS, headers=headers)
+        side = sides_by_account(registry.json())[created_account["id"]]
+
+        payload = transaction_payload(
+            amount="9999.00",
+            currency_code=side["currency_code"],
+            account_id=side["account_id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{side['id']}",
+            json=payload,
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
     async def test_update_transaction_without_token(
             self,
             client: AsyncClient,
@@ -2289,6 +2412,60 @@ class TestDeleteTransaction:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
+
+    async def test_delete_transaction_transfer_side_removes_group(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            created_transfer: TransferData,
+    ):
+        headers = authenticated_user["headers"]
+
+        registry = await client.get(API_TRANSACTIONS, headers=headers)
+        side = sides_by_account(registry.json())[created_account["id"]]
+
+        response = await client.delete(
+            f"{API_TRANSACTIONS}/{side['id']}",
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        registry = await client.get(API_TRANSACTIONS, headers=headers)
+
+        assert registry.json() == []
+
+    async def test_delete_transaction_regular_removes_only_itself(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_account: AccountData,
+            active_currency: CurrencyData,
+            created_transfer: TransferData,
+    ):
+        """Mirror of the test above: the transfer branch must not fire for REGULAR."""
+        headers = authenticated_user["headers"]
+
+        regular = await create_transaction(
+            client,
+            transaction_payload(
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+            ),
+            headers,
+        )
+
+        response = await client.delete(
+            f"{API_TRANSACTIONS}/{regular['id']}",
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        registry = await client.get(API_TRANSACTIONS, headers=headers)
+
+        assert len(registry.json()) == 2
 
     async def test_delete_transaction_without_token(
             self,

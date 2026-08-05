@@ -9,8 +9,26 @@ from app.main import app
 from app.api.dependencies import get_session
 from app.models import Currency
 
-from tests.integration.endpoints.helpers import register_payload, category_payload, create_category, archive_category, create_account, account_payload
-from tests.integration.endpoints.types import AuthenticatedUser, CategoryData, CurrencyData, UserData, AccountData
+from tests.integration.endpoints.helpers import (
+    register_payload,
+    category_payload,
+    create_category,
+    archive_category,
+    create_account,
+    account_payload,
+    archive_account,
+    transfer_payload,
+    create_transfer
+)
+
+from tests.integration.endpoints.types import (
+    AuthenticatedUser,
+    CategoryData,
+    CurrencyData,
+    UserData,
+    AccountData,
+    TransferData
+)
 
 
 @pytest.fixture
@@ -193,6 +211,7 @@ async def inactive_currency(
         "is_active": currency.is_active,
     }
 
+
 @pytest.fixture
 async def created_account(
         client: AsyncClient,
@@ -202,5 +221,79 @@ async def created_account(
     return await create_account(
         client,
         account_payload(currency_code=active_currency["code"]),
+        authenticated_user["headers"],
+    )
+
+
+@pytest.fixture
+async def second_currency(
+        test_session: AsyncSession,
+) -> CurrencyData:
+    currency = Currency(
+        code="UAH",
+        name="Ukrainian Hryvnia",
+        symbol="\u20b4",
+        is_active=True,
+    )
+
+    test_session.add(currency)
+    await test_session.commit()
+    await test_session.refresh(currency)
+
+    return {
+        "code": currency.code,
+        "name": currency.name,
+        "symbol": currency.symbol,
+        "is_active": currency.is_active,
+    }
+
+
+@pytest.fixture
+async def uah_account(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        second_currency: CurrencyData,
+) -> AccountData:
+    """Second account in another currency — the far side of a transfer."""
+    return await create_account(
+        client,
+        account_payload(name="Cash", currency_code=second_currency["code"]),
+        authenticated_user["headers"],
+    )
+
+
+@pytest.fixture
+async def archived_account(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+) -> AccountData:
+    account = await create_account(
+        client,
+        account_payload(name="Closed Card", currency_code=active_currency["code"]),
+        authenticated_user["headers"],
+    )
+
+    await archive_account(client, account["id"], authenticated_user["headers"])
+
+    return account
+
+
+@pytest.fixture
+async def created_transfer(
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+) -> TransferData:
+    """Cross-currency transfer: 24 USD out, 1000 UAH in — two rows in the registry."""
+    return await create_transfer(
+        client,
+        transfer_payload(
+            from_account_id=created_account["id"],
+            to_account_id=uah_account["id"],
+            from_amount="24.00",
+            to_amount="1000.00",
+        ),
         authenticated_user["headers"],
     )

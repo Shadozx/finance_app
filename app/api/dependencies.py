@@ -109,10 +109,12 @@ def get_transfer_service(
 ) -> TransferService:
     transaction_repository = TransactionRepository(session)
     account_repository = AccountRepository(session)
+    currency_repository = CurrencyRepository(session)
 
     return TransferService(
         transaction_repository=transaction_repository,
         account_repository=account_repository,
+        currency_repository=currency_repository,
     )
 
 security = HTTPBearer(auto_error=False)

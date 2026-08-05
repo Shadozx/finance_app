@@ -250,7 +250,10 @@ class TransactionService:
             transaction_id
         )
 
-        if existing_transaction.kind == TransactionKind.TRANSFER:
+        if (
+                existing_transaction.kind == TransactionKind.TRANSFER
+                and existing_transaction.transfer_group_id is not None
+        ):
             await self.transaction_repository.delete_by_transfer_group(
                 existing_transaction.transfer_group_id,
                 user_id,

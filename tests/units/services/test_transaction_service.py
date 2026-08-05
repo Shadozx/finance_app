@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -63,6 +64,33 @@ class TestGetTransaction:
 
         transaction_repo_mock.get_by_id.assert_called_once()
 
+    async def test_get_transaction_transfer_includes_counterpart(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            existing_transaction: Transaction,
+    ):
+        group_id = uuid.uuid4()
+        existing_transaction.kind = TransactionKind.TRANSFER
+        existing_transaction.transfer_group_id = group_id
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_repo_mock.get_counterpart_account_ids.return_value = {
+            existing_transaction.id: 777
+        }
+
+        result = await transaction_service.get_transaction(
+            existing_transaction.id,
+            existing_transaction.user_id,
+        )
+
+        assert result.counterpart_account_id == 777
+
+        transaction_repo_mock.get_counterpart_account_ids.assert_called_once_with(
+            [group_id],
+            existing_transaction.user_id,
+        )
+
 
 class TestDeleteTransaction:
     async def test_delete_transaction_success(
@@ -113,6 +141,47 @@ class TestDeleteTransaction:
         transaction_repo_mock.get_by_id.assert_called_once()
 
         transaction_repo_mock.delete.assert_not_called()
+
+    async def test_delete_transaction_transfer_removes_whole_group(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            existing_transaction: Transaction,
+    ):
+        group_id = uuid.uuid4()
+        existing_transaction.kind = TransactionKind.TRANSFER
+        existing_transaction.transfer_group_id = group_id
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+
+        await transaction_service.delete_transaction(
+            existing_transaction.id,
+            existing_transaction.user_id,
+        )
+
+        transaction_repo_mock.delete_by_transfer_group.assert_called_once_with(
+            group_id,
+            existing_transaction.user_id,
+        )
+
+        transaction_repo_mock.delete.assert_not_called()
+
+    async def test_delete_transaction_regular_does_not_touch_transfer_group(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            existing_transaction: Transaction,
+    ):
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+
+        await transaction_service.delete_transaction(
+            existing_transaction.id,
+            existing_transaction.user_id,
+        )
+
+        transaction_repo_mock.delete.assert_called_once()
+
+        transaction_repo_mock.delete_by_transfer_group.assert_not_called()
 
 
 class TestCreateTransaction:
@@ -628,6 +697,80 @@ class TestGetUserTransactions:
 
         transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
 
+    async def test_get_user_transactions_maps_counterpart_only_to_transfers(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        user_id = 1
+        group_id = uuid.uuid4()
+
+        regular = Transaction(
+            id=1,
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            amount=Decimal("500.00"),
+            currency_code="UAH",
+            description="Foods",
+            user_id=user_id,
+            date=date(2026, 3, 1),
+            account_id=existing_account.id,
+        )
+
+        transfer_side = Transaction(
+            id=2,
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.TRANSFER,
+            amount=Decimal("1000.00"),
+            currency_code="UAH",
+            description="Transfer out",
+            user_id=user_id,
+            date=date(2026, 3, 1),
+            account_id=existing_account.id,
+            transfer_group_id=group_id,
+        )
+
+        transaction_repo_mock.get_by_user.return_value = [regular, transfer_side]
+        transaction_repo_mock.get_counterpart_account_ids.return_value = {transfer_side.id: 777}
+
+        result = await transaction_service.get_user_transactions(
+            user_id=user_id, filters=TransactionFilters(), limit=20, offset=0
+        )
+
+        assert result[0].counterpart_account_id is None
+        assert result[1].counterpart_account_id == 777
+
+        transaction_repo_mock.get_counterpart_account_ids.assert_called_once_with(
+            [group_id], user_id
+        )
+
+    async def test_get_user_transactions_without_transfers_skips_counterpart_query(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            existing_account: Account,
+    ):
+        transaction_repo_mock.get_by_user.return_value = [
+            Transaction(
+                id=1,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("500.00"),
+                currency_code="UAH",
+                description="Foods",
+                user_id=1,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            )
+        ]
+
+        await transaction_service.get_user_transactions(
+            user_id=1, filters=TransactionFilters(), limit=20, offset=0
+        )
+
+        transaction_repo_mock.get_counterpart_account_ids.assert_not_called()
+
 
 class TestUpdateTransaction:
 
@@ -979,3 +1122,27 @@ class TestUpdateTransaction:
         )
 
         transaction_repo_mock.update.assert_called_once()
+
+    async def test_update_transaction_transfer_rejected(
+            self,
+            transaction_service: TransactionService,
+            transaction_repo_mock: TransactionRepository,
+            category_repo_mock: CategoryRepository,
+            existing_transaction: Transaction,
+            data: TransactionUpdate,
+    ):
+        existing_transaction.kind = TransactionKind.TRANSFER
+        existing_transaction.transfer_group_id = uuid.uuid4()
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+
+        with pytest.raises(NotAllowedActionException, match="Transfer cannot be edited one side at a time"):
+            await transaction_service.update_transaction(
+                existing_transaction.id,
+                data,
+                existing_transaction.user_id,
+            )
+
+        transaction_repo_mock.update.assert_not_called()
+
+        category_repo_mock.get_by_id.assert_not_called()
