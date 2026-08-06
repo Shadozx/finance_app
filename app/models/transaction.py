@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import uuid
 from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index, Uuid
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
 
@@ -31,9 +31,13 @@ class Transaction(Base):
 
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
 
-    description: Mapped[str | None] = mapped_column(String(1024))
-
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
+
+    settled_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+
+    settled_currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
+
+    description: Mapped[str | None] = mapped_column(String(1024))
 
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
 
@@ -45,19 +49,19 @@ class Transaction(Base):
 
     transfer_group_id: Mapped[uuid.UUID | None] = mapped_column(Uuid())
 
-    @validates("amount")
-    def validate_amount(self, key, value):
+    @validates("amount", "settled_amount")
+    def validate_amounts(self, key, value):
 
         if value is None:
-            raise ValueError("Amount is required")
-
+            raise ValueError(f"{key} is required")
         if value < 0:
-            raise ValueError("Amount cannot be negative")
+            raise ValueError(f"{key} cannot be negative")
 
         return value
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="check_transaction_amount_non_negative"),
+        CheckConstraint("settled_amount >= 0", name="check_transaction_settled_amount_non_negative"),
         Index("ix_transactions_user_id_date", "user_id", "date"),
         Index("ix_transactions_account_id_date", "account_id", "date"),
         Index("ix_transactions_category_id", "category_id"),

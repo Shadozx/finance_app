@@ -2,5 +2,7 @@
 <project version="4">
   <component name="SqlDialectMappings">
     <file url="file://$PROJECT_DIR$/alembic/versions/e916b5746c68_seed_currencies.py" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/alembic/versions/ec935c6ee93e_add_settled_amount_and_currency_to_.py" dialect="GenericSQL" />
+    <file url="PROJECT" dialect="PostgreSQL" />
   </component>
 </project>
