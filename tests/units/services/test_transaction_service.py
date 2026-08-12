@@ -12,7 +12,7 @@ from app.models import Transaction, TransactionType, TransactionKind, Currency, 
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
 from app.core.exceptions import NotFoundException, NotAllowedActionException
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, make_transaction, make_created
 
 
 class TestGetTransaction:
@@ -222,33 +222,22 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        created = Transaction(
-            id=1,
-            type=data.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            description=data.description,
-            date=data.date,
-            user_id=user_id,
-            account_id=data.account_id,
-        )
-
-        transaction_repo_mock.create.return_value = created
+        transaction_repo_mock.create.side_effect = make_created
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
         validate_account_spy = mocker.spy(validators, "validate_account")
+        resolve_settled_amount_spy = mocker.spy(validators, "resolve_settled_amount")
 
         result = await transaction_service.create_transaction(
             data,
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(created)
-
         call_args = transaction_repo_mock.create.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             amount=data.amount,
@@ -257,6 +246,8 @@ class TestCreateTransaction:
             user_id=user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             date=data.date
         )
 
@@ -274,6 +265,13 @@ class TestCreateTransaction:
             transaction_service.account_repository,
             user_id,
             existing_account.id
+        )
+
+        resolve_settled_amount_spy.assert_called_once_with(
+            existing_account,
+            data.currency_code,
+            data.amount,
+            data.settled_amount,
         )
 
         transaction_repo_mock.create.assert_called_once()
@@ -296,34 +294,25 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
 
-        created = Transaction(
-            id=1,
-            type=data.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            description=data.description,
-            date=data.date,
-            user_id=user_id,
-            account_id=data.account_id,
-        )
-
-        transaction_repo_mock.create.return_value = created
+        transaction_repo_mock.create.side_effect = make_created
 
         result = await transaction_service.create_transaction(
             data,
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(created)
-
         call_args = transaction_repo_mock.create.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             amount=data.amount,
             type=data.type,
             kind=TransactionKind.REGULAR,
             category_id=data.category_id,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             user_id=user_id,
             date=data.date
         )
@@ -333,6 +322,70 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.assert_not_called()
 
         transaction_repo_mock.create.assert_called_once()
+
+    async def test_create_transaction_different_currency_success(
+            self,
+            transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+            data: TransactionCreate,
+    ):
+        """A USD purchase on a UAH card: the account is charged in UAH."""
+        data.category_id = None
+        data.currency_code = existing_usd_currency.code
+        data.amount = Decimal("24.00")
+        data.settled_amount = Decimal("1000.00")
+
+        user_id = existing_account.user_id
+
+        currency_repo_mock.get_by_code.return_value = existing_usd_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.create.side_effect = make_created
+
+        result = await transaction_service.create_transaction(data, user_id)
+
+        call_args = transaction_repo_mock.create.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
+        assert_model_fields(
+            call_args,
+            amount=data.amount,
+            currency_code=existing_usd_currency.code,
+            settled_amount=data.settled_amount,
+            settled_currency_code=existing_account.currency_code,
+        )
+
+        transaction_repo_mock.create.assert_called_once()
+
+    async def test_create_transaction_different_currency_without_settled_amount(
+            self,
+            transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+            data: TransactionCreate,
+    ):
+        data.category_id = None
+        data.currency_code = existing_usd_currency.code
+        data.amount = Decimal("24.00")
+
+        currency_repo_mock.get_by_code.return_value = existing_usd_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(
+                NotAllowedActionException,
+                match="Amount charged to the account is required, in the account currency",
+        ):
+            await transaction_service.create_transaction(data, existing_account.user_id)
+
+        transaction_repo_mock.create.assert_not_called()
 
     async def test_create_transaction_archived_category(
             self,
@@ -422,25 +475,13 @@ class TestCreateTransactionFromTemplate:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        created = Transaction(
-            id=1,
-            type=existing_template.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=existing_template.currency_code,
-            category_id=data.category_id,
-            description=data.description,
-            date=data.date,
-            user_id=user_id,
-            account_id=data.account_id,
-        )
-
-        transaction_repo_mock.create.return_value = created
+        transaction_repo_mock.create.side_effect = make_created
 
         validate_template_spy = mocker.spy(validators, "validate_template")
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
         validate_account_spy = mocker.spy(validators, "validate_account")
+        resolve_settled_amount_spy = mocker.spy(validators, "resolve_settled_amount")
 
         result = await transaction_service.create_transaction_from_template(
             template_id,
@@ -448,15 +489,18 @@ class TestCreateTransactionFromTemplate:
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(created)
-
         call_args = transaction_repo_mock.create.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             type=existing_template.type,
             kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             category_id=data.category_id,
             description=data.description,
             date=data.date,
@@ -487,6 +531,13 @@ class TestCreateTransactionFromTemplate:
             existing_account.id
         )
 
+        resolve_settled_amount_spy.assert_called_once_with(
+            existing_account,
+            existing_template.currency_code,
+            data.amount,
+            data.settled_amount,
+        )
+
         transaction_repo_mock.create.assert_called_once()
 
     async def test_create_transaction_from_template_without_category(
@@ -506,19 +557,7 @@ class TestCreateTransactionFromTemplate:
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         account_repo_mock.get_by_id.return_value = existing_account
 
-        created = Transaction(
-            id=1,
-            type=existing_template.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=existing_template.currency_code,
-            description=data.description,
-            date=data.date,
-            user_id=user_id,
-            account_id=data.account_id,
-        )
-
-        transaction_repo_mock.create.return_value = created
+        transaction_repo_mock.create.side_effect = make_created
 
         result = await transaction_service.create_transaction_from_template(
             template_id,
@@ -526,15 +565,18 @@ class TestCreateTransactionFromTemplate:
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(created)
-
         call_args = transaction_repo_mock.create.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             type=existing_template.type,
             kind=TransactionKind.REGULAR,
             amount=data.amount,
             currency_code=existing_template.currency_code,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             category_id=data.category_id,
             description=data.description,
             date=data.date,
@@ -634,7 +676,7 @@ class TestGetUserTransactions:
         user_id = 1
 
         user_transactions = [
-            Transaction(
+            make_transaction(
                 id=1,
                 type=TransactionType.EXPENSE,
                 kind=TransactionKind.REGULAR,
@@ -645,7 +687,7 @@ class TestGetUserTransactions:
                 date=date(2026, 3, 1),
                 account_id=existing_account.id,
             ),
-            Transaction(
+            make_transaction(
                 id=2,
                 type=TransactionType.INCOME,
                 kind=TransactionKind.REGULAR,
@@ -706,7 +748,7 @@ class TestGetUserTransactions:
         user_id = 1
         group_id = uuid.uuid4()
 
-        regular = Transaction(
+        regular = make_transaction(
             id=1,
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
@@ -718,7 +760,7 @@ class TestGetUserTransactions:
             account_id=existing_account.id,
         )
 
-        transfer_side = Transaction(
+        transfer_side = make_transaction(
             id=2,
             type=TransactionType.EXPENSE,
             kind=TransactionKind.TRANSFER,
@@ -752,7 +794,7 @@ class TestGetUserTransactions:
             existing_account: Account,
     ):
         transaction_repo_mock.get_by_user.return_value = [
-            Transaction(
+            make_transaction(
                 id=1,
                 type=TransactionType.EXPENSE,
                 kind=TransactionKind.REGULAR,
@@ -811,24 +853,13 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        updated = Transaction(
-            id=existing_transaction.id,
-            type=data.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            description=data.description,
-            date=data.date,
-            user_id=existing_transaction.user_id,
-            account_id=data.account_id,
-        )
-        transaction_repo_mock.update.return_value = updated
+        transaction_repo_mock.update.side_effect = make_created
 
         validate_transaction_spy = mocker.spy(validators, "validate_transaction")
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
         validate_account_spy = mocker.spy(validators, "validate_account")
+        resolve_settled_amount_spy = mocker.spy(validators, "resolve_settled_amount")
 
         result = await transaction_service.update_transaction(
             existing_transaction.id,
@@ -836,9 +867,10 @@ class TestUpdateTransaction:
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(updated)
-
         call_args = transaction_repo_mock.update.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             amount=data.amount,
@@ -847,6 +879,8 @@ class TestUpdateTransaction:
             user_id=existing_transaction.user_id,
             category_id=data.category_id,
             currency_code=data.currency_code,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             date=data.date,
             account_id=data.account_id,
         )
@@ -877,6 +911,13 @@ class TestUpdateTransaction:
             allow_archived=True,
         )
 
+        resolve_settled_amount_spy.assert_called_once_with(
+            existing_account,
+            data.currency_code,
+            data.amount,
+            data.settled_amount,
+        )
+
         transaction_repo_mock.get_by_id.assert_called_once()
 
         transaction_repo_mock.update.assert_called_once()
@@ -897,8 +938,9 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_currency
-        transaction_repo_mock.update.return_value = existing_transaction
         account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = make_created
 
         await transaction_service.update_transaction(
             existing_transaction.id,
@@ -949,19 +991,7 @@ class TestUpdateTransaction:
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
 
-        created = Transaction(
-            id=1,
-            type=data.type,
-            kind=TransactionKind.REGULAR,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            description=data.description,
-            date=data.date,
-            user_id=user_id,
-            account_id=data.account_id,
-        )
-
-        transaction_repo_mock.update.return_value = created
+        transaction_repo_mock.update.side_effect = make_created
 
         result = await transaction_service.update_transaction(
             existing_transaction.id,
@@ -969,15 +999,18 @@ class TestUpdateTransaction:
             user_id
         )
 
-        assert result == TransactionResponse.model_validate(created)
-
         call_args = transaction_repo_mock.update.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             amount=data.amount,
             type=data.type,
             kind=TransactionKind.REGULAR,
             category_id=data.category_id,
+            settled_amount=data.amount,
+            settled_currency_code=existing_account.currency_code,
             user_id=user_id,
             date=data.date,
             account_id=data.account_id,
@@ -988,6 +1021,80 @@ class TestUpdateTransaction:
         category_repo_mock.get_by_id.assert_not_called()
 
         transaction_repo_mock.update.assert_called_once()
+
+    async def test_update_transaction_different_currency_success(
+            self,
+            transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_transaction: Transaction,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+            data: TransactionUpdate,
+    ):
+        """A USD purchase on a UAH card: the account is charged in UAH."""
+        data.category_id = None
+        data.currency_code = existing_usd_currency.code
+        data.amount = Decimal("24.00")
+        data.settled_amount = Decimal("1000.00")
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        currency_repo_mock.get_by_code.return_value = existing_usd_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = make_created
+
+        result = await transaction_service.update_transaction(
+            existing_transaction.id,
+            data,
+            existing_transaction.user_id,
+        )
+
+        call_args = transaction_repo_mock.update.call_args[0][0]
+
+        assert result == TransactionResponse.model_validate(call_args)
+
+        assert_model_fields(
+            call_args,
+            amount=data.amount,
+            currency_code=existing_usd_currency.code,
+            settled_amount=data.settled_amount,
+            settled_currency_code=existing_account.currency_code,
+        )
+
+        transaction_repo_mock.update.assert_called_once()
+
+    async def test_update_transaction_different_currency_without_settled_amount(
+            self,
+            transaction_service: TransactionService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            existing_transaction: Transaction,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+            data: TransactionUpdate,
+    ):
+        data.category_id = None
+        data.currency_code = existing_usd_currency.code
+        data.amount = Decimal("24.00")
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        currency_repo_mock.get_by_code.return_value = existing_usd_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(
+                NotAllowedActionException,
+                match="Amount charged to the account is required, in the account currency",
+        ):
+            await transaction_service.update_transaction(
+                existing_transaction.id,
+                data,
+                existing_transaction.user_id,
+            )
+
+        transaction_repo_mock.update.assert_not_called()
 
     async def test_update_transaction_archived_category(
             self,

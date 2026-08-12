@@ -47,6 +47,8 @@ class TransactionData(TypedDict):
     type: str
     kind: str
     currency_code: str
+    settled_amount: str
+    settled_currency_code: str
     category_id: int | None
     description: str | None
     user_id: int

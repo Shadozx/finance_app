@@ -555,6 +555,62 @@ class TestCreateTransaction:
         assert body["account_id"] == created_account["id"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
+    async def test_create_transaction_different_currency_success(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            uah_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            amount="24.00",
+            currency_code=active_currency["code"],
+            settled_amount="1050.00",
+            account_id=uah_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        body = response.json()
+
+        assert body["id"] is not None
+        assert body["description"] == payload["description"]
+        assert body["account_id"] == uah_account["id"]
+
+        assert body["amount"] == payload["amount"]
+        assert body["currency_code"] == payload["currency_code"]
+        assert body["settled_amount"] == payload["settled_amount"]
+        assert body["settled_currency_code"] == uah_account["currency_code"]
+        assert body["user_id"] == authenticated_user["user"]["id"]
+
+    async def test_create_transaction_redundant_settled_amount_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            uah_account: AccountData,
+    ):
+        payload = transaction_payload(
+            amount="24.00",
+            currency_code=uah_account["currency_code"],
+            settled_amount="1050.00",
+            account_id=uah_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
     async def test_create_transaction_with_other_user_category_forbidden(
             self,
             client: AsyncClient,
@@ -765,7 +821,7 @@ class TestCreateTransaction:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
 
-    async def test_create_transaction_currency_must_match_account(
+    async def test_create_transaction_different_currency_without_settled_amount(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,
@@ -799,6 +855,7 @@ class TestCreateTransaction:
         ({"description": "x" * 1025}, "description_too_long"),
         ({"account_id": None}, "account_id_null"),
         ({"account_id": "abc"}, "account_id_not_int"),
+        ({"settled_amount": "-1.00"}, "negative_settled_amount"),
     ])
     async def test_create_transaction_validation_fails(
             self,
@@ -1872,6 +1929,63 @@ class TestUpdateTransaction:
         assert body["id"] == created_transaction["id"]
         assert body["amount"] == "0.00"
 
+    async def test_update_transaction_different_currency_success(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            uah_account: AccountData,
+            created_transaction: TransactionData,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            amount="24.00",
+            currency_code=active_currency["code"],
+            settled_amount="1050.00",
+            account_id=uah_account["id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["id"] == created_transaction["id"]
+        assert body["account_id"] == uah_account["id"]
+
+        assert body["amount"] == payload["amount"]
+        assert body["currency_code"] == payload["currency_code"]
+        assert body["settled_amount"] == payload["settled_amount"]
+        assert body["settled_currency_code"] == uah_account["currency_code"]
+        assert body["user_id"] == authenticated_user["user"]["id"]
+
+    async def test_update_transaction_redundant_settled_amount_fails(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            created_transaction: TransactionData,
+            active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            amount="24.00",
+            currency_code=active_currency["code"],
+            settled_amount="1050.00",
+            account_id=created_transaction["account_id"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}",
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "detail" in response.json()
+
     async def test_update_transaction_not_found(
             self,
             client: AsyncClient,
@@ -2224,7 +2338,7 @@ class TestUpdateTransaction:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["amount"] == "777.00"
 
-    async def test_update_transaction_currency_must_match_account(
+    async def test_update_transaction_different_currency_without_settled_amount(
             self,
             client: AsyncClient,
             authenticated_user: AuthenticatedUser,

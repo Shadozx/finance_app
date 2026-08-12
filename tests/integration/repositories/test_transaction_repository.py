@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import UserRepository, TransactionRepository, AccountRepository
 from app.models import User, Transaction, TransactionType, TransactionKind, Category, Currency, Account
 from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
+from tests.integration.repositories.helpers import make_transaction
 
 
 @pytest.fixture
@@ -17,7 +18,7 @@ async def transaction(
         category: Category,
         uah_currency: Currency,
 ):
-    return await transaction_repository.create(Transaction(
+    return await transaction_repository.create(make_transaction(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.REGULAR,
         description="Morning Coffee",
@@ -40,7 +41,7 @@ class TestCreate:
             category: Category,
             uah_currency: Currency,
     ):
-        transaction = Transaction(
+        transaction = make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             description="Morning Coffee",
@@ -60,6 +61,8 @@ class TestCreate:
         assert created_transaction.description == transaction.description
         assert created_transaction.amount == transaction.amount
         assert created_transaction.currency_code == transaction.currency_code
+        assert created_transaction.settled_amount == transaction.settled_amount
+        assert created_transaction.settled_currency_code == transaction.settled_currency_code
         assert created_transaction.category_id == transaction.category_id
         assert created_transaction.user_id == transaction.user_id
         assert created_transaction.account_id == transaction.account_id
@@ -97,7 +100,7 @@ class TestGetByUser:
             transaction: Transaction,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             description="Foods",
@@ -108,7 +111,7 @@ class TestGetByUser:
             date=date(2025, 3, 3)
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("35000.00"),
@@ -159,7 +162,7 @@ class TestGetByUser:
             )
         )
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("50.00"),
@@ -186,7 +189,7 @@ class TestGetByUser:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        t_old = await transaction_repository.create(Transaction(
+        t_old = await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -197,7 +200,7 @@ class TestGetByUser:
             date=date(2026, 1, 1),
         ))
 
-        t_new = await transaction_repository.create(Transaction(
+        t_new = await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("200.00"),
@@ -208,7 +211,7 @@ class TestGetByUser:
             date=date(2026, 3, 1),
         ))
 
-        t_mid = await transaction_repository.create(Transaction(
+        t_mid = await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("150.00"),
@@ -238,7 +241,7 @@ async def transactions(
         usd_currency: Currency,
         category: Category
 ):
-    t1 = await transaction_repository.create(Transaction(
+    t1 = await transaction_repository.create(make_transaction(
         type=TransactionType.INCOME,
         kind=TransactionKind.REGULAR,
         amount=Decimal("10000.00"),
@@ -250,7 +253,7 @@ async def transactions(
         date=date(2026, 1, 15),
     ))
 
-    t2 = await transaction_repository.create(Transaction(
+    t2 = await transaction_repository.create(make_transaction(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.REGULAR,
         amount=Decimal("150.00"),
@@ -262,7 +265,7 @@ async def transactions(
         date=date(2026, 2, 10),
     ))
 
-    t3 = await transaction_repository.create(Transaction(
+    t3 = await transaction_repository.create(make_transaction(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.REGULAR,
         amount=Decimal("50.00"),
@@ -274,7 +277,7 @@ async def transactions(
         date=date(2026, 2, 15),
     ))
 
-    t4 = await transaction_repository.create(Transaction(
+    t4 = await transaction_repository.create(make_transaction(
         type=TransactionType.INCOME,
         kind=TransactionKind.REGULAR,
         amount=Decimal("500.00"),
@@ -286,7 +289,7 @@ async def transactions(
         date=date(2026, 3, 1),
     ))
 
-    t5 = await transaction_repository.create(Transaction(
+    t5 = await transaction_repository.create(make_transaction(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.REGULAR,
         amount=Decimal("200.00"),
@@ -513,7 +516,7 @@ class TestGetSummary:
             )
         )
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -606,7 +609,7 @@ class TestGetSummary:
             usd_currency: Currency,
     ):
         await transaction_repository.create(
-            Transaction(
+            make_transaction(
                 type=TransactionType.INCOME,
                 kind=TransactionKind.REGULAR,
                 amount=Decimal("450.00"),
@@ -618,7 +621,7 @@ class TestGetSummary:
                 date=date(2026, 3, 1),
             ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("75.00"),
@@ -655,7 +658,7 @@ class TestGetSummary:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -667,7 +670,7 @@ class TestGetSummary:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.ADJUSTMENT,
             amount=Decimal("5000.00"),
@@ -704,7 +707,7 @@ class TestGetSummary:
     ):
         group_id = uuid.uuid4()
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -716,7 +719,7 @@ class TestGetSummary:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.TRANSFER,
             amount=Decimal("1000.00"),
@@ -729,7 +732,7 @@ class TestGetSummary:
             date=date(2026, 2, 11),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.TRANSFER,
             amount=Decimal("24.00"),
@@ -755,6 +758,43 @@ class TestGetSummary:
         totals = {(row.currency_code, row.type): row.total for row in summary}
 
         assert totals[(uah_currency.code, TransactionType.INCOME)] == Decimal("100.00")
+
+    async def test_get_summary_uses_settled_amount(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        """A USD purchase on a UAH card falls into the UAH group, by the settled amount."""
+        await transaction_repository.create(make_transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            description="USD purchase on a UAH card",
+            amount=Decimal("24.00"),
+            currency_code=usd_currency.code,
+            settled_currency_code=uah_currency.code,
+            settled_amount=Decimal("1000.00"),
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.type): row.total for row in summary}
+
+        assert totals[(uah_currency.code, TransactionType.EXPENSE)] == Decimal("1000.00")
 
 
 class TestGetByCategory:
@@ -795,7 +835,7 @@ class TestGetByCategory:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
@@ -807,7 +847,7 @@ class TestGetByCategory:
             date=date(2026, 1, 15),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -856,7 +896,7 @@ class TestGetByCategory:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("250.00"),
@@ -868,7 +908,7 @@ class TestGetByCategory:
             date=date(2026, 1, 15),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -921,7 +961,7 @@ class TestGetByCategory:
             )
         )
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -933,7 +973,7 @@ class TestGetByCategory:
             date=date(2026, 2, 20),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("150.00"),
@@ -960,6 +1000,44 @@ class TestGetByCategory:
 
         assert totals[("UAH", category.id)].total == Decimal("150.00")
 
+    async def test_get_by_category_uses_settled_amount(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            category: Category,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(make_transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            description="USD purchase on a UAH card",
+            amount=Decimal("24.00"),
+            currency_code=usd_currency.code,
+            settled_amount=Decimal("1000.00"),
+            settled_currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=category.id,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            )
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[(uah_currency.code, category.id)].total == Decimal("1000.00")
+
     async def test_get_by_category_empty(
             self,
             transaction_repository: TransactionRepository,
@@ -984,7 +1062,7 @@ class TestGetByCategory:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -996,7 +1074,7 @@ class TestGetByCategory:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.ADJUSTMENT,
             amount=Decimal("5000.00"),
@@ -1032,7 +1110,7 @@ class TestGetByCategory:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1044,7 +1122,7 @@ class TestGetByCategory:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.TRANSFER,
             amount=Decimal("5000.00"),
@@ -1104,7 +1182,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("500.00"),
@@ -1116,7 +1194,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
@@ -1148,7 +1226,7 @@ class TestGetSpent:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -1160,7 +1238,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("40.00"),
@@ -1172,7 +1250,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -1184,7 +1262,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("888.00"),
@@ -1247,7 +1325,7 @@ class TestGetSpent:
             )
         )
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("777.00"),
@@ -1259,7 +1337,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1289,7 +1367,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1301,7 +1379,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.ADJUSTMENT,
             amount=Decimal("5000.00"),
@@ -1332,7 +1410,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1344,7 +1422,7 @@ class TestGetSpent:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.TRANSFER,
             amount=Decimal("5000.00"),
@@ -1370,6 +1448,40 @@ class TestGetSpent:
 
         assert spent == Decimal("100.00")
 
+    async def test_get_spent_uses_settled_amount(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+            category: Category,
+    ):
+        """A USD purchase on a UAH card counts toward a UAH budget, by the settled amount."""
+        await transaction_repository.create(make_transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            description="USD purchase on a UAH card",
+            amount=Decimal("24.00"),
+            currency_code=usd_currency.code,
+            settled_currency_code=uah_currency.code,
+            settled_amount=Decimal("1000.00"),
+            user_id=user.id,
+            category_id=category.id,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 3, 31),
+        )
+
+        assert spent == Decimal("1000.00")
+
 
 class TestGetBalance:
     async def test_get_balance_empty_account_returns_zero(
@@ -1388,7 +1500,7 @@ class TestGetBalance:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("1000.00"),
@@ -1400,7 +1512,7 @@ class TestGetBalance:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -1423,7 +1535,7 @@ class TestGetBalance:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.ADJUSTMENT,
             amount=Decimal("5000.00"),
@@ -1435,7 +1547,7 @@ class TestGetBalance:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1458,7 +1570,7 @@ class TestGetBalance:
             uah_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1483,7 +1595,7 @@ class TestGetBalance:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1495,7 +1607,7 @@ class TestGetBalance:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -1511,6 +1623,33 @@ class TestGetBalance:
 
         assert balance == Decimal("100.00")
 
+    async def test_get_balance_uses_settled_amount(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        """A USD purchase on a UAH card: the balance moves by what the account was charged."""
+        await transaction_repository.create(make_transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            description="USD purchase on a UAH card",
+            amount=Decimal("24.00"),
+            currency_code=usd_currency.code,
+            settled_currency_code=uah_currency.code,
+            settled_amount=Decimal("1000.00"),
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        balance = await transaction_repository.get_balance(uah_account.id)
+
+        assert balance == Decimal("-1000.00")
+
 
 class TestGetBalancesByAccount:
     async def test_get_balances_by_account(
@@ -1522,7 +1661,7 @@ class TestGetBalancesByAccount:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("1000.00"),
@@ -1534,7 +1673,7 @@ class TestGetBalancesByAccount:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -1546,7 +1685,7 @@ class TestGetBalancesByAccount:
             date=date(2026, 2, 11),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("50.00"),
@@ -1571,7 +1710,7 @@ class TestGetBalancesByAccount:
             usd_account: Account,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1609,7 +1748,7 @@ class TestGetBalancesByAccount:
             user_id=other_user.id,
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -1621,7 +1760,7 @@ class TestGetBalancesByAccount:
             date=date(2026, 2, 10),
         ))
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -1638,6 +1777,32 @@ class TestGetBalancesByAccount:
         assert balances[uah_account.id] == Decimal("100.00")
         assert other_account.id not in balances
 
+    async def test_get_balances_by_account_uses_settled_amount(
+            self,
+            transaction_repository: TransactionRepository,
+            user: User,
+            uah_account: Account,
+            uah_currency: Currency,
+            usd_currency: Currency,
+    ):
+        await transaction_repository.create(make_transaction(
+            type=TransactionType.EXPENSE,
+            kind=TransactionKind.REGULAR,
+            description="USD purchase on a UAH card",
+            amount=Decimal("24.00"),
+            currency_code=usd_currency.code,
+            settled_amount=Decimal("1000.00"),
+            settled_currency_code=uah_currency.code,
+            user_id=user.id,
+            category_id=None,
+            account_id=uah_account.id,
+            date=date(2026, 2, 10),
+        ))
+
+        balances = await transaction_repository.get_balances_by_account(user.id)
+
+        assert balances[uah_account.id] == Decimal("-1000.00")
+
 
 @pytest.fixture
 async def transfer(
@@ -1651,7 +1816,7 @@ async def transfer(
     """A cross-currency transfer pair: 1000 UAH out, 24 USD in."""
     group_id = uuid.uuid4()
 
-    from_side = await transaction_repository.create(Transaction(
+    from_side = await transaction_repository.create(make_transaction(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("1000.00"),
@@ -1664,7 +1829,7 @@ async def transfer(
         date=date(2026, 2, 10),
     ))
 
-    to_side = await transaction_repository.create(Transaction(
+    to_side = await transaction_repository.create(make_transaction(
         type=TransactionType.INCOME,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("24.00"),

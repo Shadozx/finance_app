@@ -4,7 +4,8 @@ from datetime import date
 import pytest
 
 from app.repositories import BudgetRepository, TransactionRepository, UserRepository, AccountRepository
-from app.models import Budget, Transaction, TransactionType, TransactionKind, User, Category, Currency, Account
+from app.models import Budget, TransactionType, TransactionKind, User, Category, Currency, Account
+from tests.integration.repositories.helpers import make_transaction
 
 
 @pytest.fixture
@@ -249,7 +250,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("2000.00"),
@@ -259,7 +260,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 5),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("1000.00"),
@@ -288,7 +289,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("500.00"),
@@ -298,7 +299,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 5),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
@@ -329,7 +330,7 @@ class TestGetSpent:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -339,7 +340,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("40.00"),
@@ -349,7 +350,7 @@ class TestGetSpent:
             account_id=usd_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -359,7 +360,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("888.00"),
@@ -418,7 +419,7 @@ class TestGetSpent:
             )
         )
 
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("777.00"),
@@ -428,7 +429,7 @@ class TestGetSpent:
             account_id=other_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(Transaction(
+        await transaction_repository.create(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -687,5 +688,3 @@ class TestFindSameBudgetKeyFields:
         )
 
         assert found is None
-
-

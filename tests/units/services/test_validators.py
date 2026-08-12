@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
-
+from decimal import Decimal
 import pytest
 
-from app.models import Category, Currency, Transaction, TransactionTemplate, Budget
+from app.models import Category, Currency, Transaction, TransactionTemplate, Budget, Account, User
 from app.repositories import (
     CategoryRepository,
     CurrencyRepository,
@@ -15,7 +15,8 @@ from app.services.validators import (
     validate_currency,
     validate_transaction,
     validate_template,
-    validate_budget
+    validate_budget,
+    resolve_settled_amount
 )
 from app.core.exceptions import (
     NotFoundException,
@@ -444,3 +445,83 @@ class TestValidateBudget:
         budget_repo_mock.get_by_id.assert_called_once_with(
             existing_budget.id
         )
+
+
+class TestResolveSettledAmount:
+    def test_resolve_settled_amount_success(
+            self,
+            existing_account: Account,
+    ):
+        """
+        GIVEN: Transaction currency matches the account, settled amount not given
+        WHEN: resolve_settled_amount called
+        THEN: Returns the transaction amount
+        """
+        expected = Decimal("200.00")
+
+        result = resolve_settled_amount(
+            existing_account,
+            existing_account.currency_code,
+            expected,
+            None,
+        )
+
+        assert result == expected
+
+    def test_resolve_settled_amount_different_currency_success(
+            self,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+    ):
+        """
+        GIVEN: Transaction currency differs from the account, settled amount given
+        WHEN: resolve_settled_amount called
+        THEN: Returns the settled amount, not the transaction amount
+        """
+        expected = Decimal("1050.00")
+
+        result = resolve_settled_amount(
+            existing_account,
+            existing_usd_currency.code,
+            Decimal("20.00"),
+            expected,
+        )
+
+        assert result == expected
+
+    def test_resolve_settled_amount_same_currency_with_settled_amount(
+            self,
+            existing_account: Account,
+    ):
+        """
+        GIVEN: Transaction currency matches the account, but settled amount is given
+        WHEN: resolve_settled_amount called
+        THEN: NotAllowedActionException raised
+        """
+        with pytest.raises(NotAllowedActionException,
+                           match="Amount charged to the account is only needed when currencies differ"):
+            resolve_settled_amount(
+                existing_account,
+                existing_account.currency_code,
+                Decimal("200.00"),
+                Decimal("1050.00")
+            )
+
+    def test_resolve_settled_amount_different_currency_without_settled_amount(
+            self,
+            existing_account: Account,
+            existing_usd_currency: Currency,
+    ):
+        """
+        GIVEN: Transaction currency differs from the account, settled amount not given
+        WHEN: resolve_settled_amount called
+        THEN: NotAllowedActionException raised
+        """
+        with pytest.raises(NotAllowedActionException,
+                           match="Amount charged to the account is required, in the account currency"):
+            resolve_settled_amount(
+                existing_account,
+                existing_usd_currency.code,
+                Decimal("20.00"),
+                None
+            )

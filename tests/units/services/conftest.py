@@ -143,6 +143,8 @@ def existing_transaction(
         kind=TransactionKind.REGULAR,
         amount=Decimal("5000.00"),
         currency_code=existing_currency.code,
+        settled_amount=Decimal("5000.00"),
+        settled_currency_code=existing_account.currency_code,
         description="Salary",
         date=datetime.date(2026, 2, 10),
         user_id=existing_user.id,

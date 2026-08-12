@@ -28,34 +28,6 @@ API_CATEGORIES = "/api/v1/statistics/categories"
 
 
 @pytest.fixture
-async def second_currency(
-        test_session: AsyncSession,
-) -> CurrencyData:
-    """A second active currency (UAH) so we can test multi-currency grouping.
-
-    conftest only provides one active currency (USD); summary is all about
-    keeping currencies separate, so we need at least two.
-    """
-    currency = Currency(
-        code="UAH",
-        name="Ukrainian Hryvnia",
-        symbol="\u20b4",
-        is_active=True,
-    )
-
-    test_session.add(currency)
-    await test_session.commit()
-    await test_session.refresh(currency)
-
-    return {
-        "code": currency.code,
-        "name": currency.name,
-        "symbol": currency.symbol,
-        "is_active": currency.is_active,
-    }
-
-
-@pytest.fixture
 async def second_account(
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -202,6 +174,44 @@ class TestGetSummary:
         codes = [c["currency_code"] for c in body["currencies"]]
 
         assert codes == ["UAH", "USD"]
+
+    async def test_get_summary_uses_settled_currency(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            second_account: AccountData,
+            active_currency: CurrencyData,
+            second_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-10",
+                amount="24.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                settled_amount="1050.00",
+                account_id=second_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_SUMMARY,
+            params={"start_date": "2026-01-01", "end_date": "2026-03-31"},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert len(body["currencies"]) == 1
+
+        by_code = summaries_by_code(body)
+
+        assert by_code[second_currency["code"]]["expense"] == "1050.00"
+        assert by_code[second_currency["code"]]["net"] == "-1050.00"
 
     async def test_get_summary_fills_missing_type_with_zero(
             self,

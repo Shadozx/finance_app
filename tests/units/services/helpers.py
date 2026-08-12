@@ -1,3 +1,5 @@
+from app.models import Transaction
+
 def assert_model_fields(obj, **expected_fields):
     """
     Assert that object fields match expected values.
@@ -15,3 +17,17 @@ def assert_model_fields(obj, **expected_fields):
             f"Field '{field}' mismatch: expected {expected_value!r}, "
             f"got {actual_value!r}"
         )
+
+def make_created(transaction: Transaction, transaction_id: int = 1) -> Transaction:
+    """Transaction as it comes back from create(): with an id assigned by the database."""
+    transaction.id = transaction_id
+    return transaction
+
+def make_transaction(**kwargs) -> Transaction:
+    """Transaction with settled fields defaulted to the operation amount.
+
+    Cross-currency cases pass settled_amount explicitly.
+    """
+    kwargs.setdefault("settled_amount", kwargs["amount"])
+    kwargs.setdefault("settled_currency_code", kwargs["currency_code"])
+    return Transaction(**kwargs)

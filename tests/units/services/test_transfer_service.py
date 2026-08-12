@@ -50,6 +50,8 @@ def existing_transfer(
         type=TransactionType.EXPENSE,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("1000.00"),
+        settled_amount=Decimal("1000.00"),
+        settled_currency_code=existing_account.currency_code,
         description="Transfer",
         currency_code=existing_account.currency_code,
         user_id=existing_account.user_id,
@@ -64,6 +66,8 @@ def existing_transfer(
         type=TransactionType.INCOME,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("24.00"),
+        settled_amount=Decimal("24.00"),
+        settled_currency_code=existing_usd_account.currency_code,
         description="Transfer",
         currency_code=existing_usd_account.currency_code,
         user_id=existing_usd_account.user_id,
@@ -120,6 +124,8 @@ class TestCreateTransfer:
             kind=TransactionKind.TRANSFER,
             amount=data.from_amount,
             currency_code=existing_account.currency_code,
+            settled_amount=data.from_amount,
+            settled_currency_code=existing_account.currency_code,
             account_id=existing_account.id,
             category_id=None,
             user_id=user_id,
@@ -133,6 +139,8 @@ class TestCreateTransfer:
             kind=TransactionKind.TRANSFER,
             amount=data.to_amount,
             currency_code=existing_usd_account.currency_code,
+            settled_amount=data.to_amount,
+            settled_currency_code=existing_usd_account.currency_code,
             account_id=existing_usd_account.id,
             category_id=None,
             user_id=user_id,
@@ -405,6 +413,9 @@ class TestUpdateTransfer:
         assert to_side.type == TransactionType.INCOME
         assert to_side.account_id == existing_account.id
         assert to_side.currency_code == existing_account.currency_code
+
+        assert from_side.settled_currency_code == existing_usd_account.currency_code
+        assert to_side.settled_currency_code == existing_account.currency_code
 
     async def test_update_transfer_keeps_archived_account_allowed(
             self,

@@ -571,6 +571,33 @@ class TestGetAccountById:
         assert body["currency_code"] == created_account["currency_code"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
+    async def test_get_account_by_id_balance_uses_settled_amount(
+            self,
+            client: AsyncClient,
+            authenticated_user: AuthenticatedUser,
+            uah_account: AccountData,
+            active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="24.00",
+                currency_code=active_currency["code"],
+                settled_amount="1050.00",
+                account_id=uah_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_ACCOUNTS}/{uah_account['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["balance"] == "-1050.00"
+
+
     async def test_get_account_by_id_archived_allowed(
             self,
             client: AsyncClient,

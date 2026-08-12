@@ -88,11 +88,12 @@ def transaction_payload(
         amount: str = "150.00",
         transaction_type: str = "EXPENSE",
         currency_code: str = "USD",
+        settled_amount: str | None = None,
         account_id: int | None = None,
         category_id: int | None = None,
         description: str | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "date": date,
         "amount": amount,
         "type": transaction_type,
@@ -101,6 +102,11 @@ def transaction_payload(
         "description": description,
         "account_id": account_id,
     }
+
+    if settled_amount is not None:
+        payload["settled_amount"] = settled_amount
+
+    return payload
 
 
 async def create_transaction(
