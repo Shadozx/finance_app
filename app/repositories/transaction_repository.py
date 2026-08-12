@@ -36,6 +36,9 @@ class TransactionRepository:
 
         query = self._apply_filters(query, filters)
 
+        if filters.currency_code is not None:
+            query = query.where(Transaction.currency_code == filters.currency_code)
+
         if filters.account_id is not None:
             query = query.where(Transaction.account_id == filters.account_id)
 
@@ -66,12 +69,16 @@ class TransactionRepository:
             user_id: int,
             filters: StatisticsFilters,
     ) -> list[SummaryRow]:
-        query = (select(Transaction.currency_code, Transaction.type, func.sum(Transaction.amount))
-                 .group_by(Transaction.currency_code, Transaction.type)
+        query = (select(Transaction.settled_currency_code, Transaction.type, func.sum(Transaction.settled_amount))
+                 .group_by(Transaction.settled_currency_code, Transaction.type)
                  .where(Transaction.user_id == user_id)
                  .where(self._counts_in_totals()))
 
         query = self._apply_filters(query, filters)
+
+        if filters.currency_code is not None:
+            query = query.where(Transaction.settled_currency_code == filters.currency_code)
+
 
         rows = (await self.session.execute(query)).all()
 
@@ -85,13 +92,16 @@ class TransactionRepository:
             user_id: int,
             filters: CategoryStatisticsFilters,
     ) -> list[CategorySummaryRow]:
-        query = (select(Transaction.currency_code, Transaction.category_id, Category.name, func.sum(Transaction.amount))
+        query = (select(Transaction.settled_currency_code, Transaction.category_id, Category.name, func.sum(Transaction.settled_amount))
                  .join(Category, Category.id == Transaction.category_id, isouter=True)
-                 .group_by(Transaction.currency_code, Transaction.category_id, Category.name)
+                 .group_by(Transaction.settled_currency_code, Transaction.category_id, Category.name)
                  .where(Transaction.user_id == user_id)
                  .where(self._counts_in_totals()))
 
         query = self._apply_filters(query, filters)
+
+        if filters.currency_code is not None:
+            query = query.where(Transaction.settled_currency_code == filters.currency_code)
 
         rows = (await self.session.execute(query)).all()
 
@@ -109,10 +119,10 @@ class TransactionRepository:
             end_date: date,
     ) -> Decimal:
         query = (
-            select(func.coalesce(func.sum(Transaction.amount), Decimal("0")))
+            select(func.coalesce(func.sum(Transaction.settled_amount), Decimal("0")))
             .where(Transaction.user_id == user_id)
             .where(Transaction.category_id == category_id)
-            .where(Transaction.currency_code == currency_code)
+            .where(Transaction.settled_currency_code == currency_code)
             .where(Transaction.type == TransactionType.EXPENSE)
             .where(Transaction.date >= start_date)
             .where(Transaction.date <= end_date)
@@ -127,9 +137,6 @@ class TransactionRepository:
     ) -> Select:
         if filters.type is not None:
             query = query.where(Transaction.type == filters.type)
-
-        if filters.currency_code is not None:
-            query = query.where(Transaction.currency_code == filters.currency_code)
 
         if filters.start_date is not None:
             query = query.where(Transaction.date >= filters.start_date)
@@ -175,7 +182,7 @@ class TransactionRepository:
         query = (
             select(
                 Transaction.account_id,
-                    func.sum(self._signed_amount())
+                func.sum(self._signed_amount())
             )
             .where(Transaction.user_id == user_id)
             .group_by(Transaction.account_id)
@@ -186,14 +193,15 @@ class TransactionRepository:
         return {row[0]: row[1] for row in rows}
 
     def _signed_amount(self) -> ColumnElement[Decimal]:
-        """Сума зі знаком: дохід додає, витрата віднімає.
+        """Signed amount in account currency: income adds, expense subtracts.
 
-        Використовується для балансу рахунку, де важливий напрямок,
-        а не абсолютна величина.
+        Uses settled_amount — the balance follows money moved on this
+        account, not the operation amount (24 EUR paid by a UAH card
+        debits 1000 UAH).
         """
         return case(
-            (Transaction.type == TransactionType.INCOME, Transaction.amount),
-            else_=-Transaction.amount,
+            (Transaction.type == TransactionType.INCOME, Transaction.settled_amount),
+            else_=-Transaction.settled_amount,
         )
 
     async def add(self, transaction: Transaction) -> Transaction:

@@ -69,6 +69,8 @@ class UseTemplateRequest(BaseModel):
 
     currency_code: str | None = None
 
+    settled_amount: Decimal | None = None
+
     category_id: int | None = None
 
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
@@ -77,12 +79,13 @@ class UseTemplateRequest(BaseModel):
 
     date: date
 
-    @field_validator("amount")
+    @field_validator("amount", "settled_amount")
     @classmethod
-    def validate_amount_if_provided(cls, v: Decimal | None) -> Decimal | None:
+    def validate_amounts_if_provided(cls, v: Decimal | None) -> Decimal | None:
         if v is not None:
             return amount_validator(v)
         return v
+
 
     @field_validator("currency_code")
     @classmethod

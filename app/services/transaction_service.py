@@ -48,13 +48,16 @@ class TransactionService:
             self.account_repository, user_id, data.account_id
         )
 
-        if account.currency_code != data.currency_code:
-            raise NotAllowedActionException("Transaction currency must match account currency")
+        settled_amount = validators.resolve_settled_amount(
+            account, data.currency_code, data.amount, data.settled_amount
+        )
 
         new_transaction = Transaction(
             type=data.type,
             kind=TransactionKind.REGULAR,
             amount=data.amount,
+            settled_amount=settled_amount,
+            settled_currency_code=account.currency_code,
             description=data.description,
             account_id=data.account_id,
             user_id=user_id,
@@ -114,8 +117,9 @@ class TransactionService:
             self.account_repository, user_id, data.account_id
         )
 
-        if account.currency_code != final_currency_code:
-            raise NotAllowedActionException("Transaction currency must match account currency")
+        settled_amount = validators.resolve_settled_amount(
+            account, final_currency_code, final_amount, data.settled_amount
+        )
 
         new_transaction = Transaction(
             type=final_type,
@@ -123,6 +127,8 @@ class TransactionService:
             amount=final_amount,
             description=final_description,
             currency_code=final_currency_code,
+            settled_amount=settled_amount,
+            settled_currency_code=account.currency_code,
             account_id=data.account_id,
             user_id=user_id,
             category_id=final_category_id,
@@ -222,8 +228,9 @@ class TransactionService:
             allow_archived=not account_changed,
         )
 
-        if account.currency_code != data.currency_code:
-            raise NotAllowedActionException("Transaction currency must match account currency")
+        settled_amount = validators.resolve_settled_amount(
+            account, data.currency_code, data.amount, data.settled_amount
+        )
 
         existing_transaction.category_id = data.category_id
         existing_transaction.currency_code = data.currency_code
@@ -232,6 +239,8 @@ class TransactionService:
         existing_transaction.type = data.type
         existing_transaction.amount = data.amount
         existing_transaction.account_id = data.account_id
+        existing_transaction.settled_amount = settled_amount
+        existing_transaction.settled_currency_code = account.currency_code
 
         updated_transaction = await self.transaction_repository.update(existing_transaction)
 

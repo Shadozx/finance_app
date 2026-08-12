@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository, \
     TransactionRepository, BudgetRepository, UserRepository, AccountRepository
 from app.models import Category, TransactionTemplate, Transaction, Currency, Budget, User, Account
@@ -235,3 +237,37 @@ async def validate_account(
         raise NotAllowedActionException("Archived account is not allowed to use")
 
     return existing_account
+
+
+def resolve_settled_amount(
+        account: Account,
+        currency_code: str,
+        amount: Decimal,
+        settled_amount: Decimal | None,
+) -> Decimal:
+    """
+    Resolve how much was moved on the account, in the account currency.
+
+    Same currency: settled equals amount, nothing to state.
+    Different currency: the caller must say what the account was charged —
+        the system has no exchange rates to work it out.
+
+    Returns:
+        Amount in the account currency
+
+    Raises:
+        NotAllowedActionException: Settled amount is missing or redundant
+    """
+    if account.currency_code == currency_code:
+        if settled_amount is not None:
+            raise NotAllowedActionException(
+                "Amount charged to the account is only needed when currencies differ"
+            )
+        return amount
+
+    if settled_amount is None:
+        raise NotAllowedActionException(
+            "Amount charged to the account is required, in the account currency"
+        )
+
+    return settled_amount

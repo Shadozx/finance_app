@@ -9,11 +9,14 @@ from decimal import Decimal
 
 
 class TransactionCreate(BaseModel):
-    amount: Decimal
 
     type: TransactionType
 
+    amount: Decimal
+
     currency_code: str
+
+    settled_amount: Decimal | None = None
 
     category_id: int | None = None
 
@@ -27,6 +30,13 @@ class TransactionCreate(BaseModel):
     @classmethod
     def validate_amount(cls, v: Decimal) -> Decimal:
         return amount_validator(v)
+
+    @field_validator("settled_amount")
+    @classmethod
+    def validate_settled_amount_if_provided(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None:
+            return amount_validator(v)
+        return v
 
     @field_validator("currency_code")
     @classmethod
@@ -48,6 +58,10 @@ class TransactionResponse(BaseModel):
     kind: TransactionKind
 
     currency_code: str
+
+    settled_amount: Decimal
+
+    settled_currency_code: str
 
     category_id: int | None = None
 

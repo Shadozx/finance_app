@@ -51,6 +51,8 @@ class TransferService:
             amount=data.from_amount,
             description=data.description,
             currency_code=from_account.currency_code,
+            settled_amount=data.from_amount,
+            settled_currency_code=from_account.currency_code,
             account_id=from_account.id,
             user_id=user_id,
             category_id=None,
@@ -64,6 +66,8 @@ class TransferService:
             amount=data.to_amount,
             description=data.description,
             currency_code=to_account.currency_code,
+            settled_amount=data.to_amount,
+            settled_currency_code=to_account.currency_code,
             account_id=to_account.id,
             user_id=user_id,
             category_id=None,
@@ -214,6 +218,8 @@ class TransferService:
         side.amount = amount
         side.account_id = account.id
         side.currency_code = account.currency_code
+        side.settled_amount = amount
+        side.settled_currency_code = account.currency_code
         side.description = data.description
         side.date = data.date
 
@@ -242,7 +248,8 @@ class TransferService:
 
     @staticmethod
     def _exchange_rate(from_side: Transaction, to_side: Transaction) -> Decimal | None:
+        """Rate implied by the two settled amounts, each in its account currency."""
         if from_side.currency_code == to_side.currency_code:
             return None
 
-        return from_side.amount / to_side.amount
+        return from_side.settled_amount / to_side.settled_amount
