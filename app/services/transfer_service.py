@@ -3,6 +3,7 @@ import structlog
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from app.core import UnitOfWork
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, TransactionRepository, CurrencyRepository
 from app.schemas import TransferCreate, TransferUpdate, TransferResponse
@@ -19,10 +20,12 @@ class TransferService:
             transaction_repository: TransactionRepository,
             account_repository: AccountRepository,
             currency_repository: CurrencyRepository,
+            unit_of_work: UnitOfWork
     ):
         self.transaction_repository = transaction_repository
         self.account_repository = account_repository
         self.currency_repository = currency_repository
+        self.unit_of_work = unit_of_work
 
 
     async def create_transfer(

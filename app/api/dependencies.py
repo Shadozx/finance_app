@@ -12,29 +12,38 @@ from app.models import User
 
 
 def get_user_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> UserService:
     user_repository = UserRepository(session)
+    unit_of_work = UnitOfWork(session)
 
-    return UserService(user_repository)
+    return UserService(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work
+    )
 
 
 def get_category_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> CategoryService:
     category_repository = CategoryRepository(session)
+    unit_of_work = UnitOfWork(session)
 
-    return CategoryService(category_repository)
+    return CategoryService(
+        category_repository=category_repository,
+        unit_of_work=unit_of_work
+    )
 
 
 def get_transaction_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> TransactionService:
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
     transaction_repository = TransactionRepository(session)
     transaction_template_repository = TransactionTemplateRepository(session)
     account_repository = AccountRepository(session)
+    unit_of_work = UnitOfWork(session)
 
     return TransactionService(
         transaction_repository=transaction_repository,
@@ -42,20 +51,23 @@ def get_transaction_service(
         category_repository=category_repository,
         currency_repository=currency_repository,
         account_repository=account_repository,
+        unit_of_work=unit_of_work
     )
 
 
 def get_transaction_template_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> TransactionTemplateService:
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
     transaction_template_repository = TransactionTemplateRepository(session)
+    unit_of_work = UnitOfWork(session)
 
     return TransactionTemplateService(
         transaction_template_repository=transaction_template_repository,
         category_repository=category_repository,
-        currency_repository=currency_repository
+        currency_repository=currency_repository,
+        unit_of_work=unit_of_work
     )
 
 
@@ -76,49 +88,54 @@ def get_currency_service(
 
 
 def get_budget_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> BudgetService:
     budget_repository = BudgetRepository(session)
     transaction_repository = TransactionRepository(session)
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
+    unit_of_work = UnitOfWork(session)
 
     return BudgetService(
         budget_repository=budget_repository,
         transaction_repository=transaction_repository,
         category_repository=category_repository,
         currency_repository=currency_repository,
+        unit_of_work=unit_of_work
     )
 
 
 def get_account_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> AccountService:
     account_repository = AccountRepository(session)
     currency_repository = CurrencyRepository(session)
     transaction_repository = TransactionRepository(session)
+    unit_of_work = UnitOfWork(session)
 
     return AccountService(
         account_repository=account_repository,
         currency_repository=currency_repository,
         transaction_repository=transaction_repository,
+        unit_of_work=unit_of_work
     )
 
+
 def get_transfer_service(
-        session: AsyncSession = Depends(get_session)
+        session: AsyncSession = Depends(get_session),
 ) -> TransferService:
     transaction_repository = TransactionRepository(session)
     account_repository = AccountRepository(session)
     currency_repository = CurrencyRepository(session)
+    unit_of_work = UnitOfWork(session)
 
     return TransferService(
         transaction_repository=transaction_repository,
         account_repository=account_repository,
         currency_repository=currency_repository,
+        unit_of_work=unit_of_work
     )
 
-def get_unit_of_work(session: AsyncSession = Depends(get_session)) -> UnitOfWork:
-    return UnitOfWork(session)
 
 security = HTTPBearer(auto_error=False)
 

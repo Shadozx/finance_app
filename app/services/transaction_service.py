@@ -1,5 +1,6 @@
 import structlog
 
+from app.core import UnitOfWork
 from app.repositories import (
     TransactionRepository,
     CurrencyRepository,
@@ -28,13 +29,15 @@ class TransactionService:
             transaction_template_repository: TransactionTemplateRepository,
             account_repository: AccountRepository,
             category_repository: CategoryRepository,
-            currency_repository: CurrencyRepository
+            currency_repository: CurrencyRepository,
+            unit_of_work: UnitOfWork
     ):
         self.transaction_repository = transaction_repository
         self.transaction_template_repository = transaction_template_repository
         self.account_repository = account_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
+        self.unit_of_work = unit_of_work
 
     async def create_transaction(
             self,

@@ -1,5 +1,6 @@
 import structlog
 
+from app.core import UnitOfWork
 from app.models import Category
 from app.repositories import CategoryRepository
 from app.schemas import CategoryResponse, CategoryCreate, CategoryUpdate, CategoryStatus
@@ -10,8 +11,13 @@ logger = structlog.get_logger()
 
 class CategoryService:
 
-    def __init__(self, category_repository: CategoryRepository):
+    def __init__(
+            self,
+            category_repository: CategoryRepository,
+            unit_of_work: UnitOfWork
+    ):
         self.category_repository = category_repository
+        self.unit_of_work = unit_of_work
 
     async def create_category(
             self,

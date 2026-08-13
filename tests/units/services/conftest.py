@@ -4,6 +4,7 @@ from pytest_mock import MockerFixture
 import datetime
 from decimal import Decimal
 
+from app.core import UnitOfWork
 from app.services import TransactionService, CategoryService, CurrencyService, UserService, TransactionTemplateService, \
     BudgetService, AccountService, TransferService
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, UserRepository, \
@@ -48,12 +49,18 @@ def account_repo_mock(mocker: MockerFixture):
 
 
 @pytest.fixture
+def unit_of_work_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=UnitOfWork)
+
+
+@pytest.fixture
 def transaction_service(
         transaction_repo_mock: TransactionRepository,
         currency_repo_mock: CurrencyRepository,
         transaction_template_repo_mock: TransactionTemplateRepository,
         category_repo_mock: CategoryRepository,
         account_repo_mock: AccountRepository,
+        unit_of_work_mock: UnitOfWork
 ):
     return TransactionService(
         transaction_repository=transaction_repo_mock,
@@ -61,6 +68,7 @@ def transaction_service(
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
         account_repository=account_repo_mock,
+        unit_of_work=unit_of_work_mock
     )
 
 
@@ -69,17 +77,25 @@ def transaction_template_service(
         transaction_template_repo_mock: TransactionTemplateRepository,
         category_repo_mock: CategoryRepository,
         currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork
 ):
     return TransactionTemplateService(
         transaction_template_repository=transaction_template_repo_mock,
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
+        unit_of_work=unit_of_work_mock
     )
 
 
 @pytest.fixture
-def category_service(category_repo_mock: CategoryRepository):
-    return CategoryService(category_repo_mock)
+def category_service(
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork
+):
+    return CategoryService(
+        category_repository=category_repo_mock,
+        unit_of_work=unit_of_work_mock
+    )
 
 
 @pytest.fixture
@@ -88,8 +104,14 @@ def currency_service(currency_repo_mock: CurrencyRepository):
 
 
 @pytest.fixture
-def user_service(user_repo_mock: UserRepository):
-    return UserService(user_repo_mock)
+def user_service(
+        user_repo_mock: UserRepository,
+        unit_of_work_mock: UnitOfWork
+):
+    return UserService(
+        user_repository=user_repo_mock,
+        unit_of_work=unit_of_work_mock
+    )
 
 
 @pytest.fixture
@@ -98,12 +120,14 @@ def budget_service(
         category_repo_mock: CategoryRepository,
         currency_repo_mock: CurrencyRepository,
         transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork
 ):
     return BudgetService(
         budget_repository=budget_repo_mock,
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
         transaction_repository=transaction_repo_mock,
+        unit_of_work=unit_of_work_mock
     )
 
 
@@ -112,24 +136,30 @@ def account_service(
         account_repo_mock: AccountRepository,
         currency_repo_mock: CurrencyRepository,
         transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork
 ):
     return AccountService(
         account_repository=account_repo_mock,
         currency_repository=currency_repo_mock,
         transaction_repository=transaction_repo_mock,
+        unit_of_work=unit_of_work_mock
     )
+
 
 @pytest.fixture
 def transfer_service(
         transaction_repo_mock: TransactionRepository,
         account_repo_mock: AccountRepository,
-        currency_repo_mock: CurrencyRepository
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork
 ):
     return TransferService(
         transaction_repository=transaction_repo_mock,
         account_repository=account_repo_mock,
-        currency_repository=currency_repo_mock
+        currency_repository=currency_repo_mock,
+        unit_of_work=unit_of_work_mock
     )
+
 
 @pytest.fixture
 def existing_transaction(
@@ -174,6 +204,7 @@ def existing_currency():
         is_active=True
     )
 
+
 @pytest.fixture
 def existing_usd_currency():
     return Currency(
@@ -182,6 +213,7 @@ def existing_usd_currency():
         name="US Dollar",
         is_active=True
     )
+
 
 @pytest.fixture
 def existing_template(
@@ -265,6 +297,7 @@ def existing_account(
         created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
         archived_at=None,
     )
+
 
 @pytest.fixture
 def existing_usd_account(

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from datetime import date
 
+from app.core import UnitOfWork
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
@@ -20,10 +21,12 @@ class AccountService:
             account_repository: AccountRepository,
             transaction_repository: TransactionRepository,
             currency_repository: CurrencyRepository,
+            unit_of_work: UnitOfWork
     ):
         self.account_repository = account_repository
         self.transaction_repository = transaction_repository
         self.currency_repository = currency_repository
+        self.unit_of_work = unit_of_work
 
     async def create_account(
             self,

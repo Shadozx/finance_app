@@ -1,5 +1,6 @@
 import structlog
 
+from app.core import UnitOfWork
 from app.models import User
 from app.repositories import UserRepository
 from app.schemas import UserCreate, UserResponse, UserLogin, UsernameUpdate, PasswordUpdate
@@ -8,14 +9,18 @@ from app.core.exceptions import AuthenticationException, ValueExistsException, V
 
 from app.services import validators
 
-
 logger = structlog.get_logger()
 
 
 class UserService:
 
-    def __init__(self, user_repository: UserRepository):
+    def __init__(
+            self,
+            user_repository: UserRepository,
+            unit_of_work: UnitOfWork
+    ):
         self.user_repository = user_repository
+        self.unit_of_work = unit_of_work
 
     async def register_user(
             self,

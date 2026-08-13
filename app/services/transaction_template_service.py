@@ -1,5 +1,6 @@
 import structlog
 
+from app.core import UnitOfWork
 from app.repositories import TransactionTemplateRepository, CategoryRepository, CurrencyRepository
 from app.schemas import TransactionTemplateCreate, TransactionTemplateUpdate, TransactionTemplateResponse
 from app.models import TransactionTemplate
@@ -15,10 +16,12 @@ class TransactionTemplateService:
             transaction_template_repository: TransactionTemplateRepository,
             category_repository: CategoryRepository,
             currency_repository: CurrencyRepository,
+            unit_of_work: UnitOfWork
     ):
         self.transaction_template_repository = transaction_template_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
+        self.unit_of_work = unit_of_work
 
     async def get_template(
             self,

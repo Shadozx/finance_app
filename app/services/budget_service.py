@@ -4,6 +4,7 @@ import structlog
 
 from decimal import Decimal
 
+from app.core import UnitOfWork
 from app.repositories import BudgetRepository, TransactionRepository, CategoryRepository, CurrencyRepository
 from app.schemas import BudgetCreate, BudgetUpdate, BudgetResponse, BudgetFilters, BudgetStatusResponse
 from app.models import Budget
@@ -20,11 +21,13 @@ class BudgetService:
             transaction_repository: TransactionRepository,
             category_repository: CategoryRepository,
             currency_repository: CurrencyRepository,
+            unit_of_work: UnitOfWork
     ):
         self.budget_repository = budget_repository
         self.transaction_repository = transaction_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
+        self.unit_of_work = unit_of_work
 
     async def get_budget(
             self,
