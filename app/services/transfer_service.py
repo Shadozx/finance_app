@@ -80,7 +80,7 @@ class TransferService:
 
         await self.transaction_repository.add(from_side)
         await self.transaction_repository.add(to_side)
-        await self.transaction_repository.commit()
+        await self.unit_of_work.commit()
 
         logger.info(
             "transfer_create_success",
@@ -148,7 +148,7 @@ class TransferService:
         self._write_side(from_side, TransactionType.EXPENSE, from_account, data.from_amount, data)
         self._write_side(to_side, TransactionType.INCOME, to_account, data.to_amount, data)
 
-        await self.transaction_repository.commit()
+        await self.unit_of_work.commit()
 
         logger.info(
             "transfer_update_success",
@@ -166,6 +166,7 @@ class TransferService:
         await self._get_sides(transfer_group_id, user_id)
 
         await self.transaction_repository.delete_by_transfer_group(transfer_group_id, user_id)
+        await self.unit_of_work.commit()
 
         logger.info(
             "transfer_delete_success",

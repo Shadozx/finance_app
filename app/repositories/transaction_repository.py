@@ -237,7 +237,6 @@ class TransactionRepository:
         )
 
         await self.session.execute(query)
-        await self.session.commit()
 
     async def get_counterpart_account_ids(
             self,

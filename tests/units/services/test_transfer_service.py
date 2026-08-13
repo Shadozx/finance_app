@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from pytest_mock import MockerFixture
 
+from app.core import UnitOfWork
 from app.services import TransferService, validators
 from app.repositories import TransactionRepository, AccountRepository, CurrencyRepository
 from app.models import Transaction, TransactionType, TransactionKind, Account, Currency
@@ -36,6 +37,7 @@ def accounts_by_id(
     currency_repo_mock.get_by_code.side_effect = lambda code: currencies.get(code)
 
     return accounts
+
 
 @pytest.fixture
 def existing_transfer(
@@ -102,6 +104,7 @@ class TestCreateTransfer:
             mocker: MockerFixture,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_usd_account: Account,
@@ -158,12 +161,13 @@ class TestCreateTransfer:
 
         assert validate_account_spy.call_count == 2
 
-        transaction_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transfer_same_currency_equal_amounts_success(
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_usd_account: Account,
@@ -179,12 +183,13 @@ class TestCreateTransfer:
 
         assert transaction_repo_mock.add.call_count == 2
 
-        transaction_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transfer_same_currency_different_amounts_rejected(
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_usd_account: Account,
@@ -200,13 +205,14 @@ class TestCreateTransfer:
 
         transaction_repo_mock.add.assert_not_called()
 
-        transaction_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transfer_not_found_account(
             self,
             transfer_service: TransferService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             data: TransferCreate,
     ):
         account_repo_mock.get_by_id.return_value = None
@@ -216,7 +222,7 @@ class TestCreateTransfer:
 
         transaction_repo_mock.add.assert_not_called()
 
-        transaction_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transfer_archived_source_account_rejected(
             self,
@@ -280,6 +286,25 @@ class TestCreateTransfer:
             await transfer_service.create_transfer(data, existing_account.user_id)
 
         transaction_repo_mock.add.assert_not_called()
+
+    async def test_create_transfer_second_side_fails_nothing_committed(
+            self,
+            transfer_service: TransferService,
+            transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
+            accounts_by_id,
+            existing_account: Account,
+            data: TransferCreate,
+    ):
+        """Both sides belong to one operation: if the second fails, the first must not be committed."""
+        transaction_repo_mock.add.side_effect = [None, RuntimeError("db error")]
+
+        with pytest.raises(RuntimeError):
+            await transfer_service.create_transfer(data, existing_account.user_id)
+
+        assert transaction_repo_mock.add.call_count == 2
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestGetTransfer:
@@ -356,6 +381,7 @@ class TestUpdateTransfer:
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_usd_account: Account,
@@ -382,7 +408,7 @@ class TestUpdateTransfer:
         assert result.from_amount == data.from_amount
         assert result.to_amount == data.to_amount
 
-        transaction_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_transfer_swapped_directions_rewrites_both_sides(
             self,
@@ -422,6 +448,7 @@ class TestUpdateTransfer:
             mocker: MockerFixture,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_transfer,
@@ -442,13 +469,14 @@ class TestUpdateTransfer:
 
         assert validate_account_spy.call_args_list[0].kwargs["allow_archived"] is True
 
-        transaction_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_transfer_to_archived_account_rejected(
             self,
             transfer_service: TransferService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_usd_account: Account,
             existing_transfer,
@@ -482,12 +510,13 @@ class TestUpdateTransfer:
                 from_side.transfer_group_id, data, existing_account.user_id
             )
 
-        transaction_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_transfer_not_found(
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             data: TransferUpdate,
     ):
         transaction_repo_mock.get_by_transfer_group.return_value = []
@@ -495,12 +524,13 @@ class TestUpdateTransfer:
         with pytest.raises(NotFoundException, match="Transfer not found"):
             await transfer_service.update_transfer(uuid.uuid4(), data, 1)
 
-        transaction_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_transfer_keeps_inactive_currency_allowed(
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             accounts_by_id,
             existing_account: Account,
             existing_currency: Currency,
@@ -518,7 +548,7 @@ class TestUpdateTransfer:
             from_side.transfer_group_id, data, existing_account.user_id
         )
 
-        transaction_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
 
 class TestDeleteTransfer:
@@ -527,6 +557,7 @@ class TestDeleteTransfer:
             self,
             transfer_service: TransferService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transfer,
     ):
         from_side, to_side = existing_transfer
@@ -539,6 +570,8 @@ class TestDeleteTransfer:
         transaction_repo_mock.delete_by_transfer_group.assert_called_once_with(
             group_id, from_side.user_id
         )
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_delete_transfer_not_found(
             self,
