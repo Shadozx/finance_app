@@ -7,7 +7,8 @@ from datetime import date
 from app.core import UnitOfWork
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, \
+    AccountReconcile, AccountReconcileResponse
 from app.core.exceptions import ValueExistsException, NotAllowedActionException
 from app.services import validators
 
@@ -62,7 +63,7 @@ class AccountService:
             )
             await self.transaction_repository.add(adjustment)
 
-        await self.account_repository.commit()
+        await self.unit_of_work.commit()
 
         logger.info("account_create_success", user_id=user_id, account_id=created_account.id)
 
@@ -124,6 +125,8 @@ class AccountService:
 
         updated_account = await self.account_repository.update(existing_account)
 
+        await self.unit_of_work.commit()
+
         logger.info("account_update_success", user_id=user_id, account_id=updated_account.id)
 
         balance = await self.transaction_repository.get_balance(account_id)
@@ -173,7 +176,9 @@ class AccountService:
             date=date.today(),
         )
 
-        await self.transaction_repository.create(adjustment)
+        await self.transaction_repository.add(adjustment)
+
+        await self.unit_of_work.commit()
 
         logger.info(
             "account_reconcile_success",
@@ -205,6 +210,8 @@ class AccountService:
 
         await self.account_repository.archive(existing_account)
 
+        await self.unit_of_work.commit()
+
         logger.info("account_archive_success", user_id=user_id, account_id=existing_account.id)
 
     async def restore_account(
@@ -231,6 +238,8 @@ class AccountService:
             raise ValueExistsException("Active account with this name already exists")
 
         await self.account_repository.restore(existing_account)
+
+        await self.unit_of_work.commit()
 
         logger.info("account_restore_success", user_id=user_id, account_id=existing_account.id)
 

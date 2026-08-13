@@ -66,7 +66,7 @@ class AccountRepository:
             self,
             account: Account
     ) -> Account:
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(account)
 
         return account
@@ -77,7 +77,7 @@ class AccountRepository:
     ) -> None:
         account.archived_at = datetime.now(timezone.utc)
 
-        await self.session.commit()
+        await self.session.flush()
 
     async def restore(
             self,
@@ -85,7 +85,7 @@ class AccountRepository:
     ) -> None:
         account.archived_at = None
 
-        await self.session.commit()
+        await self.session.flush()
 
     async def add(self, account: Account) -> Account:
         self.session.add(account)

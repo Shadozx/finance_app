@@ -5,10 +5,12 @@ from decimal import Decimal
 import pytest
 from pytest_mock import MockerFixture
 
+from app.core import UnitOfWork
 from app.models import Account, Currency, TransactionType, TransactionKind
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.services import AccountService, validators
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, AccountReconcile, AccountReconcileResponse
+from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, \
+    AccountReconcile, AccountReconcileResponse
 from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
@@ -46,6 +48,7 @@ class TestCreateAccount:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             data: AccountCreate,
     ):
@@ -91,7 +94,7 @@ class TestCreateAccount:
 
         account_repo_mock.add.assert_called_once()
 
-        account_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
         transaction_repo_mock.get_balance.assert_not_called()
 
@@ -101,6 +104,7 @@ class TestCreateAccount:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             data: AccountCreate,
     ):
@@ -136,7 +140,7 @@ class TestCreateAccount:
             user_id=user_id,
         )
 
-        account_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_account_with_positive_received_balance(
             self,
@@ -216,6 +220,7 @@ class TestCreateAccount:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             data: AccountCreate,
     ):
@@ -239,13 +244,14 @@ class TestCreateAccount:
         assert result.balance == Decimal("0")
 
         transaction_repo_mock.add.assert_not_called()
-        account_repo_mock.commit.assert_called_once()
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_account_duplicate_name(
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_currency: Currency,
             data: AccountCreate,
@@ -260,13 +266,14 @@ class TestCreateAccount:
             await account_service.create_account(data, user_id)
 
         account_repo_mock.add.assert_not_called()
-        account_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_account_unknown_currency(
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             data: AccountCreate,
     ):
         user_id = 1
@@ -278,13 +285,14 @@ class TestCreateAccount:
             await account_service.create_account(data, user_id)
 
         account_repo_mock.add.assert_not_called()
-        account_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_account_inactive_currency(
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             data: AccountCreate,
     ):
@@ -298,7 +306,46 @@ class TestCreateAccount:
             await account_service.create_account(data, user_id)
 
         account_repo_mock.add.assert_not_called()
-        account_repo_mock.commit.assert_not_called()
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_create_account_balance_transaction_fails_nothing_committed(
+            self,
+            account_service: AccountService,
+            account_repo_mock: AccountRepository,
+            transaction_repo_mock: TransactionRepository,
+            currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
+            existing_account: Account,
+            existing_currency: Currency,
+            data: AccountCreate,
+    ):
+        """Both sides belong to one operation: if the second fails, the first must not be committed."""
+        user_id = existing_account.user_id
+
+        data.initial_balance = Decimal("5000.00")
+        data.initial_balance_kind = InitialBalanceKind.EXISTING
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_user_and_name.return_value = None
+
+        created = Account(
+            id=1,
+            name=data.name,
+            currency_code=data.currency_code,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        account_repo_mock.add.return_value = created
+
+        transaction_repo_mock.add.side_effect = RuntimeError("db error")
+
+        with pytest.raises(RuntimeError):
+            await account_service.create_account(data, user_id)
+
+        account_repo_mock.add.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestGetAccount:
@@ -472,6 +519,7 @@ class TestUpdateAccount:
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             data: AccountUpdate,
     ):
@@ -516,6 +564,8 @@ class TestUpdateAccount:
         )
 
         account_repo_mock.update.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
         transaction_repo_mock.get_balance.assert_called_once_with(
             existing_account.id,
@@ -663,6 +713,7 @@ class TestArchiveAccount:
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
@@ -674,10 +725,13 @@ class TestArchiveAccount:
 
         account_repo_mock.archive.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_archive_account_not_found(
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -685,6 +739,8 @@ class TestArchiveAccount:
             await account_service.archive_account(999, 1)
 
         account_repo_mock.archive.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_archive_account_wrong_owner(
             self,
@@ -726,6 +782,7 @@ class TestRestoreAccount:
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
@@ -750,6 +807,8 @@ class TestRestoreAccount:
         )
         account_repo_mock.restore.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
         transaction_repo_mock.get_balance.assert_called_once_with(
             existing_account.id,
         )
@@ -758,6 +817,7 @@ class TestRestoreAccount:
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -765,6 +825,8 @@ class TestRestoreAccount:
             await account_service.restore_account(999, 1)
 
         account_repo_mock.restore.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_restore_account_wrong_owner(
             self,
@@ -827,12 +889,14 @@ class TestRestoreAccount:
 
         account_repo_mock.restore.assert_not_called()
 
+
 class TestReconcileAccount:
     async def test_reconcile_account_positive_difference(
             self,
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
@@ -850,7 +914,7 @@ class TestReconcileAccount:
         assert result.difference == Decimal("300.00")
         assert result.account.balance == Decimal("5000.00")
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
         assert_model_fields(
             call_args,
             type=TransactionType.INCOME,
@@ -861,6 +925,8 @@ class TestReconcileAccount:
             user_id=existing_account.user_id,
             category_id=None,
         )
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_reconcile_account_negative_difference(
             self,
@@ -884,7 +950,7 @@ class TestReconcileAccount:
         assert result.difference == Decimal("-300.00")
         assert result.account.balance == Decimal("4700.00")
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
         assert_model_fields(
             call_args,
             type=TransactionType.EXPENSE,
@@ -897,6 +963,7 @@ class TestReconcileAccount:
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
@@ -914,7 +981,9 @@ class TestReconcileAccount:
         assert result.difference == Decimal("0")
         assert result.account.balance == Decimal("5000.00")
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_reconcile_account_to_zero(
             self,
@@ -943,6 +1012,7 @@ class TestReconcileAccount:
             account_service: AccountService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
@@ -958,7 +1028,9 @@ class TestReconcileAccount:
                 existing_account.user_id,
             )
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_reconcile_account_not_found(
             self,
@@ -973,7 +1045,7 @@ class TestReconcileAccount:
         with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.reconcile_account(999, data, 1)
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
 
     async def test_reconcile_account_wrong_owner(
             self,
@@ -995,4 +1067,4 @@ class TestReconcileAccount:
                 wrong_user_id,
             )
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
