@@ -2,7 +2,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.core import get_session, verify_token
+from app.core import get_session, verify_token, UnitOfWork
 from app.core.exceptions import AuthenticationException
 from app.services import UserService, CategoryService, TransactionService, CurrencyService, TransactionTemplateService, \
     StatisticsService, BudgetService, AccountService, TransferService
@@ -116,6 +116,9 @@ def get_transfer_service(
         account_repository=account_repository,
         currency_repository=currency_repository,
     )
+
+def get_unit_of_work(session: AsyncSession = Depends(get_session)) -> UnitOfWork:
+    return UnitOfWork(session)
 
 security = HTTPBearer(auto_error=False)
 
