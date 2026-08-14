@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from pytest_mock import MockerFixture
 
+from app.core import UnitOfWork
 from app.services import TransactionService, validators
 from app.repositories import TransactionRepository, CurrencyRepository, CategoryRepository, \
     TransactionTemplateRepository, AccountRepository
@@ -98,6 +99,7 @@ class TestDeleteTransaction:
             mocker: MockerFixture,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
     ):
         user_id = existing_transaction.user_id
@@ -122,10 +124,13 @@ class TestDeleteTransaction:
 
         transaction_repo_mock.delete.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_delete_transaction_not_found(
             self,
             transaction_service: TransactionService,
-            transaction_repo_mock: TransactionRepository
+            transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         user_id = 1
         transaction_id = 999
@@ -142,10 +147,13 @@ class TestDeleteTransaction:
 
         transaction_repo_mock.delete.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_delete_transaction_transfer_removes_whole_group(
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
     ):
         group_id = uuid.uuid4()
@@ -166,10 +174,13 @@ class TestDeleteTransaction:
 
         transaction_repo_mock.delete.assert_not_called()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_delete_transaction_regular_does_not_touch_transfer_group(
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
     ):
         transaction_repo_mock.get_by_id.return_value = existing_transaction
@@ -182,6 +193,8 @@ class TestDeleteTransaction:
         transaction_repo_mock.delete.assert_called_once()
 
         transaction_repo_mock.delete_by_transfer_group.assert_not_called()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
 
 class TestCreateTransaction:
@@ -210,6 +223,7 @@ class TestCreateTransaction:
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_currency: Currency,
             existing_category: Category,
@@ -222,7 +236,7 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.create.side_effect = make_created
+        transaction_repo_mock.add.side_effect = make_created
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
@@ -234,7 +248,7 @@ class TestCreateTransaction:
             user_id
         )
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
 
         assert result == TransactionResponse.model_validate(call_args)
 
@@ -274,7 +288,9 @@ class TestCreateTransaction:
             data.settled_amount,
         )
 
-        transaction_repo_mock.create.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transaction_without_category(
             self,
@@ -283,6 +299,7 @@ class TestCreateTransaction:
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_currency: Currency,
             data: TransactionCreate
@@ -294,14 +311,14 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.create.side_effect = make_created
+        transaction_repo_mock.add.side_effect = make_created
 
         result = await transaction_service.create_transaction(
             data,
             user_id
         )
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
 
         assert result == TransactionResponse.model_validate(call_args)
 
@@ -321,7 +338,9 @@ class TestCreateTransaction:
 
         category_repo_mock.get_by_id.assert_not_called()
 
-        transaction_repo_mock.create.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transaction_different_currency_success(
             self,
@@ -329,6 +348,7 @@ class TestCreateTransaction:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_usd_currency: Currency,
             data: TransactionCreate,
@@ -344,11 +364,11 @@ class TestCreateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.create.side_effect = make_created
+        transaction_repo_mock.add.side_effect = make_created
 
         result = await transaction_service.create_transaction(data, user_id)
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
 
         assert result == TransactionResponse.model_validate(call_args)
 
@@ -360,7 +380,9 @@ class TestCreateTransaction:
             settled_currency_code=existing_account.currency_code,
         )
 
-        transaction_repo_mock.create.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transaction_different_currency_without_settled_amount(
             self,
@@ -368,6 +390,7 @@ class TestCreateTransaction:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_usd_currency: Currency,
             data: TransactionCreate,
@@ -385,7 +408,9 @@ class TestCreateTransaction:
         ):
             await transaction_service.create_transaction(data, existing_account.user_id)
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transaction_archived_category(
             self,
@@ -393,6 +418,7 @@ class TestCreateTransaction:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_category: Category,
             data: TransactionCreate
@@ -412,7 +438,9 @@ class TestCreateTransaction:
 
         category_repo_mock.get_by_id.assert_called_once()
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transaction_inactive_currency(
             self,
@@ -420,6 +448,7 @@ class TestCreateTransaction:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_currency: Currency,
             data: TransactionCreate
@@ -438,7 +467,9 @@ class TestCreateTransaction:
 
         currency_repo_mock.get_by_code.assert_called_once()
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestCreateTransactionFromTemplate:
@@ -462,6 +493,7 @@ class TestCreateTransactionFromTemplate:
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_template: TransactionTemplate,
             existing_category: Category,
@@ -475,7 +507,7 @@ class TestCreateTransactionFromTemplate:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.create.side_effect = make_created
+        transaction_repo_mock.add.side_effect = make_created
 
         validate_template_spy = mocker.spy(validators, "validate_template")
         validate_category_spy = mocker.spy(validators, "validate_category")
@@ -489,7 +521,7 @@ class TestCreateTransactionFromTemplate:
             user_id
         )
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
 
         assert result == TransactionResponse.model_validate(call_args)
 
@@ -538,7 +570,9 @@ class TestCreateTransactionFromTemplate:
             data.settled_amount,
         )
 
-        transaction_repo_mock.create.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transaction_from_template_without_category(
             self,
@@ -546,6 +580,7 @@ class TestCreateTransactionFromTemplate:
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_template: TransactionTemplate,
             data: UseTemplateRequest,
@@ -557,7 +592,7 @@ class TestCreateTransactionFromTemplate:
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.create.side_effect = make_created
+        transaction_repo_mock.add.side_effect = make_created
 
         result = await transaction_service.create_transaction_from_template(
             template_id,
@@ -565,7 +600,7 @@ class TestCreateTransactionFromTemplate:
             user_id
         )
 
-        call_args = transaction_repo_mock.create.call_args[0][0]
+        call_args = transaction_repo_mock.add.call_args[0][0]
 
         assert result == TransactionResponse.model_validate(call_args)
 
@@ -584,13 +619,16 @@ class TestCreateTransactionFromTemplate:
             account_id=data.account_id,
         )
 
-        transaction_repo_mock.create.assert_called_once()
+        transaction_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transaction_from_template_not_found_template(
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
+            unit_of_work_mock: UnitOfWork,
             data: UseTemplateRequest,
     ):
         user_id = 1
@@ -605,7 +643,9 @@ class TestCreateTransactionFromTemplate:
                 user_id
             )
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transaction_archived_category(
             self,
@@ -614,6 +654,7 @@ class TestCreateTransactionFromTemplate:
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_template: TransactionTemplate,
             existing_category: Category,
@@ -634,7 +675,9 @@ class TestCreateTransactionFromTemplate:
                 user_id
             )
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transaction_inactive_currency(
             self,
@@ -643,6 +686,7 @@ class TestCreateTransactionFromTemplate:
             transaction_repo_mock: TransactionRepository,
             transaction_template_repo_mock: TransactionTemplateRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_template: TransactionTemplate,
             existing_currency: Currency,
@@ -662,7 +706,9 @@ class TestCreateTransactionFromTemplate:
                 user_id
             )
 
-        transaction_repo_mock.create.assert_not_called()
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestGetUserTransactions:
@@ -839,6 +885,7 @@ class TestUpdateTransaction:
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             existing_account: Account,
             existing_currency: Currency,
@@ -922,6 +969,8 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_transaction_preserves_adjustment_kind(
             self,
             transaction_service: TransactionService,
@@ -955,6 +1004,7 @@ class TestUpdateTransaction:
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
+            unit_of_work_mock: UnitOfWork,
             data: TransactionUpdate
     ):
         transaction_id = 999
@@ -971,6 +1021,8 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_transaction_without_category(
             self,
             transaction_service: TransactionService,
@@ -978,6 +1030,7 @@ class TestUpdateTransaction:
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_account: Account,
             existing_transaction: Transaction,
             existing_currency: Currency,
@@ -1022,12 +1075,15 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_transaction_different_currency_success(
             self,
             transaction_service: TransactionService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             existing_account: Account,
             existing_usd_currency: Currency,
@@ -1065,12 +1121,15 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_transaction_different_currency_without_settled_amount(
             self,
             transaction_service: TransactionService,
             account_repo_mock: AccountRepository,
             transaction_repo_mock: TransactionRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             existing_account: Account,
             existing_usd_currency: Currency,
@@ -1095,6 +1154,8 @@ class TestUpdateTransaction:
             )
 
         transaction_repo_mock.update.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_transaction_archived_category(
             self,
@@ -1161,6 +1222,7 @@ class TestUpdateTransaction:
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
             account_repo_mock: AccountRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             existing_category: Category,
             existing_currency: Currency,
@@ -1191,6 +1253,8 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_transaction_keeps_archived_category_allowed(
             self,
             mocker: MockerFixture,
@@ -1199,6 +1263,7 @@ class TestUpdateTransaction:
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
             account_repo_mock: AccountRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             existing_category: Category,
             existing_currency: Currency,
@@ -1230,11 +1295,14 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_transaction_transfer_rejected(
             self,
             transaction_service: TransactionService,
             transaction_repo_mock: TransactionRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_transaction: Transaction,
             data: TransactionUpdate,
     ):
@@ -1253,3 +1321,5 @@ class TestUpdateTransaction:
         transaction_repo_mock.update.assert_not_called()
 
         category_repo_mock.get_by_id.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()

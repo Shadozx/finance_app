@@ -69,7 +69,9 @@ class TransactionService:
             date=data.date,
         )
 
-        created_transaction = await self.transaction_repository.create(new_transaction)
+        created_transaction = await self.transaction_repository.add(new_transaction)
+
+        await self.unit_of_work.commit()
 
         logger.info("transaction_create_success", user_id=user_id, transaction_id=created_transaction.id)
 
@@ -138,7 +140,9 @@ class TransactionService:
             date=data.date,
         )
 
-        created_transaction = await self.transaction_repository.create(new_transaction)
+        created_transaction = await self.transaction_repository.add(new_transaction)
+
+        await self.unit_of_work.commit()
 
         logger.info("transaction_create_from_template_success", user_id=user_id, transaction_id=created_transaction.id)
 
@@ -247,6 +251,8 @@ class TransactionService:
 
         updated_transaction = await self.transaction_repository.update(existing_transaction)
 
+        await self.unit_of_work.commit()
+
         logger.info("transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id)
 
         return self._to_response(updated_transaction)
@@ -271,6 +277,8 @@ class TransactionService:
                 user_id,
             )
 
+            await self.unit_of_work.commit()
+
             logger.info(
                 "transfer_delete_via_transaction_success",
                 user_id=user_id,
@@ -279,6 +287,8 @@ class TransactionService:
             )
         else:
             await self.transaction_repository.delete(existing_transaction)
+
+            await self.unit_of_work.commit()
 
             logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)
 

@@ -51,18 +51,24 @@ class TransactionRepository:
 
     async def create(self, transaction: Transaction) -> Transaction:
         self.session.add(transaction)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(transaction)
         return transaction
 
+    async def add(self, transaction: Transaction) -> Transaction:
+        self.session.add(transaction)
+
+        await self.session.flush()
+
+        return transaction
+
     async def update(self, transaction: Transaction) -> Transaction:
-        await self.session.commit()
-        await self.session.refresh(transaction)
+        await self.session.flush()
+
         return transaction
 
     async def delete(self, transaction: Transaction) -> None:
         await self.session.delete(transaction)
-        await self.session.commit()
 
     async def get_summary(
             self,
@@ -79,7 +85,6 @@ class TransactionRepository:
         if filters.currency_code is not None:
             query = query.where(Transaction.settled_currency_code == filters.currency_code)
 
-
         rows = (await self.session.execute(query)).all()
 
         return [
@@ -92,7 +97,8 @@ class TransactionRepository:
             user_id: int,
             filters: CategoryStatisticsFilters,
     ) -> list[CategorySummaryRow]:
-        query = (select(Transaction.settled_currency_code, Transaction.category_id, Category.name, func.sum(Transaction.settled_amount))
+        query = (select(Transaction.settled_currency_code, Transaction.category_id, Category.name,
+                        func.sum(Transaction.settled_amount))
                  .join(Category, Category.id == Transaction.category_id, isouter=True)
                  .group_by(Transaction.settled_currency_code, Transaction.category_id, Category.name)
                  .where(Transaction.user_id == user_id)
@@ -203,13 +209,6 @@ class TransactionRepository:
             (Transaction.type == TransactionType.INCOME, Transaction.settled_amount),
             else_=-Transaction.settled_amount,
         )
-
-    async def add(self, transaction: Transaction) -> Transaction:
-        self.session.add(transaction)
-
-        await self.session.flush()
-
-        return transaction
 
     async def get_by_transfer_group(
             self,

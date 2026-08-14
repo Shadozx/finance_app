@@ -67,7 +67,6 @@ class AccountRepository:
             account: Account
     ) -> Account:
         await self.session.flush()
-        await self.session.refresh(account)
 
         return account
 
