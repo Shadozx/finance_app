@@ -84,7 +84,10 @@ class BudgetService:
             user_id=user_id,
         )
 
-        created_budget = await self.budget_repository.create(new_budget)
+        created_budget = await self.budget_repository.add(new_budget)
+
+        await self.unit_of_work.commit()
+
         logger.info("budget_create_success", user_id=user_id, budget_id=created_budget.id)
 
         return BudgetResponse.model_validate(created_budget)
@@ -126,6 +129,9 @@ class BudgetService:
         existing_budget.end_date = data.end_date
 
         updated_budget = await self.budget_repository.update(existing_budget)
+
+        await self.unit_of_work.commit()
+
         logger.info("budget_update_success", user_id=user_id, budget_id=updated_budget.id)
 
         return BudgetResponse.model_validate(updated_budget)
@@ -139,6 +145,9 @@ class BudgetService:
             self.budget_repository, user_id, budget_id
         )
         await self.budget_repository.delete(existing_budget)
+
+        await self.unit_of_work.commit()
+
         logger.info("budget_delete_success", user_id=user_id, budget_id=existing_budget.id)
 
     async def get_budget_status(

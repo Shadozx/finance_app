@@ -32,7 +32,9 @@ class CategoryService:
             user_id=user_id,
         )
 
-        created_category = await self.category_repository.create(new_category)
+        created_category = await self.category_repository.add(new_category)
+
+        await self.unit_of_work.commit()
 
         logger.info("category_create_success", user_id=user_id, category_id=created_category.id)
 
@@ -75,6 +77,8 @@ class CategoryService:
 
         updated_category = await self.category_repository.update(existing_category)
 
+        await self.unit_of_work.commit()
+
         logger.info("category_update_success", user_id=user_id, category_id=updated_category.id)
 
         return CategoryResponse.model_validate(updated_category)
@@ -98,6 +102,8 @@ class CategoryService:
             raise NotAllowedActionException("Category is archived")
 
         await self.category_repository.archive(existing_category)
+
+        await self.unit_of_work.commit()
 
         logger.info("category_archive_success", user_id=user_id, category_id=existing_category.id)
 
@@ -130,6 +136,8 @@ class CategoryService:
             )
 
         await self.category_repository.restore(existing_category)
+
+        await self.unit_of_work.commit()
 
         logger.info("category_restore_success", user_id=user_id, category_id=existing_category.id)
 

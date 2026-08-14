@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.core import UnitOfWork
 from app.models import Category
 from app.repositories import CategoryRepository
 from app.services import CategoryService
@@ -23,6 +24,7 @@ class TestCreateCategory:
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             data: CategoryCreate
     ):
         user_id = 1
@@ -36,7 +38,7 @@ class TestCreateCategory:
             created_at=datetime.now(timezone.utc),
             archived_at=None
         )
-        category_repo_mock.create.return_value = created
+        category_repo_mock.add.return_value = created
 
         result = await category_service.create_category(
             data,
@@ -45,7 +47,7 @@ class TestCreateCategory:
 
         assert result == CategoryResponse.model_validate(created)
 
-        call_args = category_repo_mock.create.call_args[0][0]
+        call_args = category_repo_mock.add.call_args[0][0]
 
         assert_model_fields(
             call_args,
@@ -58,11 +60,14 @@ class TestCreateCategory:
             data.name
         )
 
-        category_repo_mock.create.assert_called_once()
+        category_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_category_existing_category(
             self,
             category_service: CategoryService,
+            unit_of_work_mock: UnitOfWork,
             category_repo_mock: CategoryRepository,
             existing_category: Category,
             data: CategoryCreate
@@ -78,7 +83,9 @@ class TestCreateCategory:
                 user_id
             )
 
-        category_repo_mock.create.assert_not_called()
+        category_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestUpdateCategory:
@@ -92,6 +99,7 @@ class TestUpdateCategory:
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
             data: CategoryUpdate
     ):
@@ -135,10 +143,13 @@ class TestUpdateCategory:
 
         category_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_category_not_found_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             data: CategoryUpdate
     ):
         category_id = 999
@@ -155,10 +166,13 @@ class TestUpdateCategory:
 
         category_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_category_wrong_owner(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
             data: CategoryUpdate
     ):
@@ -175,10 +189,13 @@ class TestUpdateCategory:
 
         category_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_category_duplicated_name(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
             data: CategoryUpdate
     ):
@@ -202,6 +219,8 @@ class TestUpdateCategory:
             )
 
         category_repo_mock.update.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestGetUserCategories:
@@ -262,11 +281,13 @@ class TestGetUserCategories:
             status=CategoryStatus.ACTIVE,
         )
 
+
 class TestArchiveCategory:
     async def test_archive_category_success(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         category_repo_mock.get_by_id.return_value = existing_category
@@ -291,10 +312,13 @@ class TestArchiveCategory:
 
         category_repo_mock.archive.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_archive_category_not_found_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         category_id = 999
         user_id = 1
@@ -309,10 +333,13 @@ class TestArchiveCategory:
 
         category_repo_mock.archive.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_archive_category_wrong_owner(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         wrong_user = existing_category.user_id + 1
@@ -327,10 +354,13 @@ class TestArchiveCategory:
 
         category_repo_mock.archive.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_archive_category_archived_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         category_id = existing_category.id
@@ -348,14 +378,16 @@ class TestArchiveCategory:
 
         category_repo_mock.archive.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
 
 class TestRestoreCategory:
 
     async def test_restore_category_success(
             self,
-
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         archived_category = Category(
@@ -380,10 +412,13 @@ class TestRestoreCategory:
 
         category_repo_mock.restore.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_restore_category_not_found_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         category_id = 999
         user_id = 1
@@ -398,10 +433,13 @@ class TestRestoreCategory:
 
         category_repo_mock.restore.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_restore_category_wrong_owner(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         wrong_user_id = existing_category.user_id + 1
@@ -416,10 +454,13 @@ class TestRestoreCategory:
 
         category_repo_mock.restore.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_restore_category_not_archived_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         not_archived_category = Category(
             id=1,
@@ -439,10 +480,13 @@ class TestRestoreCategory:
 
         category_repo_mock.restore.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_restore_category_duplicated_active_category(
             self,
             category_service: CategoryService,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
         category_repo_mock.get_by_user_and_name.return_value = existing_category
@@ -461,3 +505,5 @@ class TestRestoreCategory:
             await category_service.restore_category(archived_category.id, archived_category.user_id)
 
         category_repo_mock.restore.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()

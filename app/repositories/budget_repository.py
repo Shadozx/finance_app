@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from app.models import Budget
 
+
 class BudgetRepository:
 
     def __init__(self, session: AsyncSession):
@@ -21,14 +22,23 @@ class BudgetRepository:
         await self.session.refresh(budget)
         return budget
 
+    async def add(
+            self,
+            budget: Budget,
+    ) -> Budget:
+        self.session.add(budget)
+
+        await self.session.flush()
+
+        return budget
+
     async def update(self, budget: Budget) -> Budget:
-        await self.session.commit()
-        await self.session.refresh(budget)
+        await self.session.flush()
+
         return budget
 
     async def delete(self, budget: Budget) -> None:
         await self.session.delete(budget)
-        await self.session.commit()
 
     async def get_by_period(self, user_id: int, start_date: date, end_date: date) -> list[Budget]:
         return list(

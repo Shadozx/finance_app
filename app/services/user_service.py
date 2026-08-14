@@ -38,7 +38,9 @@ class UserService:
             hashed_password=hash_password(user.password)
         )
 
-        created_user = await self.user_repository.create(new_user)
+        created_user = await self.user_repository.add(new_user)
+
+        await self.unit_of_work.commit()
 
         logger.info("user_register_success", user_id=created_user.id)
 
@@ -76,6 +78,8 @@ class UserService:
         existing_user.username = data.new_username
         updated_user = await self.user_repository.update(existing_user)
 
+        await self.unit_of_work.commit()
+
         logger.info("username_update_success", user_id=updated_user.id, new_username=data.new_username)
 
         return UserResponse.model_validate(updated_user)
@@ -98,5 +102,7 @@ class UserService:
         existing_user.hashed_password = hash_password(data.new_password)
 
         await self.user_repository.update(existing_user)
+
+        await self.unit_of_work.commit()
 
         logger.info("password_update_success", user_id=existing_user.id)

@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from pytest_mock import MockerFixture
 
+from app.core import UnitOfWork
 from app.services import BudgetService, validators
 from app.repositories import (
     BudgetRepository,
@@ -91,6 +92,7 @@ class TestCreateBudget:
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             existing_category: Category,
             data: BudgetCreate,
@@ -112,7 +114,7 @@ class TestCreateBudget:
             end_date=data.end_date,
             user_id=user_id,
         )
-        budget_repo_mock.create.return_value = created
+        budget_repo_mock.add.return_value = created
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
@@ -121,7 +123,7 @@ class TestCreateBudget:
 
         assert result == BudgetResponse.model_validate(created)
 
-        call_args = budget_repo_mock.create.call_args[0][0]
+        call_args = budget_repo_mock.add.call_args[0][0]
         assert_model_fields(
             call_args,
             amount=data.amount,
@@ -150,7 +152,9 @@ class TestCreateBudget:
             data.end_date,
         )
 
-        budget_repo_mock.create.assert_called_once()
+        budget_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_budget_duplicate(
             self,
@@ -158,6 +162,7 @@ class TestCreateBudget:
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             existing_category: Category,
             existing_budget: Budget,
@@ -173,17 +178,19 @@ class TestCreateBudget:
         with pytest.raises(ValueExistsException, match="already exists"):
             await budget_service.create_budget(data, user_id)
 
-        budget_repo_mock.create.assert_not_called()
+        budget_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_budget_archived_category(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_category: Category,
             data: BudgetCreate,
     ):
-        from datetime import datetime, timezone
         data.category_id = existing_category.id
         existing_category.archived_at = datetime.now(timezone.utc)
 
@@ -193,7 +200,9 @@ class TestCreateBudget:
         with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
             await budget_service.create_budget(data, existing_category.user_id)
 
-        budget_repo_mock.create.assert_not_called()
+        budget_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_budget_inactive_currency(
             self,
@@ -201,6 +210,7 @@ class TestCreateBudget:
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_currency: Currency,
             existing_category: Category,
             data: BudgetCreate,
@@ -215,7 +225,10 @@ class TestCreateBudget:
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
             await budget_service.create_budget(data, existing_category.user_id)
 
-        budget_repo_mock.create.assert_not_called()
+        budget_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
+
 
 class TestUpdateBudget:
 
@@ -240,6 +253,7 @@ class TestUpdateBudget:
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_currency: Currency,
             existing_category: Category,
@@ -278,8 +292,17 @@ class TestUpdateBudget:
             user_id,
             existing_budget.id,
         )
-        validate_category_spy.assert_called_once()
-        validate_currency_spy.assert_called_once()
+        validate_category_spy.assert_called_once_with(
+            budget_service.category_repository,
+            user_id,
+            existing_category.id,
+            allow_archived=True,
+        )
+        validate_currency_spy.assert_called_once_with(
+            budget_service.currency_repository,
+            existing_currency.code,
+            allow_inactive=True,
+        )
 
         budget_repo_mock.find_same_budget.assert_called_once_with(
             user_id,
@@ -291,10 +314,13 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_budget_not_found(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
+            unit_of_work_mock: UnitOfWork,
             data: BudgetUpdate,
     ):
         budget_repo_mock.find_same_budget.return_value = None
@@ -305,12 +331,15 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_budget_duplicate_not_self(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_currency: Currency,
             existing_category: Category,
@@ -335,10 +364,12 @@ class TestUpdateBudget:
         )
         budget_repo_mock.find_same_budget.return_value = other_budget
 
-        with pytest.raises(ValueExistsException, match="already exists"):
+        with pytest.raises(ValueExistsException, match="Budget for this category, currency and period already exists"):
             await budget_service.update_budget(existing_budget.id, data, user_id)
 
         budget_repo_mock.update.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_budget_duplicate_is_self_allowed(
             self,
@@ -346,6 +377,7 @@ class TestUpdateBudget:
             budget_repo_mock: BudgetRepository,
             currency_repo_mock: CurrencyRepository,
             category_repo_mock: CategoryRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_currency: Currency,
             existing_category: Category,
@@ -365,6 +397,8 @@ class TestUpdateBudget:
         assert result == BudgetResponse.model_validate(existing_budget)
         budget_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_budget_keeps_archived_category_allowed(
             self,
             mocker: MockerFixture,
@@ -372,6 +406,7 @@ class TestUpdateBudget:
             budget_repo_mock: BudgetRepository,
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_category: Category,
             existing_currency: Currency,
@@ -405,6 +440,8 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_budget_keeps_inactive_currency_allowed(
             self,
             mocker: MockerFixture,
@@ -412,6 +449,7 @@ class TestUpdateBudget:
             budget_repo_mock: BudgetRepository,
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_category: Category,
             existing_currency: Currency,
@@ -444,12 +482,15 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_budget_to_archived_category_fails(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_category: Category,
             existing_currency: Currency,
@@ -473,12 +514,15 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_budget_to_inactive_currency_fails(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
             category_repo_mock: CategoryRepository,
             currency_repo_mock: CurrencyRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
             existing_category: Category,
             existing_currency: Currency,
@@ -503,12 +547,16 @@ class TestUpdateBudget:
 
         budget_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
+
 class TestDeleteBudget:
     async def test_delete_budget_success(
             self,
             mocker: MockerFixture,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = existing_budget
@@ -518,12 +566,16 @@ class TestDeleteBudget:
         await budget_service.delete_budget(existing_budget.id, existing_budget.user_id)
 
         validate_budget_spy.assert_called_once()
+
         budget_repo_mock.delete.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_delete_budget_not_found(
             self,
             budget_service: BudgetService,
             budget_repo_mock: BudgetRepository,
+            unit_of_work_mock: UnitOfWork,
     ):
         budget_repo_mock.get_by_id.return_value = None
 
@@ -531,6 +583,9 @@ class TestDeleteBudget:
             await budget_service.delete_budget(999, 1)
 
         budget_repo_mock.delete.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
+
 
 class TestGetUserBudgets:
     async def test_get_user_budgets_default_active(
@@ -570,6 +625,7 @@ class TestGetUserBudgets:
             date(2026, 7, 1),
             date(2026, 7, 31),
         )
+
 
 class TestGetBudgetStatus:
     async def test_status_normal(

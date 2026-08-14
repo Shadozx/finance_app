@@ -31,8 +31,17 @@ class UserRepository:
 
         return user
 
+    async def add(
+            self,
+            user: User,
+    ) -> User:
+        self.session.add(user)
+
+        await self.session.flush()
+
+        return user
+
     async def update(self, user: User) -> User:
-        await self.session.commit()
-        await self.session.refresh(user)
+        await self.session.flush()
 
         return user

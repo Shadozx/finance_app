@@ -62,12 +62,20 @@ class CategoryRepository:
 
         return category
 
+    async def add(
+            self,
+            category: Category
+    ) -> Category:
+        self.session.add(category)
+        await self.session.flush()
+
+        return category
+
     async def update(
             self,
             category: Category
     ) -> Category:
-        await self.session.commit()
-        await self.session.refresh(category)
+        await self.session.flush()
 
         return category
 
@@ -77,9 +85,12 @@ class CategoryRepository:
     ) -> None:
         category.archived_at = datetime.now(timezone.utc)
 
-        await self.session.commit()
+        await self.session.flush()
 
-    async def restore(self, category: Category) -> None:
+    async def restore(
+            self,
+            category: Category
+    ) -> None:
         category.archived_at = None
 
-        await self.session.commit()
+        await self.session.flush()

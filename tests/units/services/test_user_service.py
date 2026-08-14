@@ -1,6 +1,7 @@
 import pytest
 from pytest_mock import MockerFixture
 
+from app.core import UnitOfWork
 from app.repositories import UserRepository
 from app.services import UserService
 from app.models import User
@@ -27,6 +28,7 @@ class TestRegister:
             mocker: MockerFixture,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UserCreate
     ):
@@ -40,13 +42,13 @@ class TestRegister:
         user_repo_mock.get_by_email.return_value = None
         user_repo_mock.get_by_username.return_value = None
 
-        user_repo_mock.create.return_value = existing_user
+        user_repo_mock.add.return_value = existing_user
 
         result = await user_service.register_user(data)
 
         assert result == UserResponse.model_validate(existing_user)
 
-        call_args = user_repo_mock.create.call_args[0][0]
+        call_args = user_repo_mock.add.call_args[0][0]
         assert_model_fields(
             call_args,
             email=data.email,
@@ -64,12 +66,15 @@ class TestRegister:
 
         mock_hash.assert_called_once_with(data.password)
 
-        user_repo_mock.create.assert_called_once()
+        user_repo_mock.add.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_register_existing_email(
             self,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UserCreate
     ):
@@ -82,12 +87,15 @@ class TestRegister:
             data.email
         )
 
-        user_repo_mock.create.assert_not_called()
+        user_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_register_existing_username(
             self,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UserCreate
     ):
@@ -101,7 +109,9 @@ class TestRegister:
             data.username
         )
 
-        user_repo_mock.create.assert_not_called()
+        user_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestAuthenticate:
@@ -209,6 +219,7 @@ class TestUpdateUsername:
             self,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UsernameUpdate
     ):
@@ -248,10 +259,13 @@ class TestUpdateUsername:
 
         user_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_username_username_belongs_to_other_user(
             self,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UsernameUpdate
     ):
@@ -273,10 +287,13 @@ class TestUpdateUsername:
 
         user_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_username_self_not_duplicate(
             self,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: UsernameUpdate
     ):
@@ -301,6 +318,8 @@ class TestUpdateUsername:
 
         user_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
 
 class TestUpdatePassword:
 
@@ -319,6 +338,7 @@ class TestUpdatePassword:
             mocker: MockerFixture,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: PasswordUpdate
     ):
@@ -360,11 +380,14 @@ class TestUpdatePassword:
 
         user_repo_mock.update.assert_called_once()
 
+        unit_of_work_mock.commit.assert_awaited_once()
+
     async def test_update_password_same_as_current(
             self,
             mocker: MockerFixture,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: PasswordUpdate
     ):
@@ -388,11 +411,14 @@ class TestUpdatePassword:
 
         user_repo_mock.update.assert_not_called()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
     async def test_update_password_wrong_current(
             self,
             mocker: MockerFixture,
             user_service: UserService,
             user_repo_mock: UserRepository,
+            unit_of_work_mock: UnitOfWork,
             existing_user: User,
             data: PasswordUpdate
     ):
@@ -417,3 +443,5 @@ class TestUpdatePassword:
         )
 
         user_repo_mock.update.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()

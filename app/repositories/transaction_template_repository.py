@@ -60,12 +60,21 @@ class TransactionTemplateRepository:
 
         return template
 
+    async def add(
+            self,
+            template: TransactionTemplate
+    ) -> TransactionTemplate:
+        self.session.add(template)
+
+        await self.session.flush()
+
+        return template
+
     async def update(
             self,
             template: TransactionTemplate
     ) -> TransactionTemplate:
-        await self.session.commit()
-        await self.session.refresh(template)
+        await self.session.flush()
 
         return template
 
@@ -74,4 +83,3 @@ class TransactionTemplateRepository:
             template: TransactionTemplate
     ) -> None:
         await self.session.delete(template)
-        await self.session.commit()

@@ -71,7 +71,9 @@ class TransactionTemplateService:
             user_id=user_id
         )
 
-        created_template = await self.transaction_template_repository.create(new_template)
+        created_template = await self.transaction_template_repository.add(new_template)
+
+        await self.unit_of_work.commit()
 
         logger.info("transaction_template_create_success", user_id=user_id, template_id=created_template.id)
 
@@ -113,6 +115,8 @@ class TransactionTemplateService:
 
         updated_template = await self.transaction_template_repository.update(existing_template)
 
+        await self.unit_of_work.commit()
+
         logger.info("transaction_template_update_success", user_id=user_id, template_id=updated_template.id)
 
         return TransactionTemplateResponse.model_validate(updated_template)
@@ -126,5 +130,7 @@ class TransactionTemplateService:
                                                                template_id)
 
         await self.transaction_template_repository.delete(existing_template)
+
+        await self.unit_of_work.commit()
 
         logger.info("transaction_template_delete_success", user_id=user_id, template_id=existing_template.id)
