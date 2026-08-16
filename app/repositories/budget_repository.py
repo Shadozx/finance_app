@@ -16,12 +16,6 @@ class BudgetRepository:
             await self.session.execute(select(Budget).where(Budget.id == budget_id))
         ).scalar_one_or_none()
 
-    async def create(self, budget: Budget) -> Budget:
-        self.session.add(budget)
-        await self.session.commit()
-        await self.session.refresh(budget)
-        return budget
-
     async def add(
             self,
             budget: Budget,

@@ -51,17 +51,6 @@ class CategoryRepository:
             )
         ).scalar_one_or_none()
 
-    async def create(
-            self,
-            category: Category
-    ) -> Category:
-        self.session.add(category)
-        await self.session.commit()
-
-        await self.session.refresh(category)
-
-        return category
-
     async def add(
             self,
             category: Category

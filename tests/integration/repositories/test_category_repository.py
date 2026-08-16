@@ -19,12 +19,12 @@ async def archived_category(
         user_id=user.id,
         archived_at=datetime(2020, 1, 1),
     )
-    return await category_repository.create(category)
+    return await category_repository.add(category)
 
 
-class TestCreate:
+class TestAdd:
 
-    async def test_create(
+    async def test_add(
             self,
             category_repository: CategoryRepository,
             user: User,
@@ -34,13 +34,13 @@ class TestCreate:
             user_id=user.id,
         )
 
-        created_category = await category_repository.create(new_category)
+        created_category = await category_repository.add(new_category)
 
         assert created_category.id is not None
         assert created_category.name == new_category.name
         assert created_category.user_id == new_category.user_id
 
-    async def test_create_duplicate_name_same_user(
+    async def test_add_duplicate_name_same_user(
             self,
             category_repository: CategoryRepository,
             category: Category,
@@ -51,7 +51,7 @@ class TestCreate:
         )
 
         with pytest.raises(IntegrityError):
-            await category_repository.create(duplicate_category)
+            await category_repository.add(duplicate_category)
 
 
 class TestGetById:
@@ -85,7 +85,7 @@ class TestGetByUser:
             user_id=category.user_id,
         )
 
-        await category_repository.create(new_category)
+        await category_repository.add(new_category)
 
         categories = await category_repository.get_by_user(category.user_id)
 
@@ -125,7 +125,7 @@ class TestGetByUser:
             category: Category,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
@@ -135,7 +135,7 @@ class TestGetByUser:
             name="Other User Category",
             user_id=other_user.id,
         )
-        await category_repository.create(other_category)
+        await category_repository.add(other_category)
 
         categories = await category_repository.get_by_user(category.user_id)
 
@@ -184,7 +184,7 @@ class TestGetByUser:
             archived_category: Category,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
@@ -194,14 +194,14 @@ class TestGetByUser:
             name="Other Active Category",
             user_id=other_user.id,
         )
-        await category_repository.create(other_active_category)
+        await category_repository.add(other_active_category)
 
         other_archived_category = Category(
             name="Other Archived Category",
             user_id=other_user.id,
             archived_at=datetime(2020, 1, 1),
         )
-        await category_repository.create(other_archived_category)
+        await category_repository.add(other_archived_category)
 
         categories = await category_repository.get_by_user(
             category.user_id,

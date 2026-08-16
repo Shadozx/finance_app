@@ -15,7 +15,7 @@ async def budget(
         category: Category,
         uah_currency: Currency,
 ):
-    return await budget_repository.create(Budget(
+    return await budget_repository.add(Budget(
         name="Food July",
         amount=Decimal("5000.00"),
         currency_code=uah_currency.code,
@@ -26,8 +26,8 @@ async def budget(
     ))
 
 
-class TestCreate:
-    async def test_create(
+class TestAdd:
+    async def test_add(
             self,
             budget_repository: BudgetRepository,
             user: User,
@@ -44,7 +44,7 @@ class TestCreate:
             end_date=date(2026, 7, 31),
         )
 
-        created = await budget_repository.create(budget)
+        created = await budget_repository.add(budget)
 
         assert created.id is not None
         assert created.amount == budget.amount
@@ -124,7 +124,7 @@ class TestGetByPeriod:
             category: Category,
             uah_currency: Currency,
     ):
-        crossing = await budget_repository.create(Budget(
+        crossing = await budget_repository.add(Budget(
             amount=Decimal("3000.00"),
             currency_code=uah_currency.code,
             category_id=category.id,
@@ -178,7 +178,7 @@ class TestGetByPeriod:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        b_mar = await budget_repository.create(Budget(
+        b_mar = await budget_repository.add(Budget(
             amount=Decimal("100.00"),
             currency_code=uah_currency.code,
             category_id=category.id,
@@ -186,7 +186,7 @@ class TestGetByPeriod:
             start_date=date(2026, 3, 1),
             end_date=date(2026, 3, 31),
         ))
-        b_jan = await budget_repository.create(Budget(
+        b_jan = await budget_repository.add(Budget(
             amount=Decimal("100.00"),
             currency_code=usd_currency.code,
             category_id=category.id,
@@ -211,10 +211,10 @@ class TestGetByPeriod:
             category: Category,
             uah_currency: Currency,
     ):
-        other_user = await user_repository.create(User(
+        other_user = await user_repository.add(User(
             email="other@test.com", username="other", hashed_password="hashed",
         ))
-        await budget_repository.create(Budget(
+        await budget_repository.add(Budget(
             amount=Decimal("9999.00"),
             currency_code=uah_currency.code,
             category_id=category.id,
@@ -250,7 +250,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("2000.00"),
@@ -260,7 +260,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 5),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("1000.00"),
@@ -289,7 +289,7 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("500.00"),
@@ -299,7 +299,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 5),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.INCOME,
             kind=TransactionKind.REGULAR,
             amount=Decimal("10000.00"),
@@ -330,7 +330,7 @@ class TestGetSpent:
             uah_currency: Currency,
             usd_currency: Currency,
     ):
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("300.00"),
@@ -340,7 +340,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("40.00"),
@@ -350,7 +350,7 @@ class TestGetSpent:
             account_id=usd_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("999.00"),
@@ -360,7 +360,7 @@ class TestGetSpent:
             account_id=uah_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("888.00"),
@@ -408,10 +408,10 @@ class TestGetSpent:
             category: Category,
             uah_currency: Currency,
     ):
-        other_user = await user_repository.create(User(
+        other_user = await user_repository.add(User(
             email="other2@test.com", username="other2", hashed_password="hashed",
         ))
-        other_account = await account_repository.create(
+        other_account = await account_repository.add(
             Account(
                 name="Other user account",
                 currency_code=uah_currency.code,
@@ -419,7 +419,7 @@ class TestGetSpent:
             )
         )
 
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("777.00"),
@@ -429,7 +429,7 @@ class TestGetSpent:
             account_id=other_account.id,
             date=date(2026, 7, 10),
         ))
-        await transaction_repository.create(make_transaction(
+        await transaction_repository.add(make_transaction(
             type=TransactionType.EXPENSE,
             kind=TransactionKind.REGULAR,
             amount=Decimal("100.00"),
@@ -542,7 +542,7 @@ class TestFindSameBudget:
             category: Category,
             uah_currency: Currency,
     ):
-        other_user = await user_repository.create(User(
+        other_user = await user_repository.add(User(
             email="other3@test.com", username="other3", hashed_password="hashed",
         ))
         candidate = Budget(
@@ -616,7 +616,7 @@ class TestGetByPeriodEdges:
             category: Category,
             uah_currency: Currency,
     ):
-        one_day = await budget_repository.create(Budget(
+        one_day = await budget_repository.add(Budget(
             amount=Decimal("100.00"),
             currency_code=uah_currency.code,
             category_id=category.id,
@@ -642,7 +642,7 @@ class TestGetByPeriodEdges:
             category: Category,
             uah_currency: Currency,
     ):
-        yearly = await budget_repository.create(Budget(
+        yearly = await budget_repository.add(Budget(
             amount=Decimal("50000.00"),
             currency_code=uah_currency.code,
             category_id=category.id,
@@ -666,7 +666,7 @@ class TestFindSameBudgetKeyFields:
             user: User,
             uah_currency: Currency,
     ):
-        other_category = await category_repository.create(
+        other_category = await category_repository.add(
             Category(name="Transport", user_id=user.id)
         )
 

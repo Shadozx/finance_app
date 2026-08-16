@@ -15,7 +15,7 @@ async def account(
         user: User,
         uah_currency: Currency,
 ):
-    return await account_repository.create(Account(
+    return await account_repository.add(Account(
         name="Monobank",
         currency_code=uah_currency.code,
         user_id=user.id,
@@ -28,7 +28,7 @@ async def archived_account(
         user: User,
         uah_currency: Currency,
 ):
-    return await account_repository.create(Account(
+    return await account_repository.add(Account(
         name="Closed Card",
         currency_code=uah_currency.code,
         user_id=user.id,
@@ -36,9 +36,9 @@ async def archived_account(
     ))
 
 
-class TestCreate:
+class TestAdd:
 
-    async def test_create(
+    async def test_add(
             self,
             account_repository: AccountRepository,
             user: User,
@@ -50,7 +50,7 @@ class TestCreate:
             user_id=user.id,
         )
 
-        created_account = await account_repository.create(new_account)
+        created_account = await account_repository.add(new_account)
 
         assert created_account.id is not None
         assert created_account.name == new_account.name
@@ -59,7 +59,7 @@ class TestCreate:
         assert created_account.created_at is not None
         assert created_account.archived_at is None
 
-    async def test_create_duplicate_name_same_user(
+    async def test_add_duplicate_name_same_user(
             self,
             account_repository: AccountRepository,
             account: Account,
@@ -72,9 +72,9 @@ class TestCreate:
         )
 
         with pytest.raises(IntegrityError):
-            await account_repository.create(duplicate_account)
+            await account_repository.add(duplicate_account)
 
-    async def test_create_same_name_for_different_users_allowed(
+    async def test_add_same_name_for_different_users_allowed(
             self,
             test_session: AsyncSession,
             account_repository: AccountRepository,
@@ -82,13 +82,13 @@ class TestCreate:
             uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
         ))
 
-        other_account = await account_repository.create(Account(
+        other_account = await account_repository.add(Account(
             name=account.name,
             currency_code=uah_currency.code,
             user_id=other_user.id,
@@ -126,7 +126,7 @@ class TestGetByUser:
             account: Account,
             usd_currency: Currency,
     ):
-        new_account = await account_repository.create(Account(
+        new_account = await account_repository.add(Account(
             name="Dollars",
             currency_code=usd_currency.code,
             user_id=account.user_id,
@@ -171,13 +171,13 @@ class TestGetByUser:
             uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
         ))
 
-        other_account = await account_repository.create(Account(
+        other_account = await account_repository.add(Account(
             name="Other User Account",
             currency_code=uah_currency.code,
             user_id=other_user.id,
@@ -231,19 +231,19 @@ class TestGetByUser:
             uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
         ))
 
-        other_active_account = await account_repository.create(Account(
+        other_active_account = await account_repository.add(Account(
             name="Other Active Account",
             currency_code=uah_currency.code,
             user_id=other_user.id,
         ))
 
-        other_archived_account = await account_repository.create(Account(
+        other_archived_account = await account_repository.add(Account(
             name="Other Archived Account",
             currency_code=uah_currency.code,
             user_id=other_user.id,

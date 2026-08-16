@@ -5,9 +5,9 @@ from app.repositories import UserRepository
 from app.models import User
 
 
-class TestCreate:
+class TestAdd:
 
-    async def test_create_user(
+    async def test_add_user(
             self,
             user_repository: UserRepository
     ):
@@ -17,13 +17,13 @@ class TestCreate:
             hashed_password="hashed_password",
         )
 
-        created_user = await user_repository.create(user)
+        created_user = await user_repository.add(user)
 
         assert created_user.id is not None
         assert created_user.username == user.username
         assert created_user.email == user.email
 
-    async def test_create_user_duplicate_email(
+    async def test_add_user_duplicate_email(
             self,
             user_repository: UserRepository,
             user: User
@@ -35,9 +35,9 @@ class TestCreate:
         )
 
         with pytest.raises(IntegrityError):
-            await user_repository.create(duplicate_user)
+            await user_repository.add(duplicate_user)
 
-    async def test_create_user_duplicate_username(
+    async def test_add_user_duplicate_username(
             self,
             user_repository: UserRepository,
             user: User
@@ -49,7 +49,7 @@ class TestCreate:
         )
 
         with pytest.raises(IntegrityError):
-            await user_repository.create(duplicate_user)
+            await user_repository.add(duplicate_user)
 
 
 class TestGetById:

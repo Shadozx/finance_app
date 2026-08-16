@@ -49,12 +49,6 @@ class TransactionRepository:
 
         return list((await self.session.execute(query)).scalars().all())
 
-    async def create(self, transaction: Transaction) -> Transaction:
-        self.session.add(transaction)
-        await self.session.flush()
-        await self.session.refresh(transaction)
-        return transaction
-
     async def add(self, transaction: Transaction) -> Transaction:
         self.session.add(transaction)
 
@@ -261,6 +255,3 @@ class TransactionRepository:
         rows = (await self.session.execute(query)).all()
 
         return {row[0]: row[1] for row in rows}
-
-    async def commit(self) -> None:
-        await self.session.commit()

@@ -14,7 +14,7 @@ async def transaction_template(
         user: User,
         uah_currency: Currency,
 ):
-    return await transaction_template_repository.create(TransactionTemplate(
+    return await transaction_template_repository.add(TransactionTemplate(
         name="Morning Coffee",
         type=TransactionType.EXPENSE,
         description="Morning Coffee near work",
@@ -24,8 +24,8 @@ async def transaction_template(
     ))
 
 
-class TestCreate:
-    async def test_create(
+class TestAdd:
+    async def test_add(
             self,
             transaction_template_repository: TransactionTemplateRepository,
             user: User,
@@ -40,20 +40,20 @@ class TestCreate:
             user_id=user.id,
         )
 
-        created_template = await transaction_template_repository.create(template)
+        created_template = await transaction_template_repository.add(template)
 
         assert created_template.id is not None
         assert created_template.name == template.name
         assert created_template.user_id == user.id
         assert created_template.created_at is not None
 
-    async def test_create_duplicate_name_same_user(
+    async def test_add_duplicate_name_same_user(
             self,
             transaction_template_repository: TransactionTemplateRepository,
             transaction_template: TransactionTemplate,
     ):
         with pytest.raises(IntegrityError):
-            await transaction_template_repository.create(TransactionTemplate(
+            await transaction_template_repository.add(TransactionTemplate(
                 name=transaction_template.name,
                 type=transaction_template.type,
                 amount=Decimal("200.00"),
@@ -94,7 +94,7 @@ class TestGetByUser:
             user: User,
             uah_currency: Currency,
     ):
-        t1 = await transaction_template_repository.create(TransactionTemplate(
+        t1 = await transaction_template_repository.add(TransactionTemplate(
             name="Salary",
             type=TransactionType.INCOME,
             amount=Decimal("35000.00"),
@@ -103,7 +103,7 @@ class TestGetByUser:
             user_id=user.id,
         ))
 
-        t2 = await transaction_template_repository.create(TransactionTemplate(
+        t2 = await transaction_template_repository.add(TransactionTemplate(
             name="Coffee",
             type=TransactionType.EXPENSE,
             amount=Decimal("150.00"),
@@ -112,7 +112,7 @@ class TestGetByUser:
             user_id=user.id,
         ))
 
-        t3 = await transaction_template_repository.create(TransactionTemplate(
+        t3 = await transaction_template_repository.add(TransactionTemplate(
             name="Netflix subscription",
             type=TransactionType.EXPENSE,
             amount=Decimal("500.00"),
@@ -121,7 +121,7 @@ class TestGetByUser:
             user_id=user.id,
         ))
 
-        t4 = await transaction_template_repository.create(TransactionTemplate(
+        t4 = await transaction_template_repository.add(TransactionTemplate(
             name="Freelance",
             type=TransactionType.INCOME,
             amount=Decimal("15000.00"),
@@ -163,13 +163,13 @@ class TestGetByUser:
             usd_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.create(User(
+        other_user = await other_user_repository.add(User(
             email="other@test.com",
             username="other",
             hashed_password="hashed",
         ))
 
-        await transaction_template_repository.create(TransactionTemplate(
+        await transaction_template_repository.add(TransactionTemplate(
             name="Netflix subscription",
             type=TransactionType.EXPENSE,
             amount=Decimal("50.00"),

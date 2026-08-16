@@ -50,16 +50,6 @@ class TransactionTemplateRepository:
             )
         ).scalar_one_or_none()
 
-    async def create(
-            self,
-            template: TransactionTemplate
-    ) -> TransactionTemplate:
-        self.session.add(template)
-        await self.session.commit()
-        await self.session.refresh(template)
-
-        return template
-
     async def add(
             self,
             template: TransactionTemplate

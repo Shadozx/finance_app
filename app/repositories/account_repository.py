@@ -51,17 +51,6 @@ class AccountRepository:
             )
         ).scalar_one_or_none()
 
-    async def create(
-            self,
-            account: Account
-    ) -> Account:
-        self.session.add(account)
-        await self.session.commit()
-
-        await self.session.refresh(account)
-
-        return account
-
     async def update(
             self,
             account: Account
@@ -92,11 +81,3 @@ class AccountRepository:
         await self.session.flush()
 
         return account
-
-    async def commit(self) -> None:
-        """Commit the current unit of work.
-
-        Used when one operation spans two tables (account + its opening
-        balance transaction) and both must be written atomically.
-        """
-        await self.session.commit()
