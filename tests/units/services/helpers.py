@@ -1,4 +1,11 @@
-from app.models import Transaction
+from datetime import datetime, timezone, date
+from typing import TypeVar
+from decimal import Decimal
+
+from app.models import Account, Transaction, Category, Budget, TransactionTemplate, TransactionType, User
+
+T = TypeVar("T")
+
 
 def assert_model_fields(obj, **expected_fields):
     """
@@ -18,10 +25,20 @@ def assert_model_fields(obj, **expected_fields):
             f"got {actual_value!r}"
         )
 
-def make_created(transaction: Transaction, transaction_id: int = 1) -> Transaction:
-    """Transaction as it comes back from create(): with an id assigned by the database."""
-    transaction.id = transaction_id
-    return transaction
+
+def as_persisted(obj: T, obj_id: int = 1) -> T:
+    """Model as it comes back from add(): id assigned, column defaults applied.
+
+    Mirrors flush(): SQLAlchemy assigns the primary key and evaluates
+    Python-side `default=` callables.
+    """
+    obj.id = obj_id
+
+    if hasattr(obj, "created_at") and obj.created_at is None:
+        obj.created_at = datetime.now(timezone.utc)
+
+    return obj
+
 
 def make_transaction(**kwargs) -> Transaction:
     """Transaction with settled fields defaulted to the operation amount.
@@ -31,3 +48,65 @@ def make_transaction(**kwargs) -> Transaction:
     kwargs.setdefault("settled_amount", kwargs["amount"])
     kwargs.setdefault("settled_currency_code", kwargs["currency_code"])
     return Transaction(**kwargs)
+
+
+def make_account(**kwargs) -> Account:
+    """Account with all required fields defaulted: tests pass only what they assert on."""
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("name", "Cash")
+    kwargs.setdefault("currency_code", "UAH")
+    kwargs.setdefault("user_id", 1)
+    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+    kwargs.setdefault("archived_at", None)
+    return Account(**kwargs)
+
+
+def make_category(**kwargs) -> Category:
+    """Category with all required fields defaulted: tests pass only what they assert on."""
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("name", "Foods")
+    kwargs.setdefault("user_id", 1)
+    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+    kwargs.setdefault("archived_at", None)
+
+    return Category(**kwargs)
+
+
+def make_budget(**kwargs) -> Budget:
+    """Budget with all required fields defaulted: tests pass only what they assert on."""
+
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("name", "Food budget")
+    kwargs.setdefault("amount", Decimal("5000.00"))
+    kwargs.setdefault("currency_code", "UAH")
+    kwargs.setdefault("category_id", 1)
+    kwargs.setdefault("start_date", date(2026, 7, 1))
+    kwargs.setdefault("end_date", date(2026, 7, 31))
+    kwargs.setdefault("user_id", 1)
+
+    return Budget(**kwargs)
+
+
+def make_transaction_template(**kwargs) -> TransactionTemplate:
+    """Transaction template with all required fields defaulted: tests pass only what they assert on."""
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("name", "Foods")
+    kwargs.setdefault("amount", Decimal("5000.00"))
+    kwargs.setdefault("currency_code", "UAH")
+    kwargs.setdefault("user_id", 1)
+    kwargs.setdefault("type", TransactionType.EXPENSE)
+    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+
+    return TransactionTemplate(**kwargs)
+
+
+def make_user(**kwargs) -> User:
+    """User with all required fields defaulted: tests pass only what they assert on."""
+
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("username", "user")
+    kwargs.setdefault("email", "user@test.com")
+    kwargs.setdefault("hashed_password", "hashed_password")
+    kwargs.setdefault("created_at", datetime(2026, 2, 10))
+
+    return User(**kwargs)

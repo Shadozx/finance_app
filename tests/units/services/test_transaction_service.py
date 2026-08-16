@@ -13,7 +13,7 @@ from app.models import Transaction, TransactionType, TransactionKind, Currency, 
 from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
     UseTemplateRequest
 from app.core.exceptions import NotFoundException, NotAllowedActionException
-from tests.units.services.helpers import assert_model_fields, make_transaction, make_created
+from tests.units.services.helpers import assert_model_fields, make_transaction, as_persisted
 
 
 class TestGetTransaction:
@@ -236,7 +236,7 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.add.side_effect = make_created
+        transaction_repo_mock.add.side_effect = as_persisted
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
@@ -311,7 +311,7 @@ class TestCreateTransaction:
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.add.side_effect = make_created
+        transaction_repo_mock.add.side_effect = as_persisted
 
         result = await transaction_service.create_transaction(
             data,
@@ -364,7 +364,7 @@ class TestCreateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.add.side_effect = make_created
+        transaction_repo_mock.add.side_effect = as_persisted
 
         result = await transaction_service.create_transaction(data, user_id)
 
@@ -507,7 +507,7 @@ class TestCreateTransactionFromTemplate:
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.add.side_effect = make_created
+        transaction_repo_mock.add.side_effect = as_persisted
 
         validate_template_spy = mocker.spy(validators, "validate_template")
         validate_category_spy = mocker.spy(validators, "validate_category")
@@ -592,7 +592,7 @@ class TestCreateTransactionFromTemplate:
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.add.side_effect = make_created
+        transaction_repo_mock.add.side_effect = as_persisted
 
         result = await transaction_service.create_transaction_from_template(
             template_id,
@@ -900,7 +900,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.update.side_effect = make_created
+        transaction_repo_mock.update.side_effect = as_persisted
 
         validate_transaction_spy = mocker.spy(validators, "validate_transaction")
         validate_category_spy = mocker.spy(validators, "validate_category")
@@ -989,7 +989,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.update.side_effect = make_created
+        transaction_repo_mock.update.side_effect = as_persisted
 
         await transaction_service.update_transaction(
             existing_transaction.id,
@@ -1044,7 +1044,7 @@ class TestUpdateTransaction:
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.update.side_effect = make_created
+        transaction_repo_mock.update.side_effect = as_persisted
 
         result = await transaction_service.update_transaction(
             existing_transaction.id,
@@ -1099,7 +1099,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        transaction_repo_mock.update.side_effect = make_created
+        transaction_repo_mock.update.side_effect = as_persisted
 
         result = await transaction_service.update_transaction(
             existing_transaction.id,

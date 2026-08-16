@@ -11,6 +11,8 @@ from app.repositories import TransactionRepository, CurrencyRepository, Category
     TransactionTemplateRepository, BudgetRepository, AccountRepository
 from app.models import Transaction, TransactionType, TransactionKind, Currency, Category, User, TransactionTemplate, \
     Budget, Account
+from tests.units.services.helpers import make_user, make_account, make_transaction_template, make_transaction, \
+    make_budget, make_category
 
 
 @pytest.fixture
@@ -167,14 +169,12 @@ def existing_transaction(
         existing_currency: Currency,
         existing_account: Account,
 ):
-    return Transaction(
+    return make_transaction(
         id=1,
         type=TransactionType.INCOME,
         kind=TransactionKind.REGULAR,
         amount=Decimal("5000.00"),
         currency_code=existing_currency.code,
-        settled_amount=Decimal("5000.00"),
-        settled_currency_code=existing_account.currency_code,
         description="Salary",
         date=datetime.date(2026, 2, 10),
         user_id=existing_user.id,
@@ -186,7 +186,7 @@ def existing_transaction(
 def existing_category(
         existing_user: User,
 ):
-    return Category(
+    return make_category(
         id=1,
         name="Foods",
         user_id=existing_user.id,
@@ -218,17 +218,14 @@ def existing_usd_currency():
 @pytest.fixture
 def existing_template(
         existing_user: User,
-        existing_category: Category
 ):
-    return TransactionTemplate(
+    return make_transaction_template(
         id=1,
         name="Morning Coffee",
-        type=TransactionType.EXPENSE,
         amount=Decimal("50.00"),
-        description="Daily coffee expense",
         currency_code="UAH",
+        description="Daily coffee expense",
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10)
     )
 
 
@@ -239,12 +236,10 @@ def plain_existing_user_password():
 
 @pytest.fixture
 def existing_user():
-    return User(
+    return make_user(
         id=1,
         email="user@test.com",
         username="user",
-        hashed_password="hashed_password",
-        created_at=datetime.datetime(2026, 2, 10),
     )
 
 
@@ -254,7 +249,7 @@ def existing_budget(
         existing_currency: Currency,
         existing_category: Category,
 ):
-    return Budget(
+    return make_budget(
         id=1,
         name="Food budget",
         amount=Decimal("5000.00"),
@@ -272,7 +267,7 @@ def zero_budget(
         existing_currency: Currency,
         existing_category: Category,
 ):
-    return Budget(
+    return make_budget(
         id=2,
         name="Zero budget",
         amount=Decimal("0"),
@@ -289,13 +284,12 @@ def existing_account(
         existing_user: User,
         existing_currency: Currency,
 ):
-    return Account(
+    return make_account(
         id=1,
         name="Monobank",
         currency_code=existing_currency.code,
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
-        archived_at=None,
+        created_at=datetime.datetime(2026, 2, 10),
     )
 
 
@@ -304,11 +298,10 @@ def existing_usd_account(
         existing_user: User,
         existing_usd_currency: Currency,
 ):
-    return Account(
+    return make_account(
         id=2,
         name="Dollars",
         currency_code=existing_usd_currency.code,
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.timezone.utc),
-        archived_at=None,
+        created_at=datetime.datetime(2026, 2, 10),
     )

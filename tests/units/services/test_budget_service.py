@@ -15,7 +15,7 @@ from app.repositories import (
 from app.models import Budget, Category, Currency
 from app.schemas import BudgetCreate, BudgetUpdate, BudgetResponse, BudgetFilters
 from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, ValueExistsException
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, as_persisted, make_budget
 
 
 class TestGetBudget:
@@ -104,26 +104,17 @@ class TestCreateBudget:
         category_repo_mock.get_by_id.return_value = existing_category
         budget_repo_mock.find_same_budget.return_value = None
 
-        created = Budget(
-            id=1,
-            name=data.name,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            start_date=data.start_date,
-            end_date=data.end_date,
-            user_id=user_id,
-        )
-        budget_repo_mock.add.return_value = created
+        budget_repo_mock.add.side_effect = as_persisted
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
         result = await budget_service.create_budget(data, user_id)
 
-        assert result == BudgetResponse.model_validate(created)
-
         call_args = budget_repo_mock.add.call_args[0][0]
+
+        assert result == BudgetResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             amount=data.amount,
@@ -267,17 +258,7 @@ class TestUpdateBudget:
         currency_repo_mock.get_by_code.return_value = existing_currency
         budget_repo_mock.find_same_budget.return_value = None
 
-        updated = Budget(
-            id=existing_budget.id,
-            name=data.name,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            start_date=data.start_date,
-            end_date=data.end_date,
-            user_id=user_id,
-        )
-        budget_repo_mock.update.return_value = updated
+        budget_repo_mock.update.side_effect = as_persisted
 
         validate_budget_spy = mocker.spy(validators, "validate_budget")
         validate_category_spy = mocker.spy(validators, "validate_category")
@@ -285,7 +266,19 @@ class TestUpdateBudget:
 
         result = await budget_service.update_budget(existing_budget.id, data, user_id)
 
-        assert result == BudgetResponse.model_validate(updated)
+        call_args = budget_repo_mock.update.call_args[0][0]
+
+        assert result == BudgetResponse.model_validate(call_args)
+
+        assert_model_fields(
+            call_args,
+            amount=data.amount,
+            currency_code=data.currency_code,
+            category_id=data.category_id,
+            start_date=data.start_date,
+            end_date=data.end_date,
+            user_id=user_id,
+        )
 
         validate_budget_spy.assert_called_once_with(
             budget_service.budget_repository,
@@ -352,7 +345,7 @@ class TestUpdateBudget:
         category_repo_mock.get_by_id.return_value = existing_category
         currency_repo_mock.get_by_code.return_value = existing_currency
 
-        other_budget = Budget(
+        other_budget = make_budget(
             id=existing_budget.id + 1,
             name="Other",
             amount=Decimal("100.00"),

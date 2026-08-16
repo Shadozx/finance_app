@@ -11,7 +11,7 @@ from app.repositories import TransactionRepository, AccountRepository, CurrencyR
 from app.models import Transaction, TransactionType, TransactionKind, Account, Currency
 from app.schemas import TransferCreate, TransferUpdate
 from app.core.exceptions import NotFoundException, NotAllowedActionException
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, make_transaction
 
 
 @pytest.fixture
@@ -47,13 +47,11 @@ def existing_transfer(
     """A cross-currency transfer pair: 1000 UAH out, 24 USD in."""
     group_id = uuid.uuid4()
 
-    from_side = Transaction(
+    from_side = make_transaction(
         id=1,
         type=TransactionType.EXPENSE,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("1000.00"),
-        settled_amount=Decimal("1000.00"),
-        settled_currency_code=existing_account.currency_code,
         description="Transfer",
         currency_code=existing_account.currency_code,
         user_id=existing_account.user_id,
@@ -63,13 +61,11 @@ def existing_transfer(
         date=date(2026, 2, 10),
     )
 
-    to_side = Transaction(
+    to_side = make_transaction(
         id=2,
         type=TransactionType.INCOME,
         kind=TransactionKind.TRANSFER,
         amount=Decimal("24.00"),
-        settled_amount=Decimal("24.00"),
-        settled_currency_code=existing_usd_account.currency_code,
         description="Transfer",
         currency_code=existing_usd_account.currency_code,
         user_id=existing_usd_account.user_id,

@@ -17,7 +17,7 @@ from app.core.exceptions import (
     NotAllowedActionException,
     PermissionException,
 )
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, as_persisted, make_account
 
 
 def to_response(account: Account, balance: Decimal) -> AccountResponse:
@@ -58,23 +58,16 @@ class TestCreateAccount:
         account_repo_mock.get_by_user_and_name.return_value = None
         transaction_repo_mock.get_balance.return_value = Decimal("0")
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-            archived_at=None,
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
         result = await account_service.create_account(data, user_id)
 
-        assert result == to_response(created, Decimal("0"))
-
         call_args = account_repo_mock.add.call_args[0][0]
+
+        assert result == to_response(call_args, Decimal("0"))
+
         assert_model_fields(
             call_args,
             name=data.name,
@@ -115,28 +108,21 @@ class TestCreateAccount:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-            archived_at=None,
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         result = await account_service.create_account(data, user_id)
 
         assert result.balance == Decimal("5000.00")
 
-        call_args = transaction_repo_mock.add.call_args[0][0]
+        account_call_args = account_repo_mock.add.call_args[0][0]
+        transaction_call_args = transaction_repo_mock.add.call_args[0][0]
         assert_model_fields(
-            call_args,
+            transaction_call_args,
             type=TransactionType.INCOME,
             kind=TransactionKind.ADJUSTMENT,
             amount=Decimal("5000.00"),
             currency_code=data.currency_code,
-            account_id=created.id,
+            account_id=account_call_args.id,
             user_id=user_id,
         )
 
@@ -158,14 +144,7 @@ class TestCreateAccount:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         await account_service.create_account(data, user_id)
 
@@ -193,14 +172,7 @@ class TestCreateAccount:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         result = await account_service.create_account(data, user_id)
 
@@ -230,14 +202,7 @@ class TestCreateAccount:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         result = await account_service.create_account(data, user_id)
 
@@ -328,14 +293,7 @@ class TestCreateAccount:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Account(
-            id=1,
-            name=data.name,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-        )
-        account_repo_mock.add.return_value = created
+        account_repo_mock.add.side_effect = as_persisted
 
         transaction_repo_mock.add.side_effect = RuntimeError("db error")
 
@@ -437,19 +395,17 @@ class TestGetUserAccounts:
         transaction_repo_mock.get_balances_by_account.return_value = balances
 
         user_accounts = [
-            Account(
+            make_account(
                 id=1,
                 name="Monobank",
                 currency_code=existing_currency.code,
                 user_id=user_id,
-                created_at=datetime.now(timezone.utc),
             ),
-            Account(
+            make_account(
                 id=2,
                 name="Cash",
                 currency_code=existing_currency.code,
                 user_id=user_id,
-                created_at=datetime.now(timezone.utc),
             ),
         ]
 
@@ -530,14 +486,7 @@ class TestUpdateAccount:
         account_repo_mock.get_by_user_and_name.return_value = None
         transaction_repo_mock.get_balance.return_value = balance
 
-        updated = Account(
-            id=existing_account.id,
-            name=data.name,
-            currency_code=existing_account.currency_code,
-            user_id=user_id,
-            created_at=existing_account.created_at,
-        )
-        account_repo_mock.update.return_value = updated
+        account_repo_mock.update.side_effect = as_persisted
 
         validate_account_spy = mocker.spy(validators, "validate_account")
 
@@ -547,9 +496,10 @@ class TestUpdateAccount:
             user_id,
         )
 
-        assert result == to_response(updated, balance)
-
         call_args = account_repo_mock.update.call_args[0][0]
+
+        assert result == to_response(call_args, balance)
+
         assert_model_fields(
             call_args,
             name=data.name,
@@ -664,12 +614,11 @@ class TestUpdateAccount:
     ):
         account_repo_mock.get_by_id.return_value = existing_account
 
-        duplicate = Account(
+        duplicate = make_account(
             id=existing_account.id + 1,
             name=data.name,
             currency_code=existing_currency.code,
             user_id=existing_account.user_id,
-            created_at=datetime.now(timezone.utc),
         )
         account_repo_mock.get_by_user_and_name.return_value = duplicate
 
@@ -869,7 +818,7 @@ class TestRestoreAccount:
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
-        active_duplicate = Account(
+        active_duplicate = make_account(
             id=existing_account.id + 1,
             name=existing_account.name,
             currency_code=existing_currency.code,

@@ -9,7 +9,7 @@ from app.services import CategoryService
 from app.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryStatus
 
 from app.core.exceptions import NotFoundException, ValueExistsException, NotAllowedActionException, PermissionException
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, as_persisted, make_category
 
 
 class TestCreateCategory:
@@ -31,23 +31,16 @@ class TestCreateCategory:
 
         category_repo_mock.get_by_user_and_name.return_value = None
 
-        created = Category(
-            id=1,
-            name=data.name,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc),
-            archived_at=None
-        )
-        category_repo_mock.add.return_value = created
+        category_repo_mock.add.side_effect = as_persisted
 
         result = await category_service.create_category(
             data,
             user_id
         )
 
-        assert result == CategoryResponse.model_validate(created)
-
         call_args = category_repo_mock.add.call_args[0][0]
+
+        assert result == CategoryResponse.model_validate(call_args)
 
         assert_model_fields(
             call_args,
@@ -109,13 +102,7 @@ class TestUpdateCategory:
         category_repo_mock.get_by_id.return_value = existing_category
         category_repo_mock.get_by_user_and_name.return_value = None
 
-        updated = Category(
-            id=existing_category.id,
-            name=data.name,
-            user_id=existing_category.user_id,
-            created_at=datetime.now(timezone.utc),
-        )
-        category_repo_mock.update.return_value = updated
+        category_repo_mock.update.side_effect = as_persisted
 
         result = await category_service.update_category(
             category_id,
@@ -123,9 +110,10 @@ class TestUpdateCategory:
             user_id
         )
 
-        assert result == CategoryResponse.model_validate(updated)
-
         call_args = category_repo_mock.update.call_args[0][0]
+
+        assert result == CategoryResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             name=data.name,
@@ -201,11 +189,10 @@ class TestUpdateCategory:
     ):
         category_repo_mock.get_by_id.return_value = existing_category
 
-        duplicate_category = Category(
+        duplicate_category = make_category(
             id=existing_category.id + 1,
             name="Salary",
             user_id=existing_category.user_id,
-            created_at=datetime(2026, 1, 1),
         )
         category_repo_mock.get_by_user_and_name.return_value = duplicate_category
 
@@ -232,17 +219,15 @@ class TestGetUserCategories:
         user_id = 1
 
         user_categories = [
-            Category(
+            make_category(
                 id=1,
                 name="Salary",
                 user_id=user_id,
-                created_at=datetime(2020, 1, 1),
             ),
-            Category(
+            make_category(
                 id=2,
                 name="Foods",
                 user_id=user_id,
-                created_at=datetime(2020, 1, 2),
             )
         ]
 
@@ -291,15 +276,6 @@ class TestArchiveCategory:
             existing_category: Category,
     ):
         category_repo_mock.get_by_id.return_value = existing_category
-
-        archived_category = Category(
-            id=existing_category.id,
-            name=existing_category.name,
-            user_id=existing_category.user_id,
-            created_at=existing_category.created_at,
-            archived_at=datetime(2026, 1, 1),
-        )
-        category_repo_mock.archive.return_value = archived_category
 
         await category_service.archive_category(
             existing_category.id,
@@ -390,7 +366,7 @@ class TestRestoreCategory:
             unit_of_work_mock: UnitOfWork,
             existing_category: Category,
     ):
-        archived_category = Category(
+        archived_category = make_category(
             id=existing_category.id,
             name=existing_category.name,
             user_id=existing_category.user_id,
@@ -399,7 +375,6 @@ class TestRestoreCategory:
         )
 
         category_repo_mock.get_by_id.return_value = archived_category
-        category_repo_mock.restore.return_value = existing_category
 
         await category_service.restore_category(
             existing_category.id,
@@ -462,11 +437,8 @@ class TestRestoreCategory:
             category_repo_mock: CategoryRepository,
             unit_of_work_mock: UnitOfWork,
     ):
-        not_archived_category = Category(
-            id=1,
+        not_archived_category = make_category(
             name="Foods",
-            user_id=1,
-            created_at=datetime(2026, 2, 10),
             archived_at=None
         )
 
@@ -491,10 +463,9 @@ class TestRestoreCategory:
     ):
         category_repo_mock.get_by_user_and_name.return_value = existing_category
 
-        archived_category = Category(
+        archived_category = make_category(
             id=existing_category.id + 1,
             name=existing_category.name,
-            created_at=existing_category.created_at,
             user_id=existing_category.user_id,
             archived_at=datetime(2026, 2, 10),
         )

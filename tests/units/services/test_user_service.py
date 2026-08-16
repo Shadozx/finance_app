@@ -7,7 +7,7 @@ from app.services import UserService
 from app.models import User
 from app.schemas import UserCreate, UserLogin, UserResponse, UsernameUpdate, PasswordUpdate
 from app.core.exceptions import ValueExistsException, AuthenticationException, ValidationException
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, as_persisted, make_user
 
 
 class TestRegister:
@@ -29,7 +29,6 @@ class TestRegister:
             user_service: UserService,
             user_repo_mock: UserRepository,
             unit_of_work_mock: UnitOfWork,
-            existing_user: User,
             data: UserCreate
     ):
         hashed_password = "hashed"
@@ -42,13 +41,14 @@ class TestRegister:
         user_repo_mock.get_by_email.return_value = None
         user_repo_mock.get_by_username.return_value = None
 
-        user_repo_mock.add.return_value = existing_user
+        user_repo_mock.add.side_effect = as_persisted
 
         result = await user_service.register_user(data)
 
-        assert result == UserResponse.model_validate(existing_user)
-
         call_args = user_repo_mock.add.call_args[0][0]
+
+        assert result == UserResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             email=data.email,
@@ -226,23 +226,17 @@ class TestUpdateUsername:
         user_repo_mock.get_by_id.return_value = existing_user
         user_repo_mock.get_by_username.return_value = None
 
-        updated = User(
-            id=existing_user.id,
-            email=existing_user.email,
-            username=data.new_username,
-            hashed_password=existing_user.hashed_password,
-            created_at=existing_user.created_at,
-        )
-        user_repo_mock.update.return_value = updated
+        user_repo_mock.update.side_effect = as_persisted
 
         result = await user_service.update_username(
             data,
             existing_user.id
         )
 
-        assert result == UserResponse.model_validate(updated)
-
         call_args = user_repo_mock.update.call_args[0][0]
+
+        assert result == UserResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             email=existing_user.email,
@@ -271,7 +265,7 @@ class TestUpdateUsername:
     ):
         user_repo_mock.get_by_id.return_value = existing_user
 
-        duplicate_user = User(
+        duplicate_user = make_user(
             id=existing_user.id + 1,
             email="other@test.com",
             username=data.new_username,

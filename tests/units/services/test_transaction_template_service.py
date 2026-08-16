@@ -9,7 +9,7 @@ from app.repositories import TransactionTemplateRepository, CurrencyRepository, 
 from app.models import TransactionTemplate, TransactionType, Currency, Category
 from app.core.exceptions import NotAllowedActionException, ValueExistsException, NotFoundException
 from app.schemas import TransactionTemplateCreate, TransactionTemplateResponse, TransactionTemplateUpdate
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, make_transaction_template, as_persisted
 
 
 class TestCreateTemplate:
@@ -47,27 +47,17 @@ class TestCreateTemplate:
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = existing_category
 
-        created = TransactionTemplate(
-            id=1,
-            name=data.name,
-            type=data.type,
-            amount=data.amount,
-            description=data.description,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc)
-        )
-        transaction_template_repo_mock.add.return_value = created
+        transaction_template_repo_mock.add.side_effect = as_persisted
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
         result = await transaction_template_service.create_template(data, user_id=user_id)
 
-        assert result == TransactionTemplateResponse.model_validate(created)
-
         call_args = transaction_template_repo_mock.add.call_args[0][0]
+
+        assert result == TransactionTemplateResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             name=data.name,
@@ -110,23 +100,13 @@ class TestCreateTemplate:
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = None
 
-        created = TransactionTemplate(
-            id=1,
-            name=data.name,
-            type=data.type,
-            amount=data.amount,
-            description=data.description,
-            currency_code=data.currency_code,
-            user_id=user_id,
-            created_at=datetime.now(timezone.utc)
-        )
-        transaction_template_repo_mock.add.return_value = created
+        transaction_template_repo_mock.add.side_effect = as_persisted
 
         result = await transaction_template_service.create_template(data, user_id)
 
-        assert result == TransactionTemplateResponse.model_validate(created)
-
         call_args = transaction_template_repo_mock.add.call_args[0][0]
+
+        assert result == TransactionTemplateResponse.model_validate(call_args)
 
         assert_model_fields(
             call_args,
@@ -258,19 +238,7 @@ class TestUpdateTemplate:
         category_repo_mock.get_by_id.return_value = existing_category
         currency_repo_mock.get_by_code.return_value = existing_currency
 
-        updated = TransactionTemplate(
-            id=existing_template.id,
-            type=data.type,
-            name=data.name,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            description=data.description,
-            created_at=existing_template.created_at,
-            user_id=user_id,
-        )
-
-        transaction_template_repo_mock.update.return_value = updated
+        transaction_template_repo_mock.update.side_effect = as_persisted
 
         validate_template_spy = mocker.spy(validators, "validate_template")
         validate_category_spy = mocker.spy(validators, "validate_category")
@@ -278,9 +246,10 @@ class TestUpdateTemplate:
 
         result = await transaction_template_service.update_template(existing_template.id, data, user_id)
 
-        assert result == TransactionTemplateResponse.model_validate(updated)
-
         call_args = transaction_template_repo_mock.update.call_args[0][0]
+
+        assert result == TransactionTemplateResponse.model_validate(call_args)
+
         assert_model_fields(
             call_args,
             name=data.name,
@@ -333,24 +302,15 @@ class TestUpdateTemplate:
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         currency_repo_mock.get_by_code.return_value = existing_currency
 
-        updated = TransactionTemplate(
-            id=existing_template.id,
-            name=data.name,
-            user_id=user_id,
-            type=data.type,
-            amount=data.amount,
-            currency_code=data.currency_code,
-            category_id=data.category_id,
-            description=data.description,
-            created_at=existing_template.created_at,
-        )
-        transaction_template_repo_mock.update.return_value = updated
+        transaction_template_repo_mock.update.side_effect = as_persisted
 
         result = await transaction_template_service.update_template(
             existing_template.id, data, user_id
         )
 
-        assert result == TransactionTemplateResponse.model_validate(updated)
+        call_args = transaction_template_repo_mock.update.call_args[0][0]
+
+        assert result == TransactionTemplateResponse.model_validate(call_args)
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
             data.name, user_id
@@ -369,14 +329,10 @@ class TestUpdateTemplate:
             data: TransactionTemplateUpdate,
     ):
         user_id = existing_template.user_id
-        duplicate = TransactionTemplate(
+        duplicate = make_transaction_template(
             id=999,
             name=data.name,
             user_id=user_id,
-            type=TransactionType.EXPENSE,
-            amount=Decimal("50.00"),
-            currency_code="UAH",
-            created_at=datetime.now(timezone.utc)
         )
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = duplicate
@@ -694,30 +650,22 @@ class TestGetUserTemplates:
             self,
             transaction_template_service: TransactionTemplateService,
             transaction_template_repo_mock: TransactionTemplateRepository,
-            existing_currency: Currency,
     ):
         user_id = 1
 
         user_templates = [
-            TransactionTemplate(
+            make_transaction_template(
                 id=1,
-                type=TransactionType.EXPENSE,
                 name="Breakfast",
                 description="Breakfast",
                 amount=Decimal("200.00"),
-                currency_code=existing_currency.code,
-                user_id=user_id,
-                created_at=datetime.now(timezone.utc),
             ),
-            TransactionTemplate(
+            make_transaction_template(
                 id=2,
                 type=TransactionType.INCOME,
                 name="Salary",
                 description="Salary",
                 amount=Decimal("25000.00"),
-                currency_code=existing_currency.code,
-                user_id=user_id,
-                created_at=datetime.now(timezone.utc),
             )
         ]
 
