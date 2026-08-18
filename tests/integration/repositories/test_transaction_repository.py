@@ -67,6 +67,8 @@ class TestAdd:
         assert created_transaction.user_id == transaction.user_id
         assert created_transaction.account_id == transaction.account_id
         assert created_transaction.date == transaction.date
+        assert created_transaction.created_at is not None
+        assert created_transaction.updated_at is not None
 
 
 class TestGetById:
@@ -427,6 +429,9 @@ class TestUpdate:
             transaction_repository: TransactionRepository,
             transaction: Transaction
     ):
+        created_at = transaction.created_at
+        updated_at_old = transaction.updated_at
+
         transaction.amount = Decimal("155.00")
 
         updated_transaction = await transaction_repository.update(transaction)
@@ -435,7 +440,10 @@ class TestUpdate:
         assert updated_transaction.amount == transaction.amount
 
         found_transaction = await transaction_repository.get_by_id(transaction.id)
+
         assert found_transaction.amount == transaction.amount
+        assert found_transaction.created_at == created_at
+        assert found_transaction.updated_at > updated_at_old
 
 
 class TestDelete:
