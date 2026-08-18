@@ -5,6 +5,7 @@ from sqlalchemy import String, DateTime
 from sqlalchemy.orm import mapped_column, Mapped, validates
 
 from app.core import Base
+from app.models.mixins import utc_now
 
 
 class User(Base):
@@ -20,7 +21,7 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        default=utc_now,
     )
 
     @validates("email")

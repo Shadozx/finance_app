@@ -1,12 +1,13 @@
 import enum
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import uuid
-from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index, Uuid
+from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index, Uuid, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
+from app.models.mixins import TimestampMixin
 
 
 class TransactionType(str, enum.Enum):
@@ -20,7 +21,7 @@ class TransactionKind(str, enum.Enum):
     TRANSFER = "TRANSFER"
 
 
-class Transaction(Base):
+class Transaction(Base, TimestampMixin):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(primary_key=True)

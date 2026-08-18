@@ -6,9 +6,10 @@ from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
 from app.models import TransactionType
+from app.models.mixins import TimestampMixin
 
 
-class TransactionTemplate(Base):
+class TransactionTemplate(Base, TimestampMixin):
     __tablename__ = "transaction_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -26,11 +27,6 @@ class TransactionTemplate(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
-    )
 
     @validates("name")
     def validate_name(self, key, value):

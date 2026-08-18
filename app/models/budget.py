@@ -5,9 +5,9 @@ from sqlalchemy import ForeignKey, Numeric, String, Date, CheckConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
+from app.models.mixins import TimestampMixin
 
-
-class Budget(Base):
+class Budget(Base, TimestampMixin):
     __tablename__ = "budgets"
 
     id: Mapped[int] = mapped_column(primary_key=True)

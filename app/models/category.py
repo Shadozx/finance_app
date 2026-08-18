@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import String, ForeignKey, DateTime, UniqueConstraint, Index
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from app.core import Base
+from app.models.mixins import TimestampMixin
 
 from typing import TYPE_CHECKING
 
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
     from app.models import User
 
 
-class Category(Base):
+class Category(Base, TimestampMixin):
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -23,11 +24,6 @@ class Category(Base):
     user: Mapped["User"] = relationship()
 
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
-    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_user_category_name"),
