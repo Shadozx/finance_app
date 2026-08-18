@@ -3,5 +3,6 @@
   <component name="DataSourcePerFileMappings">
     <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/ad75b00c-51b7-420a-a440-053df580fe7c/console.sql" value="ad75b00c-51b7-420a-a440-053df580fe7c" />
     <file url="file://$APPLICATION_CONFIG_DIR$/consoles/db/ad75b00c-51b7-420a-a440-053df580fe7c/console_1.sql" value="ad75b00c-51b7-420a-a440-053df580fe7c" />
+    <file url="file://$PROJECT_DIR$/alembic/versions/fb292ab1bb42_add_timestamps_to_models.py" value="ad75b00c-51b7-420a-a440-053df580fe7c" />
   </component>
 </project>
