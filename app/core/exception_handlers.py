@@ -1,6 +1,8 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from sqlalchemy.exc import IntegrityError
+
 from pydantic import ValidationError
 
 import structlog
@@ -9,6 +11,22 @@ from app.core.config import settings
 from app.core.exceptions import AppException
 
 logger = structlog.get_logger()
+
+UNIQUE_VIOLATION = "23505"
+
+
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+    sqlstate = getattr(exc.orig, "sqlstate", None)
+
+    if sqlstate != UNIQUE_VIOLATION:
+        return await global_exception_handler(request, exc)
+
+    logger.warning("db_unique_violation", path=request.url.path)
+
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "Resource with these values already exists"},
+    )
 
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:

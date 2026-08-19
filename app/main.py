@@ -4,10 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from slowapi.middleware import SlowAPIMiddleware
 
+from sqlalchemy.exc import IntegrityError
+
 from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, \
     statistics, budgets, accounts, transfers
 from app.core.config import settings, Environment
-from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler
+from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler, \
+    integrity_error_handler
 from app.core.exceptions import AppException
 from app.core.middleware import RequestIDMiddleware
 from app.core.logging_config import setup_logging
@@ -53,6 +56,7 @@ app.include_router(budgets.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 
+app.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(AppException,
                           app_exception_handler)  # type: ignore[arg-type]  # Starlette types handler as (Request, Exception); ours narrows to AppException — safe, Starlette only dispatches matching type
