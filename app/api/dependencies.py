@@ -155,8 +155,8 @@ async def get_current_user(
 
     try:
         payload = verify_token(credentials.credentials)
-    except ValueError:
-        raise AuthenticationException("Invalid or expired token")
+    except ValueError as err:
+        raise AuthenticationException("Invalid or expired token") from err
 
     user_id = int(payload["sub"])
 

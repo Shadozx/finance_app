@@ -28,9 +28,9 @@ async def ready(
     try:
         await session.execute(text("SELECT 1"))
         return {"status": "ready"}
-    except Exception as e:
+    except Exception as err:
         logger.error("db_health_check_failed", exc_info=True)
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable"
-        )
+        ) from err
