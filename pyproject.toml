@@ -5,7 +5,10 @@ extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
-ignore = ["E501"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "UP042",  # str+Enum -> StrEnum changes __str__ (logs, f-strings) — deferred, see backlog
+]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
@@ -16,3 +19,6 @@ extend-immutable-calls = [
     "fastapi.Header",
     "fastapi.Security",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/env.py" = ["F401"]  # models are imported for Base.metadata registration, not for use
