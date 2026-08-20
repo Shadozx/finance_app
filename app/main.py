@@ -6,6 +6,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from sqlalchemy.exc import IntegrityError
 
+from pydantic import ValidationError
+
 from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, \
     statistics, budgets, accounts, transfers
 from app.core.config import settings, Environment
@@ -15,8 +17,6 @@ from app.core.exceptions import AppException
 from app.core.middleware import RequestIDMiddleware
 from app.core.logging_config import setup_logging
 from app.core.rate_limiter import limiter
-
-from pydantic import ValidationError
 
 is_prod = settings.ENVIRONMENT == Environment.PROD
 
@@ -58,8 +58,10 @@ app.include_router(health.router, prefix="/api/v1")
 
 app.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
-app.add_exception_handler(AppException,
-                          app_exception_handler)  # type: ignore[arg-type]  # Starlette types handler as (Request, Exception); ours narrows to AppException — safe, Starlette only dispatches matching type
+
+# Starlette types handler as (Request, Exception); ours narrows to AppException —
+# safe, Starlette only dispatches matching type
+app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, global_exception_handler)
 
 if __name__ == "__main__":
