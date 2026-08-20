@@ -3,6 +3,7 @@ from .budget import Budget
 from .category import Category
 from .currency import Currency
 from .transaction import Transaction, TransactionKind, TransactionType
+from .transaction_split import TransactionSplit
 from .transaction_template import TransactionTemplate
 from .user import User
 
@@ -13,6 +14,7 @@ __all__ = [
     "Currency",
     "Transaction",
     "TransactionKind",
+    "TransactionSplit",
     "TransactionTemplate",
     "TransactionType",
     "User",
