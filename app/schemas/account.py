@@ -20,6 +20,7 @@ class InitialBalanceKind(str, Enum):
     EXISTING — the money was already there (ADJUSTMENT, excluded from stats).
     RECEIVED — the money just arrived (REGULAR, counted as income/expense).
     """
+
     EXISTING = "EXISTING"
     RECEIVED = "RECEIVED"
 
@@ -68,6 +69,7 @@ class AccountResponse(BaseModel):
     @field_serializer("balance")
     def serialize_money(self, value: Decimal) -> Decimal:
         return value.quantize(Decimal("0.01"))
+
 
 class AccountReconcileResponse(BaseModel):
     account: AccountResponse

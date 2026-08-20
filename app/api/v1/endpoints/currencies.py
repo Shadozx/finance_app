@@ -7,20 +7,13 @@ from app.schemas import CurrencyResponse
 router = APIRouter(prefix="/currencies", tags=["currencies"])
 
 
-@router.get(
-    "",
-    response_model=list[CurrencyResponse])
-async def get_active_currencies(
-        currency_service: CurrencyService = Depends(get_currency_service)
-):
+@router.get("", response_model=list[CurrencyResponse])
+async def get_active_currencies(currency_service: CurrencyService = Depends(get_currency_service)):
     return await currency_service.get_active_currencies()
 
 
-@router.get(
-    "/{currency_code}",
-    response_model=CurrencyResponse)
+@router.get("/{currency_code}", response_model=CurrencyResponse)
 async def get_currency(
-        currency_code: str,
-        currency_service: CurrencyService = Depends(get_currency_service)
+    currency_code: str, currency_service: CurrencyService = Depends(get_currency_service)
 ) -> CurrencyResponse:
     return await currency_service.get_currency(currency_code)

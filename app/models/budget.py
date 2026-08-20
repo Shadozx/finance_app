@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, validates
 from app.core import Base
 from app.models.mixins import TimestampMixin
 
+
 class Budget(Base, TimestampMixin):
     __tablename__ = "budgets"
 
@@ -18,13 +19,9 @@ class Budget(Base, TimestampMixin):
 
     currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
 
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE")
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
-    category_id: Mapped[int] = mapped_column(
-        ForeignKey("categories.id", ondelete="CASCADE")
-    )
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
 
     start_date: Mapped[date] = mapped_column(Date)
 

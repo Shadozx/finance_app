@@ -3,7 +3,17 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import uuid
-from sqlalchemy import ForeignKey, Numeric, Enum, String, Date, CheckConstraint, Index, Uuid, DateTime
+from sqlalchemy import (
+    ForeignKey,
+    Numeric,
+    Enum,
+    String,
+    Date,
+    CheckConstraint,
+    Index,
+    Uuid,
+    DateTime,
+)
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
@@ -44,7 +54,9 @@ class Transaction(Base, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
-    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
 
     date: Mapped[date] = mapped_column(Date)
 
@@ -62,7 +74,9 @@ class Transaction(Base, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="check_transaction_amount_non_negative"),
-        CheckConstraint("settled_amount >= 0", name="check_transaction_settled_amount_non_negative"),
+        CheckConstraint(
+            "settled_amount >= 0", name="check_transaction_settled_amount_non_negative"
+        ),
         Index("ix_transactions_user_id_date", "user_id", "date"),
         Index("ix_transactions_account_id_date", "account_id", "date"),
         Index("ix_transactions_category_id", "category_id"),

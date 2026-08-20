@@ -6,7 +6,7 @@ from app.repositories import (
     CurrencyRepository,
     CategoryRepository,
     TransactionTemplateRepository,
-    AccountRepository
+    AccountRepository,
 )
 from app.models import Transaction, TransactionKind
 from app.schemas import (
@@ -14,7 +14,7 @@ from app.schemas import (
     TransactionCreate,
     TransactionUpdate,
     TransactionFilters,
-    UseTemplateRequest
+    UseTemplateRequest,
 )
 from app.services import validators
 from app.core.exceptions import NotAllowedActionException
@@ -24,13 +24,13 @@ logger = structlog.get_logger()
 
 class TransactionService:
     def __init__(
-            self,
-            transaction_repository: TransactionRepository,
-            transaction_template_repository: TransactionTemplateRepository,
-            account_repository: AccountRepository,
-            category_repository: CategoryRepository,
-            currency_repository: CurrencyRepository,
-            unit_of_work: UnitOfWork
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_template_repository: TransactionTemplateRepository,
+        account_repository: AccountRepository,
+        category_repository: CategoryRepository,
+        currency_repository: CurrencyRepository,
+        unit_of_work: UnitOfWork,
     ):
         self.transaction_repository = transaction_repository
         self.transaction_template_repository = transaction_template_repository
@@ -40,9 +40,8 @@ class TransactionService:
         self.unit_of_work = unit_of_work
 
     async def create_transaction(
-            self,
-            data: TransactionCreate,
-            user_id: int) -> TransactionResponse:
+        self, data: TransactionCreate, user_id: int
+    ) -> TransactionResponse:
         await validators.validate_category(self.category_repository, user_id, data.category_id)
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
@@ -73,36 +72,26 @@ class TransactionService:
 
         await self.unit_of_work.commit()
 
-        logger.info("transaction_create_success", user_id=user_id, transaction_id=created_transaction.id)
+        logger.info(
+            "transaction_create_success", user_id=user_id, transaction_id=created_transaction.id
+        )
 
         return self._to_response(created_transaction)
 
     async def create_transaction_from_template(
-            self,
-            template_id: int,
-            data: UseTemplateRequest,
-            user_id: int,
+        self,
+        template_id: int,
+        data: UseTemplateRequest,
+        user_id: int,
     ) -> TransactionResponse:
         existing_template = await validators.validate_template(
-            self.transaction_template_repository,
-            user_id,
-            template_id
+            self.transaction_template_repository, user_id, template_id
         )
 
-        final_type = (
-            data.type
-            if data.type is not None
-            else existing_template.type
-        )
-        final_amount = (
-            data.amount
-            if data.amount is not None
-            else existing_template.amount
-        )
+        final_type = data.type if data.type is not None else existing_template.type
+        final_amount = data.amount if data.amount is not None else existing_template.amount
         final_category_id = (
-            data.category_id
-            if data.category_id is not None
-            else existing_template.category_id
+            data.category_id if data.category_id is not None else existing_template.category_id
         )
         final_currency_code = (
             data.currency_code
@@ -110,9 +99,7 @@ class TransactionService:
             else existing_template.currency_code
         )
         final_description = (
-            data.description
-            if data.description is not None
-            else existing_template.description
+            data.description if data.description is not None else existing_template.description
         )
 
         await validators.validate_category(self.category_repository, user_id, final_category_id)
@@ -144,19 +131,17 @@ class TransactionService:
 
         await self.unit_of_work.commit()
 
-        logger.info("transaction_create_from_template_success", user_id=user_id, transaction_id=created_transaction.id)
+        logger.info(
+            "transaction_create_from_template_success",
+            user_id=user_id,
+            transaction_id=created_transaction.id,
+        )
 
         return self._to_response(created_transaction)
 
-    async def get_transaction(
-            self,
-            transaction_id: int,
-            user_id: int
-    ) -> TransactionResponse:
+    async def get_transaction(self, transaction_id: int, user_id: int) -> TransactionResponse:
         existing_transaction = await validators.validate_transaction(
-            self.transaction_repository,
-            user_id,
-            transaction_id
+            self.transaction_repository, user_id, transaction_id
         )
 
         counterpart_account_id = None
@@ -170,13 +155,15 @@ class TransactionService:
         return self._to_response(existing_transaction, counterpart_account_id)
 
     async def get_user_transactions(
-            self,
-            user_id: int,
-            filters: TransactionFilters,
-            limit: int = 20,
-            offset: int = 0,
+        self,
+        user_id: int,
+        filters: TransactionFilters,
+        limit: int = 20,
+        offset: int = 0,
     ) -> list[TransactionResponse]:
-        transactions = await self.transaction_repository.get_by_user(user_id, filters, limit, offset)
+        transactions = await self.transaction_repository.get_by_user(
+            user_id, filters, limit, offset
+        )
 
         group_ids = [
             transaction.transfer_group_id
@@ -197,15 +184,13 @@ class TransactionService:
         ]
 
     async def update_transaction(
-            self,
-            transaction_id: int,
-            data: TransactionUpdate,
-            user_id: int,
+        self,
+        transaction_id: int,
+        data: TransactionUpdate,
+        user_id: int,
     ) -> TransactionResponse:
         existing_transaction = await validators.validate_transaction(
-            self.transaction_repository,
-            user_id,
-            transaction_id
+            self.transaction_repository, user_id, transaction_id
         )
 
         if existing_transaction.kind == TransactionKind.TRANSFER:
@@ -253,24 +238,24 @@ class TransactionService:
 
         await self.unit_of_work.commit()
 
-        logger.info("transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id)
+        logger.info(
+            "transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id
+        )
 
         return self._to_response(updated_transaction)
 
     async def delete_transaction(
-            self,
-            transaction_id: int,
-            user_id: int,
+        self,
+        transaction_id: int,
+        user_id: int,
     ) -> None:
         existing_transaction = await validators.validate_transaction(
-            self.transaction_repository,
-            user_id,
-            transaction_id
+            self.transaction_repository, user_id, transaction_id
         )
 
         if (
-                existing_transaction.kind == TransactionKind.TRANSFER
-                and existing_transaction.transfer_group_id is not None
+            existing_transaction.kind == TransactionKind.TRANSFER
+            and existing_transaction.transfer_group_id is not None
         ):
             await self.transaction_repository.delete_by_transfer_group(
                 existing_transaction.transfer_group_id,
@@ -290,12 +275,14 @@ class TransactionService:
 
             await self.unit_of_work.commit()
 
-            logger.info("transaction_delete_success", user_id=user_id, transaction_id=transaction_id)
+            logger.info(
+                "transaction_delete_success", user_id=user_id, transaction_id=transaction_id
+            )
 
     def _to_response(
-            self,
-            transaction: Transaction,
-            counterpart_account_id: int | None = None,
+        self,
+        transaction: Transaction,
+        counterpart_account_id: int | None = None,
     ) -> TransactionResponse:
         response = TransactionResponse.model_validate(transaction)
         response.counterpart_account_id = counterpart_account_id

@@ -1,17 +1,28 @@
 from decimal import Decimal
 
-from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository, \
-    TransactionRepository, BudgetRepository, UserRepository, AccountRepository
+from app.repositories import (
+    CategoryRepository,
+    CurrencyRepository,
+    TransactionTemplateRepository,
+    TransactionRepository,
+    BudgetRepository,
+    UserRepository,
+    AccountRepository,
+)
 from app.models import Category, TransactionTemplate, Transaction, Currency, Budget, User, Account
-from app.core.exceptions import NotFoundException, PermissionException, NotAllowedActionException, \
-    AuthenticationException
+from app.core.exceptions import (
+    NotFoundException,
+    PermissionException,
+    NotAllowedActionException,
+    AuthenticationException,
+)
 
 
 async def validate_category(
-        category_repository: CategoryRepository,
-        user_id: int,
-        category_id: int | None,
-        allow_archived: bool = False,
+    category_repository: CategoryRepository,
+    user_id: int,
+    category_id: int | None,
+    allow_archived: bool = False,
 ) -> Category | None:
     """
     Validate category exists, is owned by user, and not archived.
@@ -48,9 +59,9 @@ async def validate_category(
 
 
 async def validate_currency(
-        currency_repository: CurrencyRepository,
-        currency_code: str,
-        allow_inactive: bool = False,
+    currency_repository: CurrencyRepository,
+    currency_code: str,
+    allow_inactive: bool = False,
 ) -> Currency:
     """
     Validate currency exists and is active.
@@ -79,25 +90,23 @@ async def validate_currency(
 
 
 async def validate_transaction(
-        transaction_repository: TransactionRepository,
-        user_id: int,
-        transaction_id: int
+    transaction_repository: TransactionRepository, user_id: int, transaction_id: int
 ) -> Transaction:
     """
-      Validate transaction exists and is owned by user.
+    Validate transaction exists and is owned by user.
 
-      Args:
-          transaction_repository: Repository to fetch transaction
-          user_id: User who should own the transaction
-          transaction_id: Transaction to validate
+    Args:
+        transaction_repository: Repository to fetch transaction
+        user_id: User who should own the transaction
+        transaction_id: Transaction to validate
 
-      Returns:
-          Validated Transaction instance
+    Returns:
+        Validated Transaction instance
 
-      Raises:
-          NotFoundException: Transaction doesn't exist
-          PermissionException: Transaction not owned by user
-      """
+    Raises:
+        NotFoundException: Transaction doesn't exist
+        PermissionException: Transaction not owned by user
+    """
 
     existing_transaction = await transaction_repository.get_by_id(transaction_id)
 
@@ -111,9 +120,9 @@ async def validate_transaction(
 
 
 async def validate_template(
-        transaction_template_repository: TransactionTemplateRepository,
-        user_id: int,
-        transaction_template_id: int,
+    transaction_template_repository: TransactionTemplateRepository,
+    user_id: int,
+    transaction_template_id: int,
 ) -> TransactionTemplate:
     """
     Validate transaction template exists and is owned by user.
@@ -131,7 +140,9 @@ async def validate_template(
         PermissionException: Template not owned by user
     """
 
-    existing_transaction_template = await transaction_template_repository.get_by_id(transaction_template_id)
+    existing_transaction_template = await transaction_template_repository.get_by_id(
+        transaction_template_id
+    )
 
     if not existing_transaction_template:
         raise NotFoundException("Transaction template not found")
@@ -143,9 +154,7 @@ async def validate_template(
 
 
 async def validate_budget(
-        budget_repository: BudgetRepository,
-        user_id: int,
-        budget_id: int
+    budget_repository: BudgetRepository, user_id: int, budget_id: int
 ) -> Budget:
     """
     Validate budget exists and is owned by user.
@@ -175,8 +184,8 @@ async def validate_budget(
 
 
 async def validate_user(
-        user_repository: UserRepository,
-        user_id: int,
+    user_repository: UserRepository,
+    user_id: int,
 ) -> User:
     """
     Validate that the user from the token still exists.
@@ -200,10 +209,10 @@ async def validate_user(
 
 
 async def validate_account(
-        account_repository: AccountRepository,
-        user_id: int,
-        account_id: int,
-        allow_archived: bool = False,
+    account_repository: AccountRepository,
+    user_id: int,
+    account_id: int,
+    allow_archived: bool = False,
 ) -> Account:
     """
     Validate account exists, is owned by user, and (optionally) not archived.
@@ -240,10 +249,10 @@ async def validate_account(
 
 
 def resolve_settled_amount(
-        account: Account,
-        currency_code: str,
-        amount: Decimal,
-        settled_amount: Decimal | None,
+    account: Account,
+    currency_code: str,
+    amount: Decimal,
+    settled_amount: Decimal | None,
 ) -> Decimal:
     """
     Resolve how much was moved on the account, in the account currency.

@@ -16,13 +16,15 @@ async def health():
     return {"status": "ok"}
 
 
-@router.get("/ready",
-            responses={
-                200: {"description": "Service is ready"},
-                503: {"description": "Service is not ready"},
-            })
+@router.get(
+    "/ready",
+    responses={
+        200: {"description": "Service is ready"},
+        503: {"description": "Service is not ready"},
+    },
+)
 async def ready(
-        session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
 ):
     try:
         await session.execute(text("SELECT 1"))
@@ -31,6 +33,5 @@ async def ready(
         logger.error("db_health_check_failed", exc_info=True)
 
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database unavailable"
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable"
         )

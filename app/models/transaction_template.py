@@ -1,7 +1,16 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, Enum, String, DateTime, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import (
+    ForeignKey,
+    Numeric,
+    Enum,
+    String,
+    DateTime,
+    UniqueConstraint,
+    CheckConstraint,
+    Index,
+)
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
@@ -26,7 +35,9 @@ class TransactionTemplate(Base, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
-    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL")
+    )
 
     @validates("name")
     def validate_name(self, key, value):

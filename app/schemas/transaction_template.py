@@ -3,7 +3,12 @@ from datetime import datetime, date
 from pydantic import BaseModel, field_validator, ConfigDict, Field
 
 from app.models.transaction import TransactionType
-from app.schemas.validators import amount_validator, currency_code_validator, MAX_DESCRIPTION_LENGTH, name_validator
+from app.schemas.validators import (
+    amount_validator,
+    currency_code_validator,
+    MAX_DESCRIPTION_LENGTH,
+    name_validator,
+)
 from decimal import Decimal
 
 
@@ -85,7 +90,6 @@ class UseTemplateRequest(BaseModel):
         if v is not None:
             return amount_validator(v)
         return v
-
 
     @field_validator("currency_code")
     @classmethod

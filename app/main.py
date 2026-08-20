@@ -8,11 +8,26 @@ from sqlalchemy.exc import IntegrityError
 
 from pydantic import ValidationError
 
-from app.api.v1.endpoints import auth, users, categories, currencies, transactions, health, transaction_templates, \
-    statistics, budgets, accounts, transfers
+from app.api.v1.endpoints import (
+    auth,
+    users,
+    categories,
+    currencies,
+    transactions,
+    health,
+    transaction_templates,
+    statistics,
+    budgets,
+    accounts,
+    transfers,
+)
 from app.core.config import settings, Environment
-from app.core.exception_handlers import app_exception_handler, global_exception_handler, validation_exception_handler, \
-    integrity_error_handler
+from app.core.exception_handlers import (
+    app_exception_handler,
+    global_exception_handler,
+    validation_exception_handler,
+    integrity_error_handler,
+)
 from app.core.exceptions import AppException
 from app.core.middleware import RequestIDMiddleware
 from app.core.logging_config import setup_logging

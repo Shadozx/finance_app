@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.schemas.validators import name_validator
 
+
 class CategoryCreate(BaseModel):
     name: str
 
@@ -13,13 +14,16 @@ class CategoryCreate(BaseModel):
     def validate_name(cls, v: str) -> str:
         return name_validator(v, "Category")
 
+
 class CategoryUpdate(CategoryCreate):
     pass
+
 
 class CategoryStatus(str, Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"
     ALL = "all"
+
 
 class CategoryResponse(BaseModel):
     id: int

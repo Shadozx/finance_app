@@ -61,10 +61,10 @@ class Settings(BaseSettings):
             f"@{d['POSTGRES_SERVER']}:{d['POSTGRES_PORT']}/{d['POSTGRES_DB']}"
         )
 
-    @computed_field # type: ignore[prop-decorator] # mypy can't parse @computed_field over @property
+    @computed_field  # type: ignore[prop-decorator] # mypy can't parse @computed_field over @property
     @property
     def database_url_str(self) -> str:
         return str(self.DATABASE_URL)
 
 
-settings = Settings() # type: ignore[call-arg]
+settings = Settings()  # type: ignore[call-arg]

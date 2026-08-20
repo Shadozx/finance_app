@@ -13,19 +13,11 @@ logger = structlog.get_logger()
 
 
 class UserService:
-
-    def __init__(
-            self,
-            user_repository: UserRepository,
-            unit_of_work: UnitOfWork
-    ):
+    def __init__(self, user_repository: UserRepository, unit_of_work: UnitOfWork):
         self.user_repository = user_repository
         self.unit_of_work = unit_of_work
 
-    async def register_user(
-            self,
-            user: UserCreate
-    ) -> UserResponse:
+    async def register_user(self, user: UserCreate) -> UserResponse:
         if await self.user_repository.get_by_email(user.email):
             raise ValueExistsException("User with this email already exists")
 
@@ -33,9 +25,7 @@ class UserService:
             raise ValueExistsException("User with this username already exists")
 
         new_user = User(
-            username=user.username,
-            email=user.email,
-            hashed_password=hash_password(user.password)
+            username=user.username, email=user.email, hashed_password=hash_password(user.password)
         )
 
         created_user = await self.user_repository.add(new_user)
@@ -46,10 +36,7 @@ class UserService:
 
         return UserResponse.model_validate(created_user)
 
-    async def authenticate(
-            self,
-            user: UserLogin
-    ) -> str:
+    async def authenticate(self, user: UserLogin) -> str:
         existing_user = await self.user_repository.get_by_email(user.email)
 
         if not existing_user or not verify_password(user.password, existing_user.hashed_password):
@@ -61,11 +48,7 @@ class UserService:
 
         return create_access_token({"sub": str(existing_user.id)})
 
-    async def update_username(
-            self,
-            data: UsernameUpdate,
-            user_id: int
-    ) -> UserResponse:
+    async def update_username(self, data: UsernameUpdate, user_id: int) -> UserResponse:
         existing_user = await validators.validate_user(self.user_repository, user_id)
 
         duplicate_username_user = await self.user_repository.get_by_username(data.new_username)
@@ -80,15 +63,13 @@ class UserService:
 
         await self.unit_of_work.commit()
 
-        logger.info("username_update_success", user_id=updated_user.id, new_username=data.new_username)
+        logger.info(
+            "username_update_success", user_id=updated_user.id, new_username=data.new_username
+        )
 
         return UserResponse.model_validate(updated_user)
 
-    async def update_password(
-            self,
-            data: PasswordUpdate,
-            user_id: int
-    ) -> None:
+    async def update_password(self, data: PasswordUpdate, user_id: int) -> None:
         existing_user = await validators.validate_user(self.user_repository, user_id)
 
         if data.current_password == data.new_password:

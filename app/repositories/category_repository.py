@@ -10,22 +10,18 @@ from app.schemas import CategoryStatus
 
 
 class CategoryRepository:
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_id(
-            self,
-            category_id: int
-    ) -> Category | None:
+    async def get_by_id(self, category_id: int) -> Category | None:
         return (
             await self.session.execute(select(Category).where(Category.id == category_id))
         ).scalar_one_or_none()
 
     async def get_by_user(
-            self,
-            user_id: int,
-            status: CategoryStatus = CategoryStatus.ACTIVE,
+        self,
+        user_id: int,
+        status: CategoryStatus = CategoryStatus.ACTIVE,
     ) -> list[Category]:
         query = select(Category).where(Category.user_id == user_id)
 
@@ -39,47 +35,30 @@ class CategoryRepository:
 
         return list(result.scalars().all())
 
-    async def get_by_user_and_name(
-            self,
-            user_id: int, name: str
-    ) -> Category | None:
+    async def get_by_user_and_name(self, user_id: int, name: str) -> Category | None:
         return (
             await self.session.execute(
-                select(Category)
-                .where(Category.user_id == user_id)
-                .where(Category.name == name)
+                select(Category).where(Category.user_id == user_id).where(Category.name == name)
             )
         ).scalar_one_or_none()
 
-    async def add(
-            self,
-            category: Category
-    ) -> Category:
+    async def add(self, category: Category) -> Category:
         self.session.add(category)
         await self.session.flush()
 
         return category
 
-    async def update(
-            self,
-            category: Category
-    ) -> Category:
+    async def update(self, category: Category) -> Category:
         await self.session.flush()
 
         return category
 
-    async def archive(
-            self,
-            category: Category
-    ) -> None:
+    async def archive(self, category: Category) -> None:
         category.archived_at = datetime.now(timezone.utc)
 
         await self.session.flush()
 
-    async def restore(
-            self,
-            category: Category
-    ) -> None:
+    async def restore(self, category: Category) -> None:
         category.archived_at = None
 
         await self.session.flush()

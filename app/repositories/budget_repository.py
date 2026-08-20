@@ -7,7 +7,6 @@ from app.models import Budget
 
 
 class BudgetRepository:
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -17,8 +16,8 @@ class BudgetRepository:
         ).scalar_one_or_none()
 
     async def add(
-            self,
-            budget: Budget,
+        self,
+        budget: Budget,
     ) -> Budget:
         self.session.add(budget)
 
@@ -36,22 +35,26 @@ class BudgetRepository:
 
     async def get_by_period(self, user_id: int, start_date: date, end_date: date) -> list[Budget]:
         return list(
-            (await self.session.execute(
-                select(Budget)
-                .where(Budget.user_id == user_id)
-                .where(Budget.start_date <= end_date)
-                .where(Budget.end_date >= start_date)
-                .order_by(Budget.start_date, Budget.id)
-            )).scalars().all()
+            (
+                await self.session.execute(
+                    select(Budget)
+                    .where(Budget.user_id == user_id)
+                    .where(Budget.start_date <= end_date)
+                    .where(Budget.end_date >= start_date)
+                    .order_by(Budget.start_date, Budget.id)
+                )
+            )
+            .scalars()
+            .all()
         )
 
     async def find_same_budget(
-            self,
-            user_id: int,
-            category_id: int,
-            currency_code: str,
-            start_date: date,
-            end_date: date,
+        self,
+        user_id: int,
+        category_id: int,
+        currency_code: str,
+        start_date: date,
+        end_date: date,
     ) -> Budget | None:
         return (
             await self.session.execute(

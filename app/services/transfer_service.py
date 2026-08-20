@@ -14,24 +14,22 @@ logger = structlog.get_logger()
 
 
 class TransferService:
-
     def __init__(
-            self,
-            transaction_repository: TransactionRepository,
-            account_repository: AccountRepository,
-            currency_repository: CurrencyRepository,
-            unit_of_work: UnitOfWork
+        self,
+        transaction_repository: TransactionRepository,
+        account_repository: AccountRepository,
+        currency_repository: CurrencyRepository,
+        unit_of_work: UnitOfWork,
     ):
         self.transaction_repository = transaction_repository
         self.account_repository = account_repository
         self.currency_repository = currency_repository
         self.unit_of_work = unit_of_work
 
-
     async def create_transfer(
-            self,
-            data: TransferCreate,
-            user_id: int,
+        self,
+        data: TransferCreate,
+        user_id: int,
     ) -> TransferResponse:
         from_account = await validators.validate_account(
             self.account_repository, user_id, data.from_account_id
@@ -91,9 +89,9 @@ class TransferService:
         return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def get_transfer(
-            self,
-            transfer_group_id: UUID,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        user_id: int,
     ) -> TransferResponse:
         from_side, to_side = await self._get_sides(transfer_group_id, user_id)
 
@@ -108,10 +106,10 @@ class TransferService:
         return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def update_transfer(
-            self,
-            transfer_group_id: UUID,
-            data: TransferUpdate,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        data: TransferUpdate,
+        user_id: int,
     ) -> TransferResponse:
         from_side, to_side = await self._get_sides(transfer_group_id, user_id)
 
@@ -159,9 +157,9 @@ class TransferService:
         return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
 
     async def delete_transfer(
-            self,
-            transfer_group_id: UUID,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        user_id: int,
     ) -> None:
         await self._get_sides(transfer_group_id, user_id)
 
@@ -175,9 +173,9 @@ class TransferService:
         )
 
     async def _get_sides(
-            self,
-            transfer_group_id: UUID,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        user_id: int,
     ) -> tuple[Transaction, Transaction]:
         """Load both sides of a transfer.
 
@@ -198,9 +196,9 @@ class TransferService:
 
     @staticmethod
     def _validate_amounts(
-            data: TransferCreate,
-            from_account: Account,
-            to_account: Account,
+        data: TransferCreate,
+        from_account: Account,
+        to_account: Account,
     ) -> None:
         if from_account.currency_code != to_account.currency_code:
             return
@@ -212,11 +210,11 @@ class TransferService:
 
     @staticmethod
     def _write_side(
-            side: Transaction,
-            transaction_type: TransactionType,
-            account: Account,
-            amount: Decimal,
-            data: TransferUpdate,
+        side: Transaction,
+        transaction_type: TransactionType,
+        account: Account,
+        amount: Decimal,
+        data: TransferUpdate,
     ) -> None:
         side.type = transaction_type
         side.amount = amount
@@ -228,12 +226,12 @@ class TransferService:
         side.date = data.date
 
     def _to_response(
-            self,
-            transfer_group_id: UUID,
-            from_side: Transaction,
-            to_side: Transaction,
-            from_account: Account,
-            to_account: Account,
+        self,
+        transfer_group_id: UUID,
+        from_side: Transaction,
+        to_side: Transaction,
+        from_account: Account,
+        to_account: Account,
     ) -> TransferResponse:
         return TransferResponse(
             transfer_group_id=transfer_group_id,

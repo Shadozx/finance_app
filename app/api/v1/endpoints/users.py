@@ -10,13 +10,8 @@ from app.core.rate_limiter import limiter
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get(
-    "/me",
-    response_model=UserResponse
-)
-async def get_me(
-        current_user: User = Depends(get_current_user)
-):
+@router.get("/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
     return UserResponse.model_validate(current_user)
 
 
@@ -26,9 +21,9 @@ async def get_me(
     status_code=status.HTTP_200_OK,
 )
 async def update_username(
-        data: UsernameUpdate,
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service)
+    data: UsernameUpdate,
+    current_user: User = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
 ):
     return await user_service.update_username(data, current_user.id)
 
@@ -39,10 +34,9 @@ async def update_username(
 )
 @limiter.limit("3/minute")
 async def update_password(
-        request: Request,
-        data: PasswordUpdate,
-        current_user: User = Depends(get_current_user),
-        user_service: UserService = Depends(get_user_service)
+    request: Request,
+    data: PasswordUpdate,
+    current_user: User = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
 ):
     await user_service.update_password(data, current_user.id)
-

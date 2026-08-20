@@ -7,8 +7,15 @@ from datetime import date
 from app.core import UnitOfWork
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, \
-    AccountReconcile, AccountReconcileResponse
+from app.schemas import (
+    AccountCreate,
+    AccountUpdate,
+    AccountResponse,
+    AccountStatus,
+    InitialBalanceKind,
+    AccountReconcile,
+    AccountReconcileResponse,
+)
 from app.core.exceptions import ValueExistsException, NotAllowedActionException
 from app.services import validators
 
@@ -16,13 +23,12 @@ logger = structlog.get_logger()
 
 
 class AccountService:
-
     def __init__(
-            self,
-            account_repository: AccountRepository,
-            transaction_repository: TransactionRepository,
-            currency_repository: CurrencyRepository,
-            unit_of_work: UnitOfWork
+        self,
+        account_repository: AccountRepository,
+        transaction_repository: TransactionRepository,
+        currency_repository: CurrencyRepository,
+        unit_of_work: UnitOfWork,
     ):
         self.account_repository = account_repository
         self.transaction_repository = transaction_repository
@@ -30,9 +36,9 @@ class AccountService:
         self.unit_of_work = unit_of_work
 
     async def create_account(
-            self,
-            data: AccountCreate,
-            user_id: int,
+        self,
+        data: AccountCreate,
+        user_id: int,
     ) -> AccountResponse:
         if await self.account_repository.get_by_user_and_name(user_id, data.name):
             raise ValueExistsException("Account with this name exists")
@@ -52,7 +58,9 @@ class AccountService:
         if initial_balance != 0:
             adjustment = Transaction(
                 account_id=created_account.id,
-                kind=TransactionKind.ADJUSTMENT if data.initial_balance_kind == InitialBalanceKind.EXISTING else TransactionKind.REGULAR,
+                kind=TransactionKind.ADJUSTMENT
+                if data.initial_balance_kind == InitialBalanceKind.EXISTING
+                else TransactionKind.REGULAR,
                 type=TransactionType.EXPENSE if initial_balance < 0 else TransactionType.INCOME,
                 amount=abs(initial_balance),
                 settled_amount=abs(initial_balance),
@@ -69,11 +77,7 @@ class AccountService:
 
         return self._to_response(created_account, initial_balance)
 
-    async def get_account(
-            self,
-            account_id: int,
-            user_id: int
-    ) -> AccountResponse:
+    async def get_account(self, account_id: int, user_id: int) -> AccountResponse:
         existing_account = await validators.validate_account(
             self.account_repository,
             user_id,
@@ -86,9 +90,9 @@ class AccountService:
         return self._to_response(existing_account, balance)
 
     async def get_user_accounts(
-            self,
-            user_id: int,
-            status: AccountStatus = AccountStatus.ACTIVE,
+        self,
+        user_id: int,
+        status: AccountStatus = AccountStatus.ACTIVE,
     ) -> list[AccountResponse]:
         accounts = await self.account_repository.get_by_user(
             user_id=user_id,
@@ -98,16 +102,15 @@ class AccountService:
         balances = await self.transaction_repository.get_balances_by_account(user_id)
 
         return [
-            self._to_response(
-                account,
-                balance=balances.get(account.id, Decimal("0"))
-            ) for account in accounts]
+            self._to_response(account, balance=balances.get(account.id, Decimal("0")))
+            for account in accounts
+        ]
 
     async def update_account(
-            self,
-            account_id: int,
-            data: AccountUpdate,
-            user_id: int,
+        self,
+        account_id: int,
+        data: AccountUpdate,
+        user_id: int,
     ) -> AccountResponse:
         existing_account = await validators.validate_account(
             self.account_repository,
@@ -134,10 +137,10 @@ class AccountService:
         return self._to_response(updated_account, balance)
 
     async def reconcile_account(
-            self,
-            account_id: int,
-            data: AccountReconcile,
-            user_id: int,
+        self,
+        account_id: int,
+        data: AccountReconcile,
+        user_id: int,
     ) -> AccountReconcileResponse:
         existing_account = await validators.validate_account(
             self.account_repository,
@@ -194,9 +197,9 @@ class AccountService:
         )
 
     async def archive_account(
-            self,
-            account_id: int,
-            user_id: int,
+        self,
+        account_id: int,
+        user_id: int,
     ) -> None:
         existing_account = await validators.validate_account(
             self.account_repository,
@@ -215,9 +218,9 @@ class AccountService:
         logger.info("account_archive_success", user_id=user_id, account_id=existing_account.id)
 
     async def restore_account(
-            self,
-            account_id: int,
-            user_id: int,
+        self,
+        account_id: int,
+        user_id: int,
     ) -> AccountResponse:
         existing_account = await validators.validate_account(
             self.account_repository,

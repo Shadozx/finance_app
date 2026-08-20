@@ -16,9 +16,9 @@ router = APIRouter(prefix="/transfers", tags=["transfers"])
     response_model=TransferResponse,
 )
 async def create_transfer(
-        data: TransferCreate,
-        transfer_service: TransferService = Depends(get_transfer_service),
-        current_user: User = Depends(get_current_user),
+    data: TransferCreate,
+    transfer_service: TransferService = Depends(get_transfer_service),
+    current_user: User = Depends(get_current_user),
 ):
     return await transfer_service.create_transfer(data, current_user.id)
 
@@ -28,9 +28,9 @@ async def create_transfer(
     response_model=TransferResponse,
 )
 async def get_transfer(
-        transfer_group_id: UUID,
-        transfer_service: TransferService = Depends(get_transfer_service),
-        current_user: User = Depends(get_current_user),
+    transfer_group_id: UUID,
+    transfer_service: TransferService = Depends(get_transfer_service),
+    current_user: User = Depends(get_current_user),
 ):
     return await transfer_service.get_transfer(transfer_group_id, current_user.id)
 
@@ -40,10 +40,10 @@ async def get_transfer(
     response_model=TransferResponse,
 )
 async def update_transfer(
-        transfer_group_id: UUID,
-        data: TransferUpdate,
-        transfer_service: TransferService = Depends(get_transfer_service),
-        current_user: User = Depends(get_current_user),
+    transfer_group_id: UUID,
+    data: TransferUpdate,
+    transfer_service: TransferService = Depends(get_transfer_service),
+    current_user: User = Depends(get_current_user),
 ):
     return await transfer_service.update_transfer(transfer_group_id, data, current_user.id)
 
@@ -53,8 +53,8 @@ async def update_transfer(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_transfer(
-        transfer_group_id: UUID,
-        transfer_service: TransferService = Depends(get_transfer_service),
-        current_user: User = Depends(get_current_user),
+    transfer_group_id: UUID,
+    transfer_service: TransferService = Depends(get_transfer_service),
+    current_user: User = Depends(get_current_user),
 ):
     await transfer_service.delete_transfer(transfer_group_id, current_user.id)

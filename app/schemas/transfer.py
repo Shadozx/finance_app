@@ -41,6 +41,7 @@ class TransferCreate(BaseModel):
 class TransferUpdate(TransferCreate):
     pass
 
+
 class TransferResponse(BaseModel):
     transfer_group_id: UUID
 

@@ -5,8 +5,19 @@ import structlog
 from decimal import Decimal
 
 from app.core import UnitOfWork
-from app.repositories import BudgetRepository, TransactionRepository, CategoryRepository, CurrencyRepository
-from app.schemas import BudgetCreate, BudgetUpdate, BudgetResponse, BudgetFilters, BudgetStatusResponse
+from app.repositories import (
+    BudgetRepository,
+    TransactionRepository,
+    CategoryRepository,
+    CurrencyRepository,
+)
+from app.schemas import (
+    BudgetCreate,
+    BudgetUpdate,
+    BudgetResponse,
+    BudgetFilters,
+    BudgetStatusResponse,
+)
 from app.models import Budget
 from app.core.exceptions import ValueExistsException
 from app.services import validators
@@ -16,12 +27,12 @@ logger = structlog.get_logger()
 
 class BudgetService:
     def __init__(
-            self,
-            budget_repository: BudgetRepository,
-            transaction_repository: TransactionRepository,
-            category_repository: CategoryRepository,
-            currency_repository: CurrencyRepository,
-            unit_of_work: UnitOfWork
+        self,
+        budget_repository: BudgetRepository,
+        transaction_repository: TransactionRepository,
+        category_repository: CategoryRepository,
+        currency_repository: CurrencyRepository,
+        unit_of_work: UnitOfWork,
     ):
         self.budget_repository = budget_repository
         self.transaction_repository = transaction_repository
@@ -30,21 +41,19 @@ class BudgetService:
         self.unit_of_work = unit_of_work
 
     async def get_budget(
-            self,
-            budget_id: int,
-            user_id: int,
+        self,
+        budget_id: int,
+        user_id: int,
     ) -> BudgetResponse:
         existing_budget = await validators.validate_budget(
-            self.budget_repository,
-            user_id,
-            budget_id
+            self.budget_repository, user_id, budget_id
         )
         return BudgetResponse.model_validate(existing_budget)
 
     async def get_user_budgets(
-            self,
-            user_id: int,
-            filters: BudgetFilters,
+        self,
+        user_id: int,
+        filters: BudgetFilters,
     ) -> list[BudgetResponse]:
         if filters.start_date is None:
             today = date.today()
@@ -58,18 +67,16 @@ class BudgetService:
         return [BudgetResponse.model_validate(b) for b in budgets]
 
     async def create_budget(
-            self,
-            data: BudgetCreate,
-            user_id: int,
+        self,
+        data: BudgetCreate,
+        user_id: int,
     ) -> BudgetResponse:
         if await self.budget_repository.find_same_budget(
-                user_id,
-                data.category_id,
-                data.currency_code,
-                data.start_date,
-                data.end_date
+            user_id, data.category_id, data.currency_code, data.start_date, data.end_date
         ):
-            raise ValueExistsException("Budget for this category, currency and period already exists")
+            raise ValueExistsException(
+                "Budget for this category, currency and period already exists"
+            )
 
         await validators.validate_category(self.category_repository, user_id, data.category_id)
         await validators.validate_currency(self.currency_repository, data.currency_code)
@@ -93,16 +100,18 @@ class BudgetService:
         return BudgetResponse.model_validate(created_budget)
 
     async def update_budget(
-            self,
-            budget_id: int,
-            data: BudgetUpdate,
-            user_id: int,
+        self,
+        budget_id: int,
+        data: BudgetUpdate,
+        user_id: int,
     ) -> BudgetResponse:
         duplicate = await self.budget_repository.find_same_budget(
             user_id, data.category_id, data.currency_code, data.start_date, data.end_date
         )
         if duplicate and duplicate.id != budget_id:
-            raise ValueExistsException("Budget for this category, currency and period already exists")
+            raise ValueExistsException(
+                "Budget for this category, currency and period already exists"
+            )
 
         existing_budget = await validators.validate_budget(
             self.budget_repository, user_id, budget_id
@@ -112,12 +121,15 @@ class BudgetService:
         currency_changed = data.currency_code != existing_budget.currency_code
 
         await validators.validate_category(
-            self.category_repository, user_id, data.category_id,
+            self.category_repository,
+            user_id,
+            data.category_id,
             allow_archived=not category_changed,
         )
 
         await validators.validate_currency(
-            self.currency_repository, data.currency_code,
+            self.currency_repository,
+            data.currency_code,
             allow_inactive=not currency_changed,
         )
 
@@ -137,9 +149,9 @@ class BudgetService:
         return BudgetResponse.model_validate(updated_budget)
 
     async def delete_budget(
-            self,
-            budget_id: int,
-            user_id: int,
+        self,
+        budget_id: int,
+        user_id: int,
     ) -> None:
         existing_budget = await validators.validate_budget(
             self.budget_repository, user_id, budget_id
@@ -151,15 +163,18 @@ class BudgetService:
         logger.info("budget_delete_success", user_id=user_id, budget_id=existing_budget.id)
 
     async def get_budget_status(
-            self,
-            budget_id: int,
-            user_id: int,
+        self,
+        budget_id: int,
+        user_id: int,
     ) -> BudgetStatusResponse:
         budget = await validators.validate_budget(self.budget_repository, user_id, budget_id)
 
         spent = await self.transaction_repository.get_spent(
-            user_id, budget.category_id, budget.currency_code,
-            budget.start_date, budget.end_date,
+            user_id,
+            budget.category_id,
+            budget.currency_code,
+            budget.start_date,
+            budget.end_date,
         )
 
         remaining = budget.amount - spent

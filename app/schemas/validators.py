@@ -24,9 +24,7 @@ def name_validator(name: str, entity: str) -> str:
     return name
 
 
-def password_validator(
-        password: str
-) -> str:
+def password_validator(password: str) -> str:
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
 
@@ -38,9 +36,7 @@ def password_validator(
     return password
 
 
-def username_validator(
-        username: str
-) -> str:
+def username_validator(username: str) -> str:
     username = username.strip()
 
     if len(username) < 3:

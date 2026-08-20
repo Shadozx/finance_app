@@ -9,22 +9,18 @@ from app.schemas import AccountStatus
 
 
 class AccountRepository:
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_id(
-            self,
-            account_id: int
-    ) -> Account | None:
+    async def get_by_id(self, account_id: int) -> Account | None:
         return (
             await self.session.execute(select(Account).where(Account.id == account_id))
         ).scalar_one_or_none()
 
     async def get_by_user(
-            self,
-            user_id: int,
-            status: AccountStatus = AccountStatus.ACTIVE,
+        self,
+        user_id: int,
+        status: AccountStatus = AccountStatus.ACTIVE,
     ) -> list[Account]:
         query = select(Account).where(Account.user_id == user_id)
 
@@ -38,39 +34,24 @@ class AccountRepository:
 
         return list(result.scalars().all())
 
-    async def get_by_user_and_name(
-            self,
-            user_id: int,
-            name: str
-    ) -> Account | None:
+    async def get_by_user_and_name(self, user_id: int, name: str) -> Account | None:
         return (
             await self.session.execute(
-                select(Account)
-                .where(Account.user_id == user_id)
-                .where(Account.name == name)
+                select(Account).where(Account.user_id == user_id).where(Account.name == name)
             )
         ).scalar_one_or_none()
 
-    async def update(
-            self,
-            account: Account
-    ) -> Account:
+    async def update(self, account: Account) -> Account:
         await self.session.flush()
 
         return account
 
-    async def archive(
-            self,
-            account: Account
-    ) -> None:
+    async def archive(self, account: Account) -> None:
         account.archived_at = datetime.now(timezone.utc)
 
         await self.session.flush()
 
-    async def restore(
-            self,
-            account: Account
-    ) -> None:
+    async def restore(self, account: Account) -> None:
         account.archived_at = None
 
         await self.session.flush()

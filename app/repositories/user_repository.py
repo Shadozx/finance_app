@@ -24,8 +24,8 @@ class UserRepository:
         ).scalar_one_or_none()
 
     async def add(
-            self,
-            user: User,
+        self,
+        user: User,
     ) -> User:
         self.session.add(user)
 

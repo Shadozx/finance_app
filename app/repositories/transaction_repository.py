@@ -16,7 +16,6 @@ from app.repositories.types import SummaryRow, CategorySummaryRow, TransactionFi
 
 
 class TransactionRepository:
-
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -26,11 +25,11 @@ class TransactionRepository:
         ).scalar_one_or_none()
 
     async def get_by_user(
-            self,
-            user_id: int,
-            filters: TransactionFilters,
-            limit: int = 20,
-            offset: int = 0,
+        self,
+        user_id: int,
+        filters: TransactionFilters,
+        limit: int = 20,
+        offset: int = 0,
     ) -> list[Transaction]:
         query = select(Transaction).where(Transaction.user_id == user_id)
 
@@ -42,10 +41,7 @@ class TransactionRepository:
         if filters.account_id is not None:
             query = query.where(Transaction.account_id == filters.account_id)
 
-        query = (query.order_by(Transaction.date.desc())
-                 .offset(offset)
-                 .limit(limit)
-                 )
+        query = query.order_by(Transaction.date.desc()).offset(offset).limit(limit)
 
         return list((await self.session.execute(query)).scalars().all())
 
@@ -65,14 +61,20 @@ class TransactionRepository:
         await self.session.delete(transaction)
 
     async def get_summary(
-            self,
-            user_id: int,
-            filters: StatisticsFilters,
+        self,
+        user_id: int,
+        filters: StatisticsFilters,
     ) -> list[SummaryRow]:
-        query = (select(Transaction.settled_currency_code, Transaction.type, func.sum(Transaction.settled_amount))
-                 .group_by(Transaction.settled_currency_code, Transaction.type)
-                 .where(Transaction.user_id == user_id)
-                 .where(self._counts_in_totals()))
+        query = (
+            select(
+                Transaction.settled_currency_code,
+                Transaction.type,
+                func.sum(Transaction.settled_amount),
+            )
+            .group_by(Transaction.settled_currency_code, Transaction.type)
+            .where(Transaction.user_id == user_id)
+            .where(self._counts_in_totals())
+        )
 
         query = self._apply_filters(query, filters)
 
@@ -81,22 +83,25 @@ class TransactionRepository:
 
         rows = (await self.session.execute(query)).all()
 
-        return [
-            SummaryRow(currency_code=row[0], type=row[1], total=row[2])
-            for row in rows
-        ]
+        return [SummaryRow(currency_code=row[0], type=row[1], total=row[2]) for row in rows]
 
     async def get_by_category(
-            self,
-            user_id: int,
-            filters: CategoryStatisticsFilters,
+        self,
+        user_id: int,
+        filters: CategoryStatisticsFilters,
     ) -> list[CategorySummaryRow]:
-        query = (select(Transaction.settled_currency_code, Transaction.category_id, Category.name,
-                        func.sum(Transaction.settled_amount))
-                 .join(Category, Category.id == Transaction.category_id, isouter=True)
-                 .group_by(Transaction.settled_currency_code, Transaction.category_id, Category.name)
-                 .where(Transaction.user_id == user_id)
-                 .where(self._counts_in_totals()))
+        query = (
+            select(
+                Transaction.settled_currency_code,
+                Transaction.category_id,
+                Category.name,
+                func.sum(Transaction.settled_amount),
+            )
+            .join(Category, Category.id == Transaction.category_id, isouter=True)
+            .group_by(Transaction.settled_currency_code, Transaction.category_id, Category.name)
+            .where(Transaction.user_id == user_id)
+            .where(self._counts_in_totals())
+        )
 
         query = self._apply_filters(query, filters)
 
@@ -106,17 +111,19 @@ class TransactionRepository:
         rows = (await self.session.execute(query)).all()
 
         return [
-            CategorySummaryRow(currency_code=row[0], category_id=row[1], category_name=row[2], total=row[3])
+            CategorySummaryRow(
+                currency_code=row[0], category_id=row[1], category_name=row[2], total=row[3]
+            )
             for row in rows
         ]
 
     async def get_spent(
-            self,
-            user_id: int,
-            category_id: int,
-            currency_code: str,
-            start_date: date,
-            end_date: date,
+        self,
+        user_id: int,
+        category_id: int,
+        currency_code: str,
+        start_date: date,
+        end_date: date,
     ) -> Decimal:
         query = (
             select(func.coalesce(func.sum(Transaction.settled_amount), Decimal("0")))
@@ -131,9 +138,9 @@ class TransactionRepository:
         return (await self.session.execute(query)).scalar_one()
 
     def _apply_filters(
-            self,
-            query: Select,
-            filters: TransactionFilterProtocol,
+        self,
+        query: Select,
+        filters: TransactionFilterProtocol,
     ) -> Select:
         if filters.type is not None:
             query = query.where(Transaction.type == filters.type)
@@ -159,31 +166,21 @@ class TransactionRepository:
         """
         return Transaction.kind == TransactionKind.REGULAR
 
-    async def get_balance(
-            self,
-            account_id: int
-    ) -> Decimal:
-        query = (
-            select(
-                func.coalesce(
-                    func.sum(
-                        self._signed_amount(),
-                    ),
-                    Decimal("0")))
-            .where(Transaction.account_id == account_id)
-        )
+    async def get_balance(self, account_id: int) -> Decimal:
+        query = select(
+            func.coalesce(
+                func.sum(
+                    self._signed_amount(),
+                ),
+                Decimal("0"),
+            )
+        ).where(Transaction.account_id == account_id)
 
         return (await self.session.execute(query)).scalar_one()
 
-    async def get_balances_by_account(
-            self,
-            user_id: int
-    ) -> dict[int, Decimal]:
+    async def get_balances_by_account(self, user_id: int) -> dict[int, Decimal]:
         query = (
-            select(
-                Transaction.account_id,
-                func.sum(self._signed_amount())
-            )
+            select(Transaction.account_id, func.sum(self._signed_amount()))
             .where(Transaction.user_id == user_id)
             .group_by(Transaction.account_id)
         )
@@ -205,9 +202,9 @@ class TransactionRepository:
         )
 
     async def get_by_transfer_group(
-            self,
-            transfer_group_id: UUID,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        user_id: int,
     ) -> list[Transaction]:
         query = (
             select(Transaction)
@@ -219,9 +216,9 @@ class TransactionRepository:
         return list((await self.session.execute(query)).scalars().all())
 
     async def delete_by_transfer_group(
-            self,
-            transfer_group_id: UUID,
-            user_id: int,
+        self,
+        transfer_group_id: UUID,
+        user_id: int,
     ) -> None:
         query = (
             delete(Transaction)
@@ -232,9 +229,9 @@ class TransactionRepository:
         await self.session.execute(query)
 
     async def get_counterpart_account_ids(
-            self,
-            transfer_group_ids: list[UUID],
-            user_id: int,
+        self,
+        transfer_group_ids: list[UUID],
+        user_id: int,
     ) -> dict[int, int]:
         """Map transaction id -> account id of the other side of its transfer."""
         counterpart = aliased(Transaction)

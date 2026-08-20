@@ -2,8 +2,13 @@ from fastapi import APIRouter, Depends, status, Query
 
 from app.api.dependencies import get_transaction_service, get_current_user
 from app.services import TransactionService
-from app.schemas import TransactionResponse, TransactionCreate, TransactionUpdate, TransactionFilters, \
-    UseTemplateRequest
+from app.schemas import (
+    TransactionResponse,
+    TransactionCreate,
+    TransactionUpdate,
+    TransactionFilters,
+    UseTemplateRequest,
+)
 from app.models import User
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -15,9 +20,9 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
     response_model=TransactionResponse,
 )
 async def create_transaction(
-        data: TransactionCreate,
-        transaction_service: TransactionService = Depends(get_transaction_service),
-        current_user: User = Depends(get_current_user),
+    data: TransactionCreate,
+    transaction_service: TransactionService = Depends(get_transaction_service),
+    current_user: User = Depends(get_current_user),
 ):
     return await transaction_service.create_transaction(data, current_user.id)
 
@@ -28,36 +33,32 @@ async def create_transaction(
     response_model=TransactionResponse,
 )
 async def create_transaction_from_template(
-        transaction_template_id: int,
-        data: UseTemplateRequest,
-        transaction_service: TransactionService = Depends(get_transaction_service),
-        current_user: User = Depends(get_current_user),
+    transaction_template_id: int,
+    data: UseTemplateRequest,
+    transaction_service: TransactionService = Depends(get_transaction_service),
+    current_user: User = Depends(get_current_user),
 ):
-    return await transaction_service.create_transaction_from_template(transaction_template_id, data, current_user.id)
+    return await transaction_service.create_transaction_from_template(
+        transaction_template_id, data, current_user.id
+    )
 
 
-@router.get(
-    "",
-    response_model=list[TransactionResponse]
-)
+@router.get("", response_model=list[TransactionResponse])
 async def get_transactions(
-        filters: TransactionFilters = Depends(),
-        limit: int = Query(20, ge=1, le=100),
-        offset: int = Query(0, ge=0),
-        current_user: User = Depends(get_current_user),
-        transaction_service: TransactionService = Depends(get_transaction_service)
+    filters: TransactionFilters = Depends(),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     return await transaction_service.get_user_transactions(current_user.id, filters, limit, offset)
 
 
-@router.get(
-    "/{transaction_id}",
-    response_model=TransactionResponse
-)
+@router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
-        transaction_id: int,
-        current_user: User = Depends(get_current_user),
-        transaction_service: TransactionService = Depends(get_transaction_service)
+    transaction_id: int,
+    current_user: User = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     return await transaction_service.get_transaction(transaction_id, current_user.id)
 
@@ -67,10 +68,10 @@ async def get_transaction(
     response_model=TransactionResponse,
 )
 async def update_transaction(
-        transaction_id: int,
-        data: TransactionUpdate,
-        current_user: User = Depends(get_current_user),
-        transaction_service: TransactionService = Depends(get_transaction_service)
+    transaction_id: int,
+    data: TransactionUpdate,
+    current_user: User = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     return await transaction_service.update_transaction(transaction_id, data, current_user.id)
 
@@ -80,8 +81,8 @@ async def update_transaction(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_transaction(
-        transaction_id: int,
-        current_user: User = Depends(get_current_user),
-        transaction_service: TransactionService = Depends(get_transaction_service)
+    transaction_id: int,
+    current_user: User = Depends(get_current_user),
+    transaction_service: TransactionService = Depends(get_transaction_service),
 ):
     await transaction_service.delete_transaction(transaction_id, current_user.id)

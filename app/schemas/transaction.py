@@ -9,7 +9,6 @@ from decimal import Decimal
 
 
 class TransactionCreate(BaseModel):
-
     type: TransactionType
 
     amount: Decimal

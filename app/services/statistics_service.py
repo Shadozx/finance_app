@@ -2,19 +2,23 @@ from decimal import Decimal
 
 from app.models import TransactionType
 from app.repositories import TransactionRepository
-from app.schemas import StatisticsFilters, CurrencySummary, SummaryPeriod, SummaryResponse, CategoryStatisticsFilters, \
-    CategoryAmount, CurrencyCategories, CategorySummaryResponse
+from app.schemas import (
+    StatisticsFilters,
+    CurrencySummary,
+    SummaryPeriod,
+    SummaryResponse,
+    CategoryStatisticsFilters,
+    CategoryAmount,
+    CurrencyCategories,
+    CategorySummaryResponse,
+)
 
 
 class StatisticsService:
     def __init__(self, transaction_repository: TransactionRepository):
         self.transaction_repository = transaction_repository
 
-    async def get_summary(
-            self,
-            user_id: int,
-            filters: StatisticsFilters
-    ) -> SummaryResponse:
+    async def get_summary(self, user_id: int, filters: StatisticsFilters) -> SummaryResponse:
         rows = await self.transaction_repository.get_summary(user_id, filters)
 
         accumulator: dict[str, dict[str, Decimal]] = {}
@@ -53,32 +57,28 @@ class StatisticsService:
         )
 
     async def get_by_category(
-            self,
-            user_id: int,
-            filters: CategoryStatisticsFilters
+        self, user_id: int, filters: CategoryStatisticsFilters
     ) -> CategorySummaryResponse:
         rows = await self.transaction_repository.get_by_category(user_id, filters)
 
         accumulator: dict[str, list[CategoryAmount]] = {}
 
         for row in rows:
-            entry = accumulator.setdefault(
-                row.currency_code,
-                []
-            )
+            entry = accumulator.setdefault(row.currency_code, [])
 
-            entry.append(CategoryAmount(
-                category_id=row.category_id,
-                category_name=row.category_name,
-                total=row.total,
-            ))
+            entry.append(
+                CategoryAmount(
+                    category_id=row.category_id,
+                    category_name=row.category_name,
+                    total=row.total,
+                )
+            )
 
         currencies = [
             CurrencyCategories(
                 currency_code=code,
                 categories=data,
             )
-
             for code, data in accumulator.items()
         ]
 
