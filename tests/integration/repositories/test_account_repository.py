@@ -11,38 +11,41 @@ from app.schemas import AccountStatus
 
 @pytest.fixture
 async def account(
-        account_repository: AccountRepository,
-        user: User,
-        uah_currency: Currency,
+    account_repository: AccountRepository,
+    user: User,
+    uah_currency: Currency,
 ):
-    return await account_repository.add(Account(
-        name="Monobank",
-        currency_code=uah_currency.code,
-        user_id=user.id,
-    ))
+    return await account_repository.add(
+        Account(
+            name="Monobank",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+        )
+    )
 
 
 @pytest.fixture
 async def archived_account(
-        account_repository: AccountRepository,
-        user: User,
-        uah_currency: Currency,
+    account_repository: AccountRepository,
+    user: User,
+    uah_currency: Currency,
 ):
-    return await account_repository.add(Account(
-        name="Closed Card",
-        currency_code=uah_currency.code,
-        user_id=user.id,
-        archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
-    ))
+    return await account_repository.add(
+        Account(
+            name="Closed Card",
+            currency_code=uah_currency.code,
+            user_id=user.id,
+            archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+    )
 
 
 class TestAdd:
-
     async def test_add(
-            self,
-            account_repository: AccountRepository,
-            user: User,
-            uah_currency: Currency,
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        uah_currency: Currency,
     ):
         new_account = Account(
             name="Cash",
@@ -60,10 +63,10 @@ class TestAdd:
         assert created_account.archived_at is None
 
     async def test_add_duplicate_name_same_user(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
-            usd_currency: Currency,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
+        usd_currency: Currency,
     ):
         duplicate_account = Account(
             name=account.name,
@@ -75,24 +78,28 @@ class TestAdd:
             await account_repository.add(duplicate_account)
 
     async def test_add_same_name_for_different_users_allowed(
-            self,
-            test_session: AsyncSession,
-            account_repository: AccountRepository,
-            account: Account,
-            uah_currency: Currency,
+        self,
+        test_session: AsyncSession,
+        account_repository: AccountRepository,
+        account: Account,
+        uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.add(User(
-            email="other@test.com",
-            username="other",
-            hashed_password="hashed",
-        ))
+        other_user = await other_user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password="hashed",
+            )
+        )
 
-        other_account = await account_repository.add(Account(
-            name=account.name,
-            currency_code=uah_currency.code,
-            user_id=other_user.id,
-        ))
+        other_account = await account_repository.add(
+            Account(
+                name=account.name,
+                currency_code=uah_currency.code,
+                user_id=other_user.id,
+            )
+        )
 
         assert other_account.id != account.id
         assert other_account.name == account.name
@@ -100,9 +107,9 @@ class TestAdd:
 
 class TestGetById:
     async def test_get_by_id(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
     ):
         found_account = await account_repository.get_by_id(account.id)
 
@@ -111,8 +118,8 @@ class TestGetById:
         assert found_account.currency_code == account.currency_code
 
     async def test_get_by_id_not_found(
-            self,
-            account_repository: AccountRepository,
+        self,
+        account_repository: AccountRepository,
     ):
         found_account = await account_repository.get_by_id(999)
 
@@ -121,16 +128,18 @@ class TestGetById:
 
 class TestGetByUser:
     async def test_get_by_user_default_returns_active_accounts(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
-            usd_currency: Currency,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
+        usd_currency: Currency,
     ):
-        new_account = await account_repository.add(Account(
-            name="Dollars",
-            currency_code=usd_currency.code,
-            user_id=account.user_id,
-        ))
+        new_account = await account_repository.add(
+            Account(
+                name="Dollars",
+                currency_code=usd_currency.code,
+                user_id=account.user_id,
+            )
+        )
 
         accounts = await account_repository.get_by_user(account.user_id)
 
@@ -143,10 +152,10 @@ class TestGetByUser:
         assert all(acc.archived_at is None for acc in accounts)
 
     async def test_get_by_user_default_excludes_archived_accounts(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
-            archived_account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
+        archived_account: Account,
     ):
         accounts = await account_repository.get_by_user(account.user_id)
 
@@ -155,33 +164,37 @@ class TestGetByUser:
         assert accounts[0].archived_at is None
 
     async def test_get_by_user_returns_empty_list(
-            self,
-            account_repository: AccountRepository,
-            user: User,
+        self,
+        account_repository: AccountRepository,
+        user: User,
     ):
         accounts = await account_repository.get_by_user(user.id)
 
         assert accounts == []
 
     async def test_get_by_user_default_returns_only_own_accounts(
-            self,
-            test_session: AsyncSession,
-            account_repository: AccountRepository,
-            account: Account,
-            uah_currency: Currency,
+        self,
+        test_session: AsyncSession,
+        account_repository: AccountRepository,
+        account: Account,
+        uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.add(User(
-            email="other@test.com",
-            username="other",
-            hashed_password="hashed",
-        ))
+        other_user = await other_user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password="hashed",
+            )
+        )
 
-        other_account = await account_repository.add(Account(
-            name="Other User Account",
-            currency_code=uah_currency.code,
-            user_id=other_user.id,
-        ))
+        other_account = await account_repository.add(
+            Account(
+                name="Other User Account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id,
+            )
+        )
 
         accounts = await account_repository.get_by_user(account.user_id)
 
@@ -190,10 +203,10 @@ class TestGetByUser:
         assert other_account.id not in {acc.id for acc in accounts}
 
     async def test_get_by_user_status_archived_returns_only_archived_accounts(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
-            archived_account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
+        archived_account: Account,
     ):
         accounts = await account_repository.get_by_user(
             account.user_id,
@@ -205,10 +218,10 @@ class TestGetByUser:
         assert accounts[0].archived_at is not None
 
     async def test_get_by_user_status_all_returns_active_and_archived_accounts(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
-            archived_account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
+        archived_account: Account,
     ):
         accounts = await account_repository.get_by_user(
             account.user_id,
@@ -223,32 +236,38 @@ class TestGetByUser:
         assert archived_account.id in account_ids
 
     async def test_get_by_user_status_all_returns_only_own_accounts(
-            self,
-            test_session: AsyncSession,
-            account_repository: AccountRepository,
-            account: Account,
-            archived_account: Account,
-            uah_currency: Currency,
+        self,
+        test_session: AsyncSession,
+        account_repository: AccountRepository,
+        account: Account,
+        archived_account: Account,
+        uah_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.add(User(
-            email="other@test.com",
-            username="other",
-            hashed_password="hashed",
-        ))
+        other_user = await other_user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password="hashed",
+            )
+        )
 
-        other_active_account = await account_repository.add(Account(
-            name="Other Active Account",
-            currency_code=uah_currency.code,
-            user_id=other_user.id,
-        ))
+        other_active_account = await account_repository.add(
+            Account(
+                name="Other Active Account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id,
+            )
+        )
 
-        other_archived_account = await account_repository.add(Account(
-            name="Other Archived Account",
-            currency_code=uah_currency.code,
-            user_id=other_user.id,
-            archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ))
+        other_archived_account = await account_repository.add(
+            Account(
+                name="Other Archived Account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id,
+                archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            )
+        )
 
         accounts = await account_repository.get_by_user(
             account.user_id,
@@ -267,9 +286,9 @@ class TestGetByUser:
 
 class TestGetByUserAndName:
     async def test_get_by_user_and_name(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
     ):
         found_account = await account_repository.get_by_user_and_name(account.user_id, account.name)
 
@@ -278,20 +297,22 @@ class TestGetByUserAndName:
         assert found_account.user_id == account.user_id
 
     async def test_get_by_user_and_name_finds_archived(
-            self,
-            account_repository: AccountRepository,
-            user: User,
-            archived_account: Account,
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        archived_account: Account,
     ):
-        found_account = await account_repository.get_by_user_and_name(user.id, archived_account.name)
+        found_account = await account_repository.get_by_user_and_name(
+            user.id, archived_account.name
+        )
 
         assert found_account.id == archived_account.id
         assert found_account.archived_at is not None
 
     async def test_get_by_user_and_name_not_found(
-            self,
-            account_repository: AccountRepository,
-            user: User,
+        self,
+        account_repository: AccountRepository,
+        user: User,
     ):
         found_account = await account_repository.get_by_user_and_name(user.id, "wrong name")
 
@@ -300,9 +321,9 @@ class TestGetByUserAndName:
 
 class TestArchive:
     async def test_archive(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
     ):
         await account_repository.archive(account)
 
@@ -315,9 +336,9 @@ class TestArchive:
 
 class TestRestore:
     async def test_restore(
-            self,
-            account_repository: AccountRepository,
-            archived_account: Account,
+        self,
+        account_repository: AccountRepository,
+        archived_account: Account,
     ):
         await account_repository.restore(archived_account)
 
@@ -330,9 +351,9 @@ class TestRestore:
 
 class TestUpdate:
     async def test_update(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
     ):
         account.name = "Renamed Account"
 
@@ -345,9 +366,9 @@ class TestUpdate:
         assert found_account.name == account.name
 
     async def test_update_does_not_change_currency(
-            self,
-            account_repository: AccountRepository,
-            account: Account,
+        self,
+        account_repository: AccountRepository,
+        account: Account,
     ):
         original_currency = account.currency_code
 

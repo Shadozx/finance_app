@@ -213,7 +213,9 @@ class TestBudgetFilters:
             BudgetFilters(start_date=date(2024, 1, 1), end_date=date(2025, 1, 1))
 
     def test_currency_code_normalized(self):
-        f = BudgetFilters(currency_code="usd", start_date=date(2026, 7, 1), end_date=date(2026, 7, 31))
+        f = BudgetFilters(
+            currency_code="usd", start_date=date(2026, 7, 1), end_date=date(2026, 7, 31)
+        )
         assert f.currency_code == "USD"
 
 

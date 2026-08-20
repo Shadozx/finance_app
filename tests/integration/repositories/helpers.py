@@ -1,5 +1,6 @@
 from app.models import Transaction
 
+
 def make_transaction(**kwargs) -> Transaction:
     """Transaction with settled fields defaulted to the operation amount.
 

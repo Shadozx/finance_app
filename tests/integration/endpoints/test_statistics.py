@@ -29,9 +29,9 @@ API_CATEGORIES = "/api/v1/statistics/categories"
 
 @pytest.fixture
 async def second_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        second_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    second_currency: CurrencyData,
 ) -> AccountData:
     return await create_account(
         client,
@@ -47,13 +47,13 @@ def summaries_by_code(body: dict) -> dict[str, dict]:
 
 class TestGetSummary:
     async def test_get_summary_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            second_account: AccountData,
-            active_currency: CurrencyData,
-            second_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        second_account: AccountData,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
     ):
         # USD: income 10000 + 500 = 10500, expense 50
         await create_transaction(
@@ -63,7 +63,7 @@ class TestGetSummary:
                 amount="10000.00",
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -74,7 +74,7 @@ class TestGetSummary:
                 amount="500.00",
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -85,7 +85,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -97,7 +97,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],
-                account_id=second_account["id"]
+                account_id=second_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -130,13 +130,13 @@ class TestGetSummary:
         assert by_code["UAH"]["net"] == "-350.00"
 
     async def test_get_summary_sorted_by_currency(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            second_account: AccountData,
-            active_currency: CurrencyData,
-            second_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        second_account: AccountData,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
     ):
         # Create UAH first, USD second — response must still be alphabetical.
         await create_transaction(
@@ -146,7 +146,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
-                account_id=second_account["id"]
+                account_id=second_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -157,7 +157,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -176,12 +176,12 @@ class TestGetSummary:
         assert codes == ["UAH", "USD"]
 
     async def test_get_summary_uses_settled_currency(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            second_account: AccountData,
-            active_currency: CurrencyData,
-            second_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        second_account: AccountData,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -214,11 +214,11 @@ class TestGetSummary:
         assert by_code[second_currency["code"]]["net"] == "-1050.00"
 
     async def test_get_summary_fills_missing_type_with_zero(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         # Only an expense — income must still be present as "0.00".
         await create_transaction(
@@ -228,7 +228,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -249,12 +249,12 @@ class TestGetSummary:
         assert by_code["USD"]["net"] == "-350.00"
 
     async def test_get_summary_returns_only_own(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         # Our expense: 350 USD
         await create_transaction(
@@ -264,7 +264,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -283,7 +283,7 @@ class TestGetSummary:
                 amount="999.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=other_account["id"]
+                account_id=other_account["id"],
             ),
             other_authenticated_user["headers"],
         )
@@ -304,9 +304,9 @@ class TestGetSummary:
         assert by_code["USD"]["net"] == "-350.00"
 
     async def test_get_summary_empty(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_SUMMARY,
@@ -323,9 +323,9 @@ class TestGetSummary:
         assert body["period"]["end_date"] == "2026-03-31"
 
     async def test_get_summary_default_period_is_current_month(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         # No dates supplied — server should default to the current month.
         response = await client.get(
@@ -346,9 +346,9 @@ class TestGetSummary:
         assert body["period"]["end_date"] == expected_end
 
     async def test_get_summary_range_over_one_year_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_SUMMARY,
@@ -360,9 +360,9 @@ class TestGetSummary:
         assert "detail" in response.json()
 
     async def test_get_summary_exactly_one_year_passes(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_SUMMARY,
@@ -373,9 +373,9 @@ class TestGetSummary:
         assert response.status_code == status.HTTP_200_OK
 
     async def test_get_summary_only_start_date_provided_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_SUMMARY,
@@ -387,9 +387,9 @@ class TestGetSummary:
         assert "detail" in response.json()
 
     async def test_get_summary_start_date_after_end_date_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_SUMMARY,
@@ -401,13 +401,13 @@ class TestGetSummary:
         assert "detail" in response.json()
 
     async def test_get_summary_filter_by_currency(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            second_account: AccountData,
-            active_currency: CurrencyData,
-            second_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        second_account: AccountData,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -416,7 +416,7 @@ class TestGetSummary:
                 amount="50.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],  # USD
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -427,7 +427,7 @@ class TestGetSummary:
                 amount="350.00",
                 transaction_type="EXPENSE",
                 currency_code=second_currency["code"],  # UAH
-                account_id=second_account["id"]
+                account_id=second_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -451,11 +451,11 @@ class TestGetSummary:
         assert body["currencies"][0]["currency_code"] == "USD"
 
     async def test_get_summary_filter_by_date_range(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         # In range
         await create_transaction(
@@ -465,7 +465,7 @@ class TestGetSummary:
                 amount="100.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -477,7 +477,7 @@ class TestGetSummary:
                 amount="999.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -497,8 +497,8 @@ class TestGetSummary:
         assert by_code["USD"]["expense"] == "100.00"
 
     async def test_get_summary_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_SUMMARY)
 
@@ -516,11 +516,11 @@ def categories_of(body: dict, currency_code: str) -> list[dict]:
 
 class TestGetCategories:
     async def test_get_categories_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         category = await create_category(
             client,
@@ -538,7 +538,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -550,7 +550,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -562,7 +562,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=None,
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -597,9 +597,9 @@ class TestGetCategories:
         assert by_name[None]["category_id"] is None
 
     async def test_get_categories_requires_type(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         # No `type` param -> 422, because a category breakdown without
         # income/expense selection is meaningless.
@@ -616,21 +616,17 @@ class TestGetCategories:
         assert "detail" in response.json()
 
     async def test_get_categories_sorted_by_total_desc(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         big = await create_category(
-            client,
-            category_payload(name="Big"),
-            authenticated_user["headers"]
+            client, category_payload(name="Big"), authenticated_user["headers"]
         )
         small = await create_category(
-            client,
-            category_payload(name="Small"),
-            authenticated_user["headers"]
+            client, category_payload(name="Small"), authenticated_user["headers"]
         )
 
         await create_transaction(
@@ -641,18 +637,19 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=small["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
         await create_transaction(
             client,
             transaction_payload(
-                date="2026-02-11", amount="900.00",
+                date="2026-02-11",
+                amount="900.00",
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=big["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -672,11 +669,11 @@ class TestGetCategories:
         assert names == ["Big", "Small"]
 
     async def test_get_categories_uncategorized_has_null_fields(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -686,7 +683,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=None,
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -706,14 +703,16 @@ class TestGetCategories:
         assert cats[0]["total"] == "120.00"
 
     async def test_get_categories_does_not_mix_types(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         category = await create_category(
-            client, category_payload(name="Mixed"), authenticated_user["headers"],
+            client,
+            category_payload(name="Mixed"),
+            authenticated_user["headers"],
         )
 
         # Same category: an income and an expense.
@@ -725,7 +724,7 @@ class TestGetCategories:
                 transaction_type="INCOME",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -737,7 +736,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=category["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -757,12 +756,12 @@ class TestGetCategories:
         assert by_name["Mixed"]["total"] == "300.00"
 
     async def test_get_categories_returns_only_own(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         my_category = await create_category(
             client,
@@ -778,7 +777,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=my_category["id"],
-                account_id=created_account["id"]
+                account_id=created_account["id"],
             ),
             authenticated_user["headers"],
         )
@@ -798,7 +797,7 @@ class TestGetCategories:
                 transaction_type="EXPENSE",
                 currency_code=active_currency["code"],
                 category_id=None,
-                account_id=other_account["id"]
+                account_id=other_account["id"],
             ),
             other_authenticated_user["headers"],
         )
@@ -818,9 +817,9 @@ class TestGetCategories:
         assert cats[0]["total"] == "100.00"
 
     async def test_get_categories_empty(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_CATEGORIES,
@@ -835,9 +834,9 @@ class TestGetCategories:
         assert body["period"]["start_date"] == "2026-01-01"
 
     async def test_get_categories_range_over_one_year_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_CATEGORIES,
@@ -853,8 +852,8 @@ class TestGetCategories:
         assert "detail" in response.json()
 
     async def test_get_categories_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(
             API_CATEGORIES,

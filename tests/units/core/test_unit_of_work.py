@@ -17,11 +17,10 @@ async def test_commit_delegates_to_session(session: AsyncSession):
 
     session.commit.assert_awaited_once()
 
+
 async def test_rollback_delegates_to_session(session: AsyncSession):
     unit_of_work = UnitOfWork(session=session)
 
     await unit_of_work.rollback()
 
     session.rollback.assert_awaited_once()
-
-

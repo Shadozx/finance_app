@@ -11,11 +11,7 @@ API_USERS_ME_UPDATE_PASSWORD = "/api/v1/users/me/password"
 
 
 class TestGetMe:
-    async def test_get_me_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
-    ):
+    async def test_get_me_success(self, client: AsyncClient, authenticated_user: AuthenticatedUser):
         response = await client.get(
             API_USERS_ME,
             headers=authenticated_user["headers"],
@@ -31,10 +27,7 @@ class TestGetMe:
         assert "hashed_password" not in body
         assert "password" not in body
 
-    async def test_get_me_without_token(
-            self,
-            client: AsyncClient
-    ):
+    async def test_get_me_without_token(self, client: AsyncClient):
         response = await client.get(
             API_USERS_ME,
         )
@@ -46,9 +39,7 @@ class TestGetMe:
 
 class TestUpdateUsername:
     async def test_update_username_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         payload = {"new_username": "newusername"}
 
@@ -76,9 +67,7 @@ class TestUpdateUsername:
         assert me_response.json()["username"] == payload["new_username"]
 
     async def test_update_username_duplicate(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         payload = {
             "new_username": "takenusername",
@@ -89,7 +78,8 @@ class TestUpdateUsername:
                 "email": "other@test.com",
                 "username": payload["new_username"],
                 "password": "Password123",
-            })
+            },
+        )
 
         assert register_response.status_code == status.HTTP_201_CREATED
 
@@ -103,19 +93,22 @@ class TestUpdateUsername:
 
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("payload, reason", [
-        ({"new_username": "ab"}, "too_short"),
-        ({"new_username": "a" * 55}, "too_long"),
-        ({"new_username": "user name"}, "contains_space"),
-        ({"new_username": "user@name"}, "special_chars"),
-        ({}, "missing_new_username"),
-    ])
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            ({"new_username": "ab"}, "too_short"),
+            ({"new_username": "a" * 55}, "too_long"),
+            ({"new_username": "user name"}, "contains_space"),
+            ({"new_username": "user@name"}, "special_chars"),
+            ({}, "missing_new_username"),
+        ],
+    )
     async def test_update_username_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            payload: dict[str, str],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        payload: dict[str, str],
+        reason: str,
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_USERNAME,
@@ -128,12 +121,11 @@ class TestUpdateUsername:
         assert "detail" in response.json()
 
     async def test_update_username_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.put(
-            API_USERS_ME_UPDATE_USERNAME,
-            json={"new_username": "newusername"}
+            API_USERS_ME_UPDATE_USERNAME, json={"new_username": "newusername"}
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -141,9 +133,7 @@ class TestUpdateUsername:
         assert "detail" in response.json()
 
     async def test_update_username_same_as_current(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_USERNAME,
@@ -163,9 +153,7 @@ class TestUpdateUsername:
 
 class TestUpdatePassword:
     async def test_update_password_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         payload = {
             "current_password": authenticated_user["user"]["password"],
@@ -181,24 +169,28 @@ class TestUpdatePassword:
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
 
-        login_response = await client.post("/api/v1/auth/login", json={
-            "email": authenticated_user["user"]["email"],
-            "password": payload["new_password"],
-        })
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": authenticated_user["user"]["email"],
+                "password": payload["new_password"],
+            },
+        )
         assert login_response.status_code == status.HTTP_200_OK
         assert "access_token" in login_response.json()
 
-        old_login = await client.post("/api/v1/auth/login", json={
-            "email": authenticated_user["user"]["email"],
-            "password": authenticated_user["user"]["password"],
-        })
+        old_login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": authenticated_user["user"]["email"],
+                "password": authenticated_user["user"]["password"],
+            },
+        )
 
         assert old_login.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_update_password_wrong_current_password(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
@@ -214,15 +206,13 @@ class TestUpdatePassword:
         assert "detail" in response.json()
 
     async def test_update_password_same_as_current(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
             json={
                 "current_password": authenticated_user["user"]["password"],
-                "new_password": authenticated_user["user"]["password"]
+                "new_password": authenticated_user["user"]["password"],
             },
             headers=authenticated_user["headers"],
         )
@@ -231,33 +221,36 @@ class TestUpdatePassword:
 
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("payload, reason", [
-        (
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            (
                 {
                     "current_password": "Password123",
                     "new_password": "short",
                 },
                 "new_password_too_weak",
-        ),
-        (
+            ),
+            (
                 {
                     "new_password": "NewPassword123",
                 },
                 "missing_current_password",
-        ),
-        (
+            ),
+            (
                 {
                     "current_password": "Password123",
                 },
                 "missing_new_password",
-        ),
-    ])
+            ),
+        ],
+    )
     async def test_update_password_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            payload: dict[str, str],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        payload: dict[str, str],
+        reason: str,
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
@@ -270,15 +263,12 @@ class TestUpdatePassword:
         assert "detail" in response.json()
 
     async def test_update_password_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
-            json={
-                "current_password": "Password123",
-                "new_password": "NewUsername123"
-            }
+            json={"current_password": "Password123", "new_password": "NewUsername123"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

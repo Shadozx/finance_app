@@ -16,12 +16,12 @@ from tests.units.services.helpers import assert_model_fields, make_transaction
 
 @pytest.fixture
 def accounts_by_id(
-        account_repo_mock: AccountRepository,
-        currency_repo_mock: CurrencyRepository,
-        existing_account: Account,
-        existing_usd_account: Account,
-        existing_currency: Currency,
-        existing_usd_currency: Currency,
+    account_repo_mock: AccountRepository,
+    currency_repo_mock: CurrencyRepository,
+    existing_account: Account,
+    existing_usd_account: Account,
+    existing_currency: Currency,
+    existing_usd_currency: Currency,
 ):
     """Both accounts and both currencies are resolvable: create_transfer validates each side."""
     accounts = {
@@ -41,8 +41,8 @@ def accounts_by_id(
 
 @pytest.fixture
 def existing_transfer(
-        existing_account: Account,
-        existing_usd_account: Account,
+    existing_account: Account,
+    existing_usd_account: Account,
 ):
     """A cross-currency transfer pair: 1000 UAH out, 24 USD in."""
     group_id = uuid.uuid4()
@@ -79,12 +79,11 @@ def existing_transfer(
 
 
 class TestCreateTransfer:
-
     @pytest.fixture
     def data(
-            self,
-            existing_account: Account,
-            existing_usd_account: Account,
+        self,
+        existing_account: Account,
+        existing_usd_account: Account,
     ):
         return TransferCreate(
             from_account_id=existing_account.id,
@@ -96,15 +95,15 @@ class TestCreateTransfer:
         )
 
     async def test_create_transfer_success(
-            self,
-            mocker: MockerFixture,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            data: TransferCreate,
+        self,
+        mocker: MockerFixture,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        data: TransferCreate,
     ):
         user_id = existing_account.user_id
 
@@ -160,14 +159,14 @@ class TestCreateTransfer:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transfer_same_currency_equal_amounts_success(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        data: TransferCreate,
     ):
         existing_usd_account.currency_code = existing_account.currency_code
 
@@ -182,20 +181,20 @@ class TestCreateTransfer:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_transfer_same_currency_different_amounts_rejected(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        data: TransferCreate,
     ):
         existing_usd_account.currency_code = existing_account.currency_code
 
         with pytest.raises(
-                NotAllowedActionException,
-                match="Transfer between accounts in the same currency must have equal amounts",
+            NotAllowedActionException,
+            match="Transfer between accounts in the same currency must have equal amounts",
         ):
             await transfer_service.create_transfer(data, existing_account.user_id)
 
@@ -204,12 +203,12 @@ class TestCreateTransfer:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transfer_not_found_account(
-            self,
-            transfer_service: TransferService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: TransferCreate,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -221,44 +220,48 @@ class TestCreateTransfer:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_transfer_archived_source_account_rejected(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        data: TransferCreate,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
-        with pytest.raises(NotAllowedActionException, match="Archived account is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived account is not allowed to use"
+        ):
             await transfer_service.create_transfer(data, existing_account.user_id)
 
         transaction_repo_mock.add.assert_not_called()
 
     async def test_create_transfer_archived_target_account_rejected(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        data: TransferCreate,
     ):
         existing_usd_account.archived_at = datetime.now(timezone.utc)
 
-        with pytest.raises(NotAllowedActionException, match="Archived account is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived account is not allowed to use"
+        ):
             await transfer_service.create_transfer(data, existing_account.user_id)
 
         transaction_repo_mock.add.assert_not_called()
 
     async def test_create_transfer_inactive_source_currency_rejected(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            existing_currency: Currency,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        existing_currency: Currency,
+        data: TransferCreate,
     ):
         existing_currency.is_active = False
 
@@ -268,13 +271,13 @@ class TestCreateTransfer:
         transaction_repo_mock.add.assert_not_called()
 
     async def test_create_transfer_inactive_target_currency_rejected(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_currency: Currency,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_currency: Currency,
+        data: TransferCreate,
     ):
         existing_usd_currency.is_active = False
 
@@ -284,13 +287,13 @@ class TestCreateTransfer:
         transaction_repo_mock.add.assert_not_called()
 
     async def test_create_transfer_second_side_fails_nothing_committed(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            data: TransferCreate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        data: TransferCreate,
     ):
         """Both sides belong to one operation: if the second fails, the first must not be committed."""
         transaction_repo_mock.add.side_effect = [None, RuntimeError("db error")]
@@ -304,15 +307,14 @@ class TestCreateTransfer:
 
 
 class TestGetTransfer:
-
     async def test_get_transfer_success(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            existing_transfer,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        existing_transfer,
     ):
         from_side, to_side = existing_transfer
         group_id = from_side.transfer_group_id
@@ -332,9 +334,9 @@ class TestGetTransfer:
         )
 
     async def test_get_transfer_not_found(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
     ):
         transaction_repo_mock.get_by_transfer_group.return_value = []
 
@@ -342,10 +344,10 @@ class TestGetTransfer:
             await transfer_service.get_transfer(uuid.uuid4(), 1)
 
     async def test_get_transfer_orphan_side_not_found(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            existing_transfer,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        existing_transfer,
     ):
         """A group with a single row is not a transfer: it cannot be shown as a pair."""
         from_side, _ = existing_transfer
@@ -357,12 +359,11 @@ class TestGetTransfer:
 
 
 class TestUpdateTransfer:
-
     @pytest.fixture
     def data(
-            self,
-            existing_account: Account,
-            existing_usd_account: Account,
+        self,
+        existing_account: Account,
+        existing_usd_account: Account,
     ):
         return TransferUpdate(
             from_account_id=existing_account.id,
@@ -374,15 +375,15 @@ class TestUpdateTransfer:
         )
 
     async def test_update_transfer_success(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            existing_transfer,
-            data: TransferUpdate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        existing_transfer,
+        data: TransferUpdate,
     ):
         from_side, to_side = existing_transfer
 
@@ -407,14 +408,14 @@ class TestUpdateTransfer:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_transfer_swapped_directions_rewrites_both_sides(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            accounts_by_id,
-            existing_account: Account,
-            existing_usd_account: Account,
-            existing_transfer,
-            data: TransferUpdate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        accounts_by_id,
+        existing_account: Account,
+        existing_usd_account: Account,
+        existing_transfer,
+        data: TransferUpdate,
     ):
         """Swapping from/to must not leave two EXPENSE rows in one group."""
         from_side, to_side = existing_transfer
@@ -440,15 +441,15 @@ class TestUpdateTransfer:
         assert to_side.settled_currency_code == existing_account.currency_code
 
     async def test_update_transfer_keeps_archived_account_allowed(
-            self,
-            mocker: MockerFixture,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_transfer,
-            data: TransferUpdate,
+        self,
+        mocker: MockerFixture,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_transfer,
+        data: TransferUpdate,
     ):
         """Editing amounts of a transfer whose account was archived later must stay possible."""
         existing_account.archived_at = datetime.now(timezone.utc)
@@ -468,15 +469,15 @@ class TestUpdateTransfer:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_transfer_to_archived_account_rejected(
-            self,
-            transfer_service: TransferService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
-            existing_usd_account: Account,
-            existing_transfer,
-            data: TransferUpdate,
+        self,
+        transfer_service: TransferService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_usd_account: Account,
+        existing_transfer,
+        data: TransferUpdate,
     ):
         """Moving a transfer TO an account that is not part of it and is archived → 409."""
         archived_account = Account(
@@ -501,7 +502,9 @@ class TestUpdateTransfer:
 
         transaction_repo_mock.get_by_transfer_group.return_value = [from_side, to_side]
 
-        with pytest.raises(NotAllowedActionException, match="Archived account is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived account is not allowed to use"
+        ):
             await transfer_service.update_transfer(
                 from_side.transfer_group_id, data, existing_account.user_id
             )
@@ -509,11 +512,11 @@ class TestUpdateTransfer:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_transfer_not_found(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            data: TransferUpdate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: TransferUpdate,
     ):
         transaction_repo_mock.get_by_transfer_group.return_value = []
 
@@ -523,15 +526,15 @@ class TestUpdateTransfer:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_transfer_keeps_inactive_currency_allowed(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            accounts_by_id,
-            existing_account: Account,
-            existing_currency: Currency,
-            existing_transfer,
-            data: TransferUpdate,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        accounts_by_id,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_transfer,
+        data: TransferUpdate,
     ):
         """Editing a transfer whose currency was deactivated later must stay possible."""
         existing_currency.is_active = False
@@ -548,13 +551,12 @@ class TestUpdateTransfer:
 
 
 class TestDeleteTransfer:
-
     async def test_delete_transfer_success(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_transfer,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transfer,
     ):
         from_side, to_side = existing_transfer
         group_id = from_side.transfer_group_id
@@ -570,9 +572,9 @@ class TestDeleteTransfer:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_delete_transfer_not_found(
-            self,
-            transfer_service: TransferService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        transfer_service: TransferService,
+        transaction_repo_mock: TransactionRepository,
     ):
         transaction_repo_mock.get_by_transfer_group.return_value = []
 

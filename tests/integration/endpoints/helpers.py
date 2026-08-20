@@ -1,13 +1,19 @@
 from httpx import AsyncClient
 from fastapi import status
 
-from tests.integration.endpoints.types import CategoryData, TransactionTemplateData, TransactionData, AccountData, TransferData
+from tests.integration.endpoints.types import (
+    CategoryData,
+    TransactionTemplateData,
+    TransactionData,
+    AccountData,
+    TransferData,
+)
 
 
 def register_payload(
-        email: str = "user@test.com",
-        username: str = "testuser",
-        password: str = "Password123",
+    email: str = "user@test.com",
+    username: str = "testuser",
+    password: str = "Password123",
 ) -> dict[str, str]:
     return {
         "email": email,
@@ -21,9 +27,9 @@ def category_payload(name: str = "Food") -> dict[str, str]:
 
 
 async def create_category(
-        client: AsyncClient,
-        payload: dict[str, str],
-        headers: dict[str, str],
+    client: AsyncClient,
+    payload: dict[str, str],
+    headers: dict[str, str],
 ) -> CategoryData:
     response = await client.post(
         "/api/v1/categories",
@@ -37,9 +43,9 @@ async def create_category(
 
 
 async def archive_category(
-        client: AsyncClient,
-        category_id: int,
-        headers: dict[str, str],
+    client: AsyncClient,
+    category_id: int,
+    headers: dict[str, str],
 ) -> None:
     response = await client.delete(
         f"/api/v1/categories/{category_id}",
@@ -50,12 +56,12 @@ async def archive_category(
 
 
 def transaction_template_payload(
-        name: str = "Lunch template",
-        amount: str = "150.00",
-        template_type: str = "EXPENSE",
-        currency_code: str = "USD",
-        category_id: int | None = None,
-        description: str | None = None
+    name: str = "Lunch template",
+    amount: str = "150.00",
+    template_type: str = "EXPENSE",
+    currency_code: str = "USD",
+    category_id: int | None = None,
+    description: str | None = None,
 ) -> dict[str, object]:
     return {
         "name": name,
@@ -68,9 +74,9 @@ def transaction_template_payload(
 
 
 async def create_transaction_template(
-        client: AsyncClient,
-        payload: dict[str, object],
-        headers: dict[str, str],
+    client: AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
 ) -> TransactionTemplateData:
     response = await client.post(
         "/api/v1/transactions/templates",
@@ -84,14 +90,14 @@ async def create_transaction_template(
 
 
 def transaction_payload(
-        date: str = "2026-01-01",
-        amount: str = "150.00",
-        transaction_type: str = "EXPENSE",
-        currency_code: str = "USD",
-        settled_amount: str | None = None,
-        account_id: int | None = None,
-        category_id: int | None = None,
-        description: str | None = None,
+    date: str = "2026-01-01",
+    amount: str = "150.00",
+    transaction_type: str = "EXPENSE",
+    currency_code: str = "USD",
+    settled_amount: str | None = None,
+    account_id: int | None = None,
+    category_id: int | None = None,
+    description: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "date": date,
@@ -110,9 +116,9 @@ def transaction_payload(
 
 
 async def create_transaction(
-        client: AsyncClient,
-        payload: dict[str, object],
-        headers: dict[str, str],
+    client: AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
 ) -> TransactionData:
     response = await client.post(
         "/api/v1/transactions",
@@ -124,9 +130,10 @@ async def create_transaction(
 
     return response.json()
 
+
 def account_payload(
-        name: str = "Monobank",
-        currency_code: str = "USD",
+    name: str = "Monobank",
+    currency_code: str = "USD",
 ) -> dict[str, str]:
     return {"name": name, "currency_code": currency_code}
 
@@ -136,10 +143,11 @@ async def create_account(client, payload, headers) -> AccountData:
     assert response.status_code == status.HTTP_201_CREATED
     return response.json()
 
+
 async def archive_account(
-        client: AsyncClient,
-        account_id: int,
-        headers: dict[str, str],
+    client: AsyncClient,
+    account_id: int,
+    headers: dict[str, str],
 ) -> None:
     response = await client.delete(
         f"/api/v1/accounts/{account_id}",
@@ -150,12 +158,12 @@ async def archive_account(
 
 
 def transfer_payload(
-        from_account_id: int,
-        to_account_id: int,
-        from_amount: str = "100.00",
-        to_amount: str = "100.00",
-        date: str = "2026-01-01",
-        description: str | None = None,
+    from_account_id: int,
+    to_account_id: int,
+    from_amount: str = "100.00",
+    to_amount: str = "100.00",
+    date: str = "2026-01-01",
+    description: str | None = None,
 ) -> dict[str, object]:
     return {
         "from_account_id": from_account_id,
@@ -168,9 +176,9 @@ def transfer_payload(
 
 
 async def create_transfer(
-        client: AsyncClient,
-        payload: dict[str, object],
-        headers: dict[str, str],
+    client: AsyncClient,
+    payload: dict[str, object],
+    headers: dict[str, str],
 ) -> TransferData:
     response = await client.post(
         "/api/v1/transfers",

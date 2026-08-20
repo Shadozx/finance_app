@@ -2,7 +2,15 @@ from datetime import datetime, timezone, date
 from typing import TypeVar
 from decimal import Decimal
 
-from app.models import Account, Transaction, Category, Budget, TransactionTemplate, TransactionType, User
+from app.models import (
+    Account,
+    Transaction,
+    Category,
+    Budget,
+    TransactionTemplate,
+    TransactionType,
+    User,
+)
 
 T = TypeVar("T")
 
@@ -21,8 +29,7 @@ def assert_model_fields(obj, **expected_fields):
     for field, expected_value in expected_fields.items():
         actual_value = getattr(obj, field)
         assert actual_value == expected_value, (
-            f"Field '{field}' mismatch: expected {expected_value!r}, "
-            f"got {actual_value!r}"
+            f"Field '{field}' mismatch: expected {expected_value!r}, got {actual_value!r}"
         )
 
 

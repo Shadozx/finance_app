@@ -18,7 +18,7 @@ from tests.integration.endpoints.helpers import (
     account_payload,
     archive_account,
     transfer_payload,
-    create_transfer
+    create_transfer,
 )
 
 from tests.integration.endpoints.types import (
@@ -27,7 +27,7 @@ from tests.integration.endpoints.types import (
     CurrencyData,
     UserData,
     AccountData,
-    TransferData
+    TransferData,
 )
 
 
@@ -38,10 +38,7 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
 
     app.dependency_overrides[get_session] = override_get_session
 
-    async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -59,9 +56,7 @@ def disable_rate_limiter():
 
 
 @pytest.fixture
-async def registered_user(
-        client: AsyncClient
-) -> UserData:
+async def registered_user(client: AsyncClient) -> UserData:
     payload = register_payload()
 
     response = await client.post("/api/v1/auth/register", json=payload)
@@ -79,14 +74,14 @@ async def registered_user(
 
 
 @pytest.fixture
-async def authenticated_user(
-        client: AsyncClient,
-        registered_user: UserData
-) -> AuthenticatedUser:
-    response = await client.post("/api/v1/auth/login", json={
-        "email": registered_user["email"],
-        "password": registered_user["password"],
-    })
+async def authenticated_user(client: AsyncClient, registered_user: UserData) -> AuthenticatedUser:
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": registered_user["email"],
+            "password": registered_user["password"],
+        },
+    )
 
     assert response.status_code == status.HTTP_200_OK
 
@@ -102,7 +97,7 @@ async def authenticated_user(
 
 @pytest.fixture
 async def other_authenticated_user(
-        client: AsyncClient,
+    client: AsyncClient,
 ) -> AuthenticatedUser:
     payload = register_payload(
         email="otheruser@test.com",
@@ -120,10 +115,13 @@ async def other_authenticated_user(
         "password": payload["password"],
     }
 
-    login_response = await client.post("/api/v1/auth/login", json={
-        "email": payload["email"],
-        "password": payload["password"],
-    })
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": payload["email"],
+            "password": payload["password"],
+        },
+    )
     assert login_response.status_code == status.HTTP_200_OK
 
     return {
@@ -136,40 +134,26 @@ async def other_authenticated_user(
 
 @pytest.fixture
 async def created_category(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
 ) -> CategoryData:
-    return await create_category(
-        client,
-        category_payload(),
-        authenticated_user["headers"]
-    )
+    return await create_category(client, category_payload(), authenticated_user["headers"])
 
 
 @pytest.fixture
 async def archived_category(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
 ) -> CategoryData:
-    category = await create_category(
-        client,
-        category_payload(),
-        authenticated_user["headers"]
-    )
+    category = await create_category(client, category_payload(), authenticated_user["headers"])
 
-    await archive_category(
-        client,
-        category["id"],
-        authenticated_user["headers"]
-    )
+    await archive_category(client, category["id"], authenticated_user["headers"])
 
     return category
 
 
 @pytest.fixture
-async def active_currency(
-        test_session: AsyncSession
-) -> CurrencyData:
+async def active_currency(test_session: AsyncSession) -> CurrencyData:
     currency = Currency(
         code="USD",
         name="US Dollar",
@@ -190,15 +174,8 @@ async def active_currency(
 
 
 @pytest.fixture
-async def inactive_currency(
-        test_session: AsyncSession
-) -> CurrencyData:
-    currency = Currency(
-        code="OLD",
-        name="Old Currency",
-        symbol="¤",
-        is_active=False
-    )
+async def inactive_currency(test_session: AsyncSession) -> CurrencyData:
+    currency = Currency(code="OLD", name="Old Currency", symbol="¤", is_active=False)
 
     test_session.add(currency)
     await test_session.commit()
@@ -214,9 +191,9 @@ async def inactive_currency(
 
 @pytest.fixture
 async def created_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    active_currency: CurrencyData,
 ) -> AccountData:
     return await create_account(
         client,
@@ -227,7 +204,7 @@ async def created_account(
 
 @pytest.fixture
 async def second_currency(
-        test_session: AsyncSession,
+    test_session: AsyncSession,
 ) -> CurrencyData:
     currency = Currency(
         code="UAH",
@@ -250,9 +227,9 @@ async def second_currency(
 
 @pytest.fixture
 async def uah_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        second_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    second_currency: CurrencyData,
 ) -> AccountData:
     """Second account in another currency — the far side of a transfer."""
     return await create_account(
@@ -264,9 +241,9 @@ async def uah_account(
 
 @pytest.fixture
 async def archived_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    active_currency: CurrencyData,
 ) -> AccountData:
     account = await create_account(
         client,
@@ -281,10 +258,10 @@ async def archived_account(
 
 @pytest.fixture
 async def created_transfer(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        created_account: AccountData,
-        uah_account: AccountData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    created_account: AccountData,
+    uah_account: AccountData,
 ) -> TransferData:
     """Cross-currency transfer: 24 USD out, 1000 UAH in — two rows in the registry."""
     return await create_transfer(

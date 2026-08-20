@@ -12,10 +12,10 @@ API_CATEGORIES = "/api/v1/categories"
 
 class TestIntegrityErrorHandler:
     async def test_integrity_unique_violation_conflict(
-            self,
-            mocker: MockerFixture,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        mocker: MockerFixture,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         """The unique constraint is the last line of defence: if the service check
         is bypassed (as under a race), the DB error must surface as 409, not 500."""

@@ -11,29 +11,26 @@ from app.schemas import StatisticsFilters, CategoryStatisticsFilters
 
 @pytest.fixture
 def statistics_service(
-        transaction_repo_mock: TransactionRepository,
+    transaction_repo_mock: TransactionRepository,
 ):
     return StatisticsService(transaction_repo_mock)
 
 
 class TestGetSummary:
     async def test_get_summary_success(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
         transaction_repo_mock.get_summary.return_value = [
             SummaryRow("USD", TransactionType.INCOME, Decimal("10500.00")),
             SummaryRow("USD", TransactionType.EXPENSE, Decimal("50.00")),
-            SummaryRow("UAH", TransactionType.EXPENSE, Decimal("350.00"))
+            SummaryRow("UAH", TransactionType.EXPENSE, Decimal("350.00")),
         ]
 
-        filters = StatisticsFilters(
-            start_date=date(2026, 1, 1),
-            end_date=date(2026, 1, 31)
-        )
+        filters = StatisticsFilters(start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
 
         summary = await statistics_service.get_summary(user_id, filters)
 
@@ -57,9 +54,9 @@ class TestGetSummary:
         transaction_repo_mock.get_summary.assert_called_once_with(user_id, filters)
 
     async def test_get_summary_fills_missing_type(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
@@ -82,16 +79,16 @@ class TestGetSummary:
         transaction_repo_mock.get_summary.assert_called_once_with(user_id, filters)
 
     async def test_get_summary_sorted_by_currency(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
         transaction_repo_mock.get_summary.return_value = [
             SummaryRow("USD", TransactionType.EXPENSE, Decimal("50.00")),
             SummaryRow("EUR", TransactionType.EXPENSE, Decimal("30.00")),
-            SummaryRow("UAH", TransactionType.EXPENSE, Decimal("100.00"))
+            SummaryRow("UAH", TransactionType.EXPENSE, Decimal("100.00")),
         ]
 
         filters = StatisticsFilters()
@@ -109,9 +106,9 @@ class TestGetSummary:
         transaction_repo_mock.get_summary.assert_called_once_with(user_id, filters)
 
     async def test_get_summary_empty(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
@@ -131,9 +128,9 @@ class TestGetSummary:
 
 class TestGetByCategory:
     async def test_get_by_category_success(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         # Two currencies, several categories, one uncategorized row.
         transaction_repo_mock.get_by_category.return_value = [
@@ -173,9 +170,9 @@ class TestGetByCategory:
         transaction_repo_mock.get_by_category.assert_called_once_with(1, filters)
 
     async def test_get_by_category_currencies_sorted_by_code(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         # Deliberately reversed currency order in the input.
         transaction_repo_mock.get_by_category.return_value = [
@@ -196,9 +193,9 @@ class TestGetByCategory:
         assert codes == ["EUR", "UAH", "USD"]
 
     async def test_get_by_category_categories_sorted_by_total_desc(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         # Same currency, categories in ascending order in the input;
         # output must be descending by total.
@@ -221,9 +218,9 @@ class TestGetByCategory:
         assert totals == [Decimal("500.00"), Decimal("300.00"), Decimal("100.00")]
 
     async def test_get_by_category_equal_totals_tiebreak_by_name(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         # Two categories with the SAME total -> order must be deterministic,
         # broken by name alphabetically.
@@ -245,9 +242,9 @@ class TestGetByCategory:
         assert names == ["Food", "Transport"]
 
     async def test_get_by_category_uncategorized_does_not_break_sorting(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         # An uncategorized row (name=None) with the SAME total as a named one.
         # This is the case that would raise TypeError if None hit string comparison.
@@ -272,9 +269,9 @@ class TestGetByCategory:
         assert cats[1].category_name == "Food"
 
     async def test_get_by_category_empty(
-            self,
-            statistics_service: StatisticsService,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        statistics_service: StatisticsService,
+        transaction_repo_mock: TransactionRepository,
     ):
         transaction_repo_mock.get_by_category.return_value = []
 

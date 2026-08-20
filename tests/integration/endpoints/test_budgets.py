@@ -2,29 +2,25 @@ import pytest
 from httpx import AsyncClient
 from fastapi import status
 
-from tests.integration.endpoints.helpers import (
-    create_category,
-    category_payload,
-    archive_category
-)
+from tests.integration.endpoints.helpers import create_category, category_payload, archive_category
 from tests.integration.endpoints.types import (
     AuthenticatedUser,
     CurrencyData,
     CategoryData,
     BudgetData,
-    AccountData
+    AccountData,
 )
 
 API_BUDGETS = "/api/v1/budgets"
 
 
 def budget_payload(
-        amount: str = "5000.00",
-        currency_code: str = "USD",
-        category_id: int | None = None,
-        start_date: str = "2026-07-01",
-        end_date: str = "2026-07-31",
-        name: str | None = None,
+    amount: str = "5000.00",
+    currency_code: str = "USD",
+    category_id: int | None = None,
+    start_date: str = "2026-07-01",
+    end_date: str = "2026-07-31",
+    name: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "amount": amount,
@@ -41,10 +37,10 @@ def budget_payload(
 
 @pytest.fixture
 async def created_budget(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
-        created_category: CategoryData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    active_currency: CurrencyData,
+    created_category: CategoryData,
 ) -> BudgetData:
     payload = budget_payload(
         currency_code=active_currency["code"],
@@ -61,11 +57,11 @@ async def created_budget(
 
 class TestCreateBudget:
     async def test_create_budget_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -88,11 +84,11 @@ class TestCreateBudget:
         assert body["name"] == payload["name"]
 
     async def test_create_budget_without_name_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -105,11 +101,11 @@ class TestCreateBudget:
         assert response.json()["name"] is None
 
     async def test_create_budget_zero_amount_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             amount="0.00",
@@ -123,12 +119,12 @@ class TestCreateBudget:
         assert response.json()["amount"] == "0.00"
 
     async def test_create_budget_duplicate_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -141,11 +137,11 @@ class TestCreateBudget:
         assert "detail" in response.json()
 
     async def test_create_budget_other_user_category_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         other_category = await create_category(
             client,
@@ -162,11 +158,11 @@ class TestCreateBudget:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_create_budget_archived_category_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -178,11 +174,11 @@ class TestCreateBudget:
         assert response.status_code == status.HTTP_409_CONFLICT
 
     async def test_create_budget_inactive_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            inactive_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        inactive_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=inactive_currency["code"],
@@ -193,23 +189,26 @@ class TestCreateBudget:
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 
-    @pytest.mark.parametrize("payload_update, reason", [
-        ({"amount": "-1.00"}, "negative_amount"),
-        ({"amount": None}, "amount_null"),
-        ({"currency_code": "US"}, "currency_too_short"),
-        ({"currency_code": "USDD"}, "currency_too_long"),
-        ({"start_date": "not-a-date"}, "invalid_start"),
-        ({"start_date": "2026-08-01"}, "start_after_end"),
-        ({"category_id": None}, "category_required"),
-    ])
+    @pytest.mark.parametrize(
+        "payload_update, reason",
+        [
+            ({"amount": "-1.00"}, "negative_amount"),
+            ({"amount": None}, "amount_null"),
+            ({"currency_code": "US"}, "currency_too_short"),
+            ({"currency_code": "USDD"}, "currency_too_long"),
+            ({"start_date": "not-a-date"}, "invalid_start"),
+            ({"start_date": "2026-08-01"}, "start_after_end"),
+            ({"category_id": None}, "category_required"),
+        ],
+    )
     async def test_create_budget_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
-            payload_update: dict,
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+        payload_update: dict,
+        reason: str,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -222,9 +221,9 @@ class TestCreateBudget:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
 
     async def test_create_budget_without_token(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
     ):
         response = await client.post(API_BUDGETS, json=budget_payload())
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -232,11 +231,11 @@ class TestCreateBudget:
 
 class TestGetBudgets:
     async def test_get_budgets_default_active(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         await client.post(
             API_BUDGETS,
@@ -252,11 +251,11 @@ class TestGetBudgets:
         assert response.status_code == status.HTTP_200_OK
 
     async def test_get_budgets_returns_only_own(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.get(
             API_BUDGETS,
@@ -276,9 +275,9 @@ class TestGetBudgets:
         assert created_budget["id"] not in other_ids
 
     async def test_get_budgets_single_date_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_BUDGETS,
@@ -294,10 +293,10 @@ class TestGetBudgets:
 
 class TestGetBudgetById:
     async def test_get_budget_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -307,20 +306,18 @@ class TestGetBudgetById:
         assert response.json()["id"] == created_budget["id"]
 
     async def test_get_budget_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
-        response = await client.get(
-            f"{API_BUDGETS}/999", headers=authenticated_user["headers"]
-        )
+        response = await client.get(f"{API_BUDGETS}/999", headers=authenticated_user["headers"])
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_get_budget_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -329,9 +326,9 @@ class TestGetBudgetById:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_get_budget_without_token(
-            self,
-            client: AsyncClient,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        created_budget: BudgetData,
     ):
         response = await client.get(f"{API_BUDGETS}/{created_budget['id']}")
 
@@ -341,10 +338,10 @@ class TestGetBudgetById:
 
 class TestGetBudgetStatus:
     async def test_budget_status_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}/status",
@@ -360,9 +357,9 @@ class TestGetBudgetStatus:
         assert body["is_exceeded"] is False
 
     async def test_budget_status_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_BUDGETS}/999/status", headers=authenticated_user["headers"]
@@ -370,10 +367,10 @@ class TestGetBudgetStatus:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_budget_status_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.get(
             f"{API_BUDGETS}/{created_budget['id']}/status",
@@ -382,9 +379,9 @@ class TestGetBudgetStatus:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_budget_status_without_token(
-            self,
-            client: AsyncClient,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        created_budget: BudgetData,
     ):
         response = await client.get(f"{API_BUDGETS}/{created_budget['id']}/status")
 
@@ -394,12 +391,12 @@ class TestGetBudgetStatus:
 
 class TestUpdateBudget:
     async def test_update_budget_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             amount="8000.00",
@@ -418,11 +415,11 @@ class TestUpdateBudget:
         assert body["name"] == "Updated"
 
     async def test_update_budget_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -434,11 +431,11 @@ class TestUpdateBudget:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_update_budget_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
     ):
         payload = budget_payload(currency_code=active_currency["code"], category_id=1)
         response = await client.put(
@@ -449,12 +446,12 @@ class TestUpdateBudget:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_update_budget_keeps_archived_category_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         await archive_category(
             client,
@@ -478,11 +475,11 @@ class TestUpdateBudget:
         assert response.json()["amount"] == "999.00"
 
     async def test_update_budget_without_token(
-            self,
-            client: AsyncClient,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -500,10 +497,10 @@ class TestUpdateBudget:
 
 class TestDeleteBudget:
     async def test_delete_budget_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.delete(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -519,20 +516,18 @@ class TestDeleteBudget:
         assert get_response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_delete_budget_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
-        response = await client.delete(
-            f"{API_BUDGETS}/999", headers=authenticated_user["headers"]
-        )
+        response = await client.delete(f"{API_BUDGETS}/999", headers=authenticated_user["headers"])
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_delete_budget_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
     ):
         response = await client.delete(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -541,9 +536,9 @@ class TestDeleteBudget:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_delete_budget_without_token(
-            self,
-            client: AsyncClient,
-            created_budget: BudgetData,
+        self,
+        client: AsyncClient,
+        created_budget: BudgetData,
     ):
         response = await client.delete(f"{API_BUDGETS}/{created_budget['id']}")
 
@@ -553,11 +548,11 @@ class TestDeleteBudget:
 
 class TestBudgetEdgeCases:
     async def test_create_budget_name_too_long_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -573,11 +568,11 @@ class TestBudgetEdgeCases:
         assert "detail" in response.json()
 
     async def test_create_budget_name_at_max_length_passes(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -592,11 +587,11 @@ class TestBudgetEdgeCases:
         assert response.status_code == status.HTTP_201_CREATED
 
     async def test_create_single_day_budget_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -614,12 +609,12 @@ class TestBudgetEdgeCases:
         assert body["start_date"] == body["end_date"]
 
     async def test_duplicate_with_different_name_still_conflicts(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         payload = budget_payload(
             currency_code=active_currency["code"],
@@ -634,12 +629,12 @@ class TestBudgetEdgeCases:
         assert response.status_code == status.HTTP_409_CONFLICT
 
     async def test_update_into_conflict_with_existing_budget(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         august = await client.post(
             API_BUDGETS,
@@ -668,12 +663,12 @@ class TestBudgetEdgeCases:
         assert response.status_code == status.HTTP_409_CONFLICT
 
     async def test_update_same_budget_no_self_conflict(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         response = await client.put(
             f"{API_BUDGETS}/{created_budget['id']}",
@@ -690,10 +685,10 @@ class TestBudgetEdgeCases:
 
     @pytest.mark.parametrize("path_suffix", ["", "/status"])
     async def test_invalid_budget_id_returns_422(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            path_suffix: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        path_suffix: str,
     ):
         response = await client.get(
             f"{API_BUDGETS}/abc{path_suffix}",
@@ -703,11 +698,11 @@ class TestBudgetEdgeCases:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_update_invalid_id_returns_422(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         response = await client.put(
             f"{API_BUDGETS}/abc",
@@ -721,26 +716,24 @@ class TestBudgetEdgeCases:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     async def test_delete_invalid_id_returns_422(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
-        response = await client.delete(
-            f"{API_BUDGETS}/abc", headers=authenticated_user["headers"]
-        )
+        response = await client.delete(f"{API_BUDGETS}/abc", headers=authenticated_user["headers"])
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestBudgetStatusWithRealTransactions:
     async def test_status_counts_only_matching_transactions(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            created_account: AccountData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         from tests.integration.endpoints.helpers import create_transaction, transaction_payload
 
@@ -809,13 +802,13 @@ class TestBudgetStatusWithRealTransactions:
         assert body["is_exceeded"] is False
 
     async def test_status_exceeded_with_real_transactions(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_budget: BudgetData,
-            created_account: AccountData,
-            active_currency: CurrencyData,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
     ):
         from tests.integration.endpoints.helpers import create_transaction, transaction_payload
 

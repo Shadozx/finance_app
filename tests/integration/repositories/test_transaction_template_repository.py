@@ -10,26 +10,28 @@ from app.repositories import UserRepository, TransactionTemplateRepository
 
 @pytest.fixture
 async def transaction_template(
-        transaction_template_repository: TransactionTemplateRepository,
-        user: User,
-        uah_currency: Currency,
+    transaction_template_repository: TransactionTemplateRepository,
+    user: User,
+    uah_currency: Currency,
 ):
-    return await transaction_template_repository.add(TransactionTemplate(
-        name="Morning Coffee",
-        type=TransactionType.EXPENSE,
-        description="Morning Coffee near work",
-        amount=Decimal("100.00"),
-        currency_code=uah_currency.code,
-        user_id=user.id,
-    ))
+    return await transaction_template_repository.add(
+        TransactionTemplate(
+            name="Morning Coffee",
+            type=TransactionType.EXPENSE,
+            description="Morning Coffee near work",
+            amount=Decimal("100.00"),
+            currency_code=uah_currency.code,
+            user_id=user.id,
+        )
+    )
 
 
 class TestAdd:
     async def test_add(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            uah_currency: Currency,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        uah_currency: Currency,
     ):
         template = TransactionTemplate(
             name="Morning Coffee",
@@ -48,27 +50,28 @@ class TestAdd:
         assert created_template.created_at is not None
 
     async def test_add_duplicate_name_same_user(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            transaction_template: TransactionTemplate,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        transaction_template: TransactionTemplate,
     ):
         with pytest.raises(IntegrityError):
-            await transaction_template_repository.add(TransactionTemplate(
-                name=transaction_template.name,
-                type=transaction_template.type,
-                amount=Decimal("200.00"),
-                currency_code=transaction_template.currency_code,
-                user_id=transaction_template.user_id,
-                description="Morning Coffee",
-            ))
+            await transaction_template_repository.add(
+                TransactionTemplate(
+                    name=transaction_template.name,
+                    type=transaction_template.type,
+                    amount=Decimal("200.00"),
+                    currency_code=transaction_template.currency_code,
+                    user_id=transaction_template.user_id,
+                    description="Morning Coffee",
+                )
+            )
 
 
 class TestGetById:
-
     async def test_get_by_id(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            transaction_template: TransactionTemplate,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        transaction_template: TransactionTemplate,
     ):
         found_template = await transaction_template_repository.get_by_id(transaction_template.id)
 
@@ -77,8 +80,8 @@ class TestGetById:
         assert found_template.user_id == transaction_template.user_id
 
     async def test_get_by_id_not_found(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
     ):
         found_template = await transaction_template_repository.get_by_id(999)
 
@@ -86,57 +89,64 @@ class TestGetById:
 
 
 class TestGetByUser:
-
     @pytest.fixture
     async def transaction_templates(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            uah_currency: Currency,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        uah_currency: Currency,
     ):
-        t1 = await transaction_template_repository.add(TransactionTemplate(
-            name="Salary",
-            type=TransactionType.INCOME,
-            amount=Decimal("35000.00"),
-            description="Salary",
-            currency_code=uah_currency.code,
-            user_id=user.id,
-        ))
+        t1 = await transaction_template_repository.add(
+            TransactionTemplate(
+                name="Salary",
+                type=TransactionType.INCOME,
+                amount=Decimal("35000.00"),
+                description="Salary",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
 
-        t2 = await transaction_template_repository.add(TransactionTemplate(
-            name="Coffee",
-            type=TransactionType.EXPENSE,
-            amount=Decimal("150.00"),
-            description="Coffee",
-            currency_code=uah_currency.code,
-            user_id=user.id,
-        ))
+        t2 = await transaction_template_repository.add(
+            TransactionTemplate(
+                name="Coffee",
+                type=TransactionType.EXPENSE,
+                amount=Decimal("150.00"),
+                description="Coffee",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
 
-        t3 = await transaction_template_repository.add(TransactionTemplate(
-            name="Netflix subscription",
-            type=TransactionType.EXPENSE,
-            amount=Decimal("500.00"),
-            description="Netflix",
-            currency_code=uah_currency.code,
-            user_id=user.id,
-        ))
+        t3 = await transaction_template_repository.add(
+            TransactionTemplate(
+                name="Netflix subscription",
+                type=TransactionType.EXPENSE,
+                amount=Decimal("500.00"),
+                description="Netflix",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
 
-        t4 = await transaction_template_repository.add(TransactionTemplate(
-            name="Freelance",
-            type=TransactionType.INCOME,
-            amount=Decimal("15000.00"),
-            description="Freelance",
-            currency_code=uah_currency.code,
-            user_id=user.id,
-        ))
+        t4 = await transaction_template_repository.add(
+            TransactionTemplate(
+                name="Freelance",
+                type=TransactionType.INCOME,
+                amount=Decimal("15000.00"),
+                description="Freelance",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
 
         return [t1, t2, t3, t4]
 
     async def test_get_by_user(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            transaction_templates
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_templates,
     ):
         user_transaction_templates = await transaction_template_repository.get_by_user(user.id)
 
@@ -145,38 +155,42 @@ class TestGetByUser:
         assert all(t.user_id == user.id for t in user_transaction_templates)
 
     async def test_get_by_user_empty(
-            self,
-            test_session: AsyncSession,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
+        self,
+        test_session: AsyncSession,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
     ):
         user_transaction_templates = await transaction_template_repository.get_by_user(user.id)
 
         assert len(user_transaction_templates) == 0
 
     async def test_get_by_user_returns_only_own(
-            self,
-            test_session: AsyncSession,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            transaction_template: TransactionTemplate,
-            usd_currency: Currency,
+        self,
+        test_session: AsyncSession,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_template: TransactionTemplate,
+        usd_currency: Currency,
     ):
         other_user_repository = UserRepository(test_session)
-        other_user = await other_user_repository.add(User(
-            email="other@test.com",
-            username="other",
-            hashed_password="hashed",
-        ))
+        other_user = await other_user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password="hashed",
+            )
+        )
 
-        await transaction_template_repository.add(TransactionTemplate(
-            name="Netflix subscription",
-            type=TransactionType.EXPENSE,
-            amount=Decimal("50.00"),
-            description="Netflix",
-            currency_code=usd_currency.code,
-            user_id=other_user.id,
-        ))
+        await transaction_template_repository.add(
+            TransactionTemplate(
+                name="Netflix subscription",
+                type=TransactionType.EXPENSE,
+                amount=Decimal("50.00"),
+                description="Netflix",
+                currency_code=usd_currency.code,
+                user_id=other_user.id,
+            )
+        )
 
         user_transaction_templates = await transaction_template_repository.get_by_user(user.id)
 
@@ -187,36 +201,38 @@ class TestGetByUser:
         assert user_transaction_templates[0].user_id == transaction_template.user_id
 
     async def test_pagination_limit(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            transaction_templates
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_templates,
     ):
         limit = 2
-        user_transaction_templates = await transaction_template_repository.get_by_user(user.id,
-                                                                                       limit=limit)
+        user_transaction_templates = await transaction_template_repository.get_by_user(
+            user.id, limit=limit
+        )
 
         assert len(user_transaction_templates) == limit
 
     async def test_pagination_offset(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
-            transaction_templates
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_templates,
     ):
         offset = 2
         limit = len(transaction_templates) - offset
-        user_transaction_templates = await transaction_template_repository.get_by_user(user.id,
-                                                                                       offset=offset)
+        user_transaction_templates = await transaction_template_repository.get_by_user(
+            user.id, offset=offset
+        )
 
         assert len(user_transaction_templates) == limit
 
 
 class TestGetByUserAndName:
     async def test_get_by_user_and_name(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            transaction_template: TransactionTemplate,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        transaction_template: TransactionTemplate,
     ):
         found_transaction_template = await transaction_template_repository.get_by_user_and_name(
             transaction_template.name, transaction_template.user_id
@@ -227,20 +243,22 @@ class TestGetByUserAndName:
         assert found_transaction_template.user_id == transaction_template.user_id
 
     async def test_get_by_user_and_name_not_found(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            user: User,
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
     ):
-        found_transaction_template = await transaction_template_repository.get_by_user_and_name("wrong name", user.id)
+        found_transaction_template = await transaction_template_repository.get_by_user_and_name(
+            "wrong name", user.id
+        )
 
         assert found_transaction_template is None
 
 
 class TestUpdate:
     async def test_update(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            transaction_template: TransactionTemplate
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        transaction_template: TransactionTemplate,
     ):
         transaction_template.amount = Decimal("155.00")
 
@@ -255,9 +273,9 @@ class TestUpdate:
 
 class TestDelete:
     async def test_delete(
-            self,
-            transaction_template_repository: TransactionTemplateRepository,
-            transaction_template: TransactionTemplate
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        transaction_template: TransactionTemplate,
     ):
         await transaction_template_repository.delete(transaction_template)
 

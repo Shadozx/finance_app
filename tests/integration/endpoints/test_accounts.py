@@ -2,7 +2,12 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from tests.integration.endpoints.helpers import account_payload, create_account, create_transaction, transaction_payload
+from tests.integration.endpoints.helpers import (
+    account_payload,
+    create_account,
+    create_transaction,
+    transaction_payload,
+)
 from tests.integration.endpoints.types import AuthenticatedUser, CurrencyData, AccountData
 
 API_ACCOUNTS = "/api/v1/accounts"
@@ -10,10 +15,10 @@ API_ACCOUNTS = "/api/v1/accounts"
 
 class TestCreateAccount:
     async def test_create_account_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
 
@@ -35,19 +40,22 @@ class TestCreateAccount:
         assert body["archived_at"] is None
         assert body["balance"] == "0.00"
 
-    @pytest.mark.parametrize("name, reason", [
-        ("a", "min_length_allowed"),
-        ("a" * 100, "max_length_allowed"),
-        ("Card *4242", "special_chars_allowed"),
-        ("Cash (home)", "brackets_allowed"),
-    ])
+    @pytest.mark.parametrize(
+        "name, reason",
+        [
+            ("a", "min_length_allowed"),
+            ("a" * 100, "max_length_allowed"),
+            ("Card *4242", "special_chars_allowed"),
+            ("Cash (home)", "brackets_allowed"),
+        ],
+    )
     async def test_create_account_valid_names(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            name: str,
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        name: str,
+        reason: str,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -59,10 +67,10 @@ class TestCreateAccount:
         assert response.json()["name"] == name
 
     async def test_create_account_name_is_stripped(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -74,10 +82,10 @@ class TestCreateAccount:
         assert response.json()["name"] == "Monobank"
 
     async def test_create_account_name_at_max_length_after_strip(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         name = "Monobank" + " " * 95
 
@@ -91,11 +99,11 @@ class TestCreateAccount:
         assert response.json()["name"] == "Monobank"
 
     async def test_create_account_duplicate_name(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -110,11 +118,11 @@ class TestCreateAccount:
         assert "detail" in response.json()
 
     async def test_create_account_with_archived_name_conflicts(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
+        active_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -129,11 +137,11 @@ class TestCreateAccount:
         assert "detail" in response.json()
 
     async def test_create_account_same_name_allowed_for_other_user(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
 
@@ -156,10 +164,10 @@ class TestCreateAccount:
         assert second_response.json()["user_id"] == other_authenticated_user["user"]["id"]
 
     async def test_create_account_with_inactive_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        inactive_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -171,9 +179,9 @@ class TestCreateAccount:
         assert "detail" in response.json()
 
     async def test_create_account_with_unknown_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -185,10 +193,10 @@ class TestCreateAccount:
         assert "detail" in response.json()
 
     async def test_create_account_currency_code_normalized(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -199,24 +207,27 @@ class TestCreateAccount:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["currency_code"] == active_currency["code"]
 
-    @pytest.mark.parametrize("payload_update, reason", [
-        ({"name": ""}, "empty_name"),
-        ({"name": "   "}, "blank_name"),
-        ({"name": "a" * 101}, "name_too_long"),
-        ({"name": None}, "name_null"),
-        ({"currency_code": None}, "currency_code_null"),
-        ({"currency_code": "US"}, "currency_code_too_short"),
-        ({"currency_code": "USDD"}, "currency_code_too_long"),
-        ({"initial_balance": "abc"}, "initial_balance_not_decimal"),
-        ({"initial_balance_kind": "WRONG"}, "initial_balance_kind_invalid"),
-    ])
+    @pytest.mark.parametrize(
+        "payload_update, reason",
+        [
+            ({"name": ""}, "empty_name"),
+            ({"name": "   "}, "blank_name"),
+            ({"name": "a" * 101}, "name_too_long"),
+            ({"name": None}, "name_null"),
+            ({"currency_code": None}, "currency_code_null"),
+            ({"currency_code": "US"}, "currency_code_too_short"),
+            ({"currency_code": "USDD"}, "currency_code_too_long"),
+            ({"initial_balance": "abc"}, "initial_balance_not_decimal"),
+            ({"initial_balance_kind": "WRONG"}, "initial_balance_kind_invalid"),
+        ],
+    )
     async def test_create_account_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            payload_update: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        payload_update: dict[str, object],
+        reason: str,
     ):
         payload = account_payload(currency_code=active_currency["code"])
 
@@ -231,16 +242,19 @@ class TestCreateAccount:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("missing_field", [
-        "name",
-        "currency_code",
-    ])
+    @pytest.mark.parametrize(
+        "missing_field",
+        [
+            "name",
+            "currency_code",
+        ],
+    )
     async def test_create_account_required_fields_missing(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            missing_field: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        missing_field: str,
     ):
         payload = account_payload(currency_code=active_currency["code"])
 
@@ -256,10 +270,10 @@ class TestCreateAccount:
         assert "detail" in response.json()
 
     async def test_create_account_with_existing_initial_balance(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
         payload["initial_balance"] = "5000.00"
@@ -284,10 +298,10 @@ class TestCreateAccount:
         assert get_response.json()["balance"] == "5000.00"
 
     async def test_create_account_with_negative_initial_balance(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
         payload["initial_balance"] = "-2000.00"
@@ -302,10 +316,10 @@ class TestCreateAccount:
         assert response.json()["balance"] == "-2000.00"
 
     async def test_create_account_existing_balance_excluded_from_statistics(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
         payload["initial_balance"] = "5000.00"
@@ -326,10 +340,10 @@ class TestCreateAccount:
         assert response.json()["currencies"] == []
 
     async def test_create_account_received_balance_counted_in_statistics(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
         payload["initial_balance"] = "5000.00"
@@ -354,10 +368,10 @@ class TestCreateAccount:
         assert currencies[0]["income"] == "5000.00"
 
     async def test_create_account_initial_balance_appears_in_transactions(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = account_payload(currency_code=active_currency["code"])
         payload["initial_balance"] = "5000.00"
@@ -384,9 +398,9 @@ class TestCreateAccount:
         assert body[0]["account_id"] == account_id
 
     async def test_create_account_without_token(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
     ):
         response = await client.post(
             API_ACCOUNTS,
@@ -399,9 +413,9 @@ class TestCreateAccount:
 
 class TestGetAccounts:
     async def test_get_accounts_empty(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(API_ACCOUNTS, headers=authenticated_user["headers"])
 
@@ -409,11 +423,11 @@ class TestGetAccounts:
         assert response.json() == []
 
     async def test_get_accounts_default_returns_active(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        archived_account: AccountData,
     ):
         response = await client.get(API_ACCOUNTS, headers=authenticated_user["headers"])
 
@@ -426,11 +440,11 @@ class TestGetAccounts:
         assert body[0]["archived_at"] is None
 
     async def test_get_accounts_status_archived(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        archived_account: AccountData,
     ):
         response = await client.get(
             API_ACCOUNTS,
@@ -447,11 +461,11 @@ class TestGetAccounts:
         assert body[0]["archived_at"] is not None
 
     async def test_get_accounts_status_all(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        archived_account: AccountData,
     ):
         response = await client.get(
             API_ACCOUNTS,
@@ -469,12 +483,12 @@ class TestGetAccounts:
         assert archived_account["id"] in ids
 
     async def test_get_accounts_returns_only_own(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         other_account = await create_account(
             client,
@@ -494,9 +508,9 @@ class TestGetAccounts:
         assert other_account["id"] not in ids
 
     async def test_get_accounts_invalid_status(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_ACCOUNTS,
@@ -508,11 +522,11 @@ class TestGetAccounts:
         assert "detail" in response.json()
 
     async def test_get_accounts_returns_balances(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         empty_account = await create_account(
             client,
@@ -541,8 +555,8 @@ class TestGetAccounts:
         assert by_id[empty_account["id"]]["balance"] == "0.00"
 
     async def test_get_accounts_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_ACCOUNTS)
 
@@ -552,10 +566,10 @@ class TestGetAccounts:
 
 class TestGetAccountById:
     async def test_get_account_by_id_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.get(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -572,11 +586,11 @@ class TestGetAccountById:
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_get_account_by_id_balance_uses_settled_amount(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            uah_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        uah_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -597,12 +611,11 @@ class TestGetAccountById:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["balance"] == "-1050.00"
 
-
     async def test_get_account_by_id_archived_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.get(
             f"{API_ACCOUNTS}/{archived_account['id']}",
@@ -613,9 +626,9 @@ class TestGetAccountById:
         assert response.json()["archived_at"] is not None
 
     async def test_get_account_by_id_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_ACCOUNTS}/999",
@@ -626,10 +639,10 @@ class TestGetAccountById:
         assert "detail" in response.json()
 
     async def test_get_account_by_id_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.get(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -640,9 +653,9 @@ class TestGetAccountById:
         assert "detail" in response.json()
 
     async def test_get_account_by_id_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_ACCOUNTS}/abc",
@@ -653,11 +666,11 @@ class TestGetAccountById:
         assert "detail" in response.json()
 
     async def test_get_account_by_id_returns_balance(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -690,9 +703,9 @@ class TestGetAccountById:
         assert response.json()["balance"] == "700.00"
 
     async def test_get_account_by_id_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
     ):
         response = await client.get(f"{API_ACCOUNTS}/{created_account['id']}")
 
@@ -702,10 +715,10 @@ class TestGetAccountById:
 
 class TestUpdateAccount:
     async def test_update_account_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -723,11 +736,11 @@ class TestUpdateAccount:
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_update_account_ignores_currency_code(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        inactive_currency: CurrencyData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -739,10 +752,10 @@ class TestUpdateAccount:
         assert response.json()["currency_code"] == created_account["currency_code"]
 
     async def test_update_account_archived_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{archived_account['id']}",
@@ -758,10 +771,10 @@ class TestUpdateAccount:
         assert body["archived_at"] is not None
 
     async def test_update_account_same_name_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -773,11 +786,11 @@ class TestUpdateAccount:
         assert response.json()["name"] == created_account["name"]
 
     async def test_update_account_duplicate_name(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         other_account = await create_account(
             client,
@@ -795,9 +808,9 @@ class TestUpdateAccount:
         assert "detail" in response.json()
 
     async def test_update_account_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/999",
@@ -809,10 +822,10 @@ class TestUpdateAccount:
         assert "detail" in response.json()
 
     async def test_update_account_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -823,20 +836,23 @@ class TestUpdateAccount:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("payload, reason", [
-        ({"name": ""}, "empty_name"),
-        ({"name": "   "}, "blank_name"),
-        ({"name": "a" * 101}, "name_too_long"),
-        ({"name": None}, "name_null"),
-        ({}, "missing_name"),
-    ])
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            ({"name": ""}, "empty_name"),
+            ({"name": "   "}, "blank_name"),
+            ({"name": "a" * 101}, "name_too_long"),
+            ({"name": None}, "name_null"),
+            ({}, "missing_name"),
+        ],
+    )
     async def test_update_account_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            payload: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        payload: dict[str, object],
+        reason: str,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -848,9 +864,9 @@ class TestUpdateAccount:
         assert "detail" in response.json()
 
     async def test_update_account_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/abc",
@@ -862,9 +878,9 @@ class TestUpdateAccount:
         assert "detail" in response.json()
 
     async def test_update_account_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
     ):
         response = await client.put(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -877,10 +893,10 @@ class TestUpdateAccount:
 
 class TestArchiveAccount:
     async def test_archive_account_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.delete(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -910,10 +926,10 @@ class TestArchiveAccount:
         assert archived_accounts[0]["archived_at"] is not None
 
     async def test_archive_account_already_archived(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.delete(
             f"{API_ACCOUNTS}/{archived_account['id']}",
@@ -924,9 +940,9 @@ class TestArchiveAccount:
         assert "detail" in response.json()
 
     async def test_archive_account_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
             f"{API_ACCOUNTS}/999",
@@ -937,10 +953,10 @@ class TestArchiveAccount:
         assert "detail" in response.json()
 
     async def test_archive_account_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.delete(
             f"{API_ACCOUNTS}/{created_account['id']}",
@@ -951,9 +967,9 @@ class TestArchiveAccount:
         assert "detail" in response.json()
 
     async def test_archive_account_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
             f"{API_ACCOUNTS}/abc",
@@ -964,9 +980,9 @@ class TestArchiveAccount:
         assert "detail" in response.json()
 
     async def test_archive_account_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
     ):
         response = await client.delete(f"{API_ACCOUNTS}/{created_account['id']}")
 
@@ -976,10 +992,10 @@ class TestArchiveAccount:
 
 class TestRestoreAccount:
     async def test_restore_account_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{archived_account['id']}/restore",
@@ -1005,10 +1021,10 @@ class TestRestoreAccount:
         assert active_accounts[0]["id"] == archived_account["id"]
 
     async def test_restore_account_not_archived(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/restore",
@@ -1019,9 +1035,9 @@ class TestRestoreAccount:
         assert "detail" in response.json()
 
     async def test_restore_account_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/999/restore",
@@ -1032,10 +1048,10 @@ class TestRestoreAccount:
         assert "detail" in response.json()
 
     async def test_restore_account_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{archived_account['id']}/restore",
@@ -1046,9 +1062,9 @@ class TestRestoreAccount:
         assert "detail" in response.json()
 
     async def test_restore_account_without_token(
-            self,
-            client: AsyncClient,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        archived_account: AccountData,
     ):
         response = await client.post(f"{API_ACCOUNTS}/{archived_account['id']}/restore")
 
@@ -1058,11 +1074,11 @@ class TestRestoreAccount:
 
 class TestReconcileAccount:
     async def test_reconcile_account_positive_difference(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -1097,11 +1113,11 @@ class TestReconcileAccount:
         assert get_response.json()["balance"] == "1300.00"
 
     async def test_reconcile_account_negative_difference(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -1129,10 +1145,10 @@ class TestReconcileAccount:
         assert body["account"]["balance"] == "700.00"
 
     async def test_reconcile_account_creates_adjustment_transaction(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
@@ -1157,10 +1173,10 @@ class TestReconcileAccount:
         assert body[0]["currency_code"] == created_account["currency_code"]
 
     async def test_reconcile_account_excluded_from_statistics(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
@@ -1177,11 +1193,11 @@ class TestReconcileAccount:
         assert response.json()["currencies"] == []
 
     async def test_reconcile_account_no_difference(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -1216,11 +1232,11 @@ class TestReconcileAccount:
         assert len(transactions_response.json()) == 1
 
     async def test_reconcile_account_to_zero(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         await create_transaction(
             client,
@@ -1248,10 +1264,10 @@ class TestReconcileAccount:
         assert body["account"]["balance"] == "0.00"
 
     async def test_reconcile_account_archived_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{archived_account['id']}/reconcile",
@@ -1263,10 +1279,10 @@ class TestReconcileAccount:
         assert "detail" in response.json()
 
     async def test_reconcile_account_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
@@ -1278,9 +1294,9 @@ class TestReconcileAccount:
         assert "detail" in response.json()
 
     async def test_reconcile_account_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/999/reconcile",
@@ -1291,18 +1307,21 @@ class TestReconcileAccount:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("payload, reason", [
-        ({}, "missing_actual_balance"),
-        ({"actual_balance": None}, "actual_balance_null"),
-        ({"actual_balance": "abc"}, "actual_balance_not_decimal"),
-    ])
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            ({}, "missing_actual_balance"),
+            ({"actual_balance": None}, "actual_balance_null"),
+            ({"actual_balance": "abc"}, "actual_balance_not_decimal"),
+        ],
+    )
     async def test_reconcile_account_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            payload: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        payload: dict[str, object],
+        reason: str,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
@@ -1314,9 +1333,9 @@ class TestReconcileAccount:
         assert "detail" in response.json()
 
     async def test_reconcile_account_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/abc/reconcile",
@@ -1328,9 +1347,9 @@ class TestReconcileAccount:
         assert "detail" in response.json()
 
     async def test_reconcile_account_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
     ):
         response = await client.post(
             f"{API_ACCOUNTS}/{created_account['id']}/reconcile",

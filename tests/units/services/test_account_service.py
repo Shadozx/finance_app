@@ -9,8 +9,15 @@ from app.core import UnitOfWork
 from app.models import Account, Currency, TransactionType, TransactionKind
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.services import AccountService, validators
-from app.schemas import AccountCreate, AccountUpdate, AccountResponse, AccountStatus, InitialBalanceKind, \
-    AccountReconcile, AccountReconcileResponse
+from app.schemas import (
+    AccountCreate,
+    AccountUpdate,
+    AccountResponse,
+    AccountStatus,
+    InitialBalanceKind,
+    AccountReconcile,
+    AccountReconcileResponse,
+)
 from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
@@ -33,7 +40,6 @@ def to_response(account: Account, balance: Decimal) -> AccountResponse:
 
 
 class TestCreateAccount:
-
     @pytest.fixture
     def data(self, existing_currency: Currency):
         return AccountCreate(
@@ -42,15 +48,15 @@ class TestCreateAccount:
         )
 
     async def test_create_account_success(
-            self,
-            mocker: MockerFixture,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        mocker: MockerFixture,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
 
@@ -92,14 +98,14 @@ class TestCreateAccount:
         transaction_repo_mock.get_balance.assert_not_called()
 
     async def test_create_account_with_positive_existing_balance(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
         data.initial_balance = Decimal("5000.00")
@@ -129,13 +135,13 @@ class TestCreateAccount:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_account_with_positive_received_balance(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
         data.initial_balance = Decimal("5000.00")
@@ -157,13 +163,13 @@ class TestCreateAccount:
         )
 
     async def test_create_account_with_negative_balance_creates_expense(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
         data.initial_balance = Decimal("-2000.00")
@@ -187,14 +193,14 @@ class TestCreateAccount:
         )
 
     async def test_create_account_with_zero_balance_creates_no_transaction(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
         data.initial_balance = Decimal("0")
@@ -212,14 +218,14 @@ class TestCreateAccount:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_account_duplicate_name(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         data.name = existing_account.name
         user_id = existing_account.user_id
@@ -234,12 +240,12 @@ class TestCreateAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_account_unknown_currency(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: AccountCreate,
     ):
         user_id = 1
 
@@ -253,13 +259,13 @@ class TestCreateAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_account_inactive_currency(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         user_id = 1
         account_repo_mock.get_by_user_and_name.return_value = None
@@ -274,15 +280,15 @@ class TestCreateAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_account_balance_transaction_fails_nothing_committed(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
-            existing_currency: Currency,
-            data: AccountCreate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_currency: Currency,
+        data: AccountCreate,
     ):
         """Both sides belong to one operation: if the second fails, the first must not be committed."""
         user_id = existing_account.user_id
@@ -308,12 +314,12 @@ class TestCreateAccount:
 
 class TestGetAccount:
     async def test_get_account_success(
-            self,
-            mocker: MockerFixture,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
+        self,
+        mocker: MockerFixture,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("150")
@@ -334,14 +340,12 @@ class TestGetAccount:
             allow_archived=True,
         )
 
-        transaction_repo_mock.get_balance.assert_called_once_with(
-            existing_account.id
-        )
+        transaction_repo_mock.get_balance.assert_called_once_with(existing_account.id)
 
     async def test_get_account_not_found(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -349,10 +353,10 @@ class TestGetAccount:
             await account_service.get_account(999, 1)
 
     async def test_get_account_wrong_owner(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
     ):
         wrong_user_id = existing_account.user_id + 1
 
@@ -362,11 +366,11 @@ class TestGetAccount:
             await account_service.get_account(existing_account.id, wrong_user_id)
 
     async def test_get_account_archived_allowed(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -384,11 +388,11 @@ class TestGetAccount:
 
 class TestGetUserAccounts:
     async def test_get_user_accounts_success(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_currency: Currency,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_currency: Currency,
     ):
         user_id = 1
         balances = {1: Decimal("0"), 2: Decimal("150")}
@@ -413,22 +417,22 @@ class TestGetUserAccounts:
 
         result = await account_service.get_user_accounts(user_id)
 
-        assert result == [to_response(a, balance=balances.get(a.id, Decimal("0"))) for a in user_accounts]
+        assert result == [
+            to_response(a, balance=balances.get(a.id, Decimal("0"))) for a in user_accounts
+        ]
 
         account_repo_mock.get_by_user.assert_called_once_with(
             user_id=user_id,
             status=AccountStatus.ACTIVE,
         )
 
-        transaction_repo_mock.get_balances_by_account.assert_called_once_with(
-            user_id
-        )
+        transaction_repo_mock.get_balances_by_account.assert_called_once_with(user_id)
 
     async def test_get_user_accounts_empty(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
@@ -445,10 +449,10 @@ class TestGetUserAccounts:
         )
 
     async def test_get_user_accounts_passes_status(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
 
@@ -464,20 +468,19 @@ class TestGetUserAccounts:
 
 
 class TestUpdateAccount:
-
     @pytest.fixture
     def data(self):
         return AccountUpdate(name="Renamed Account")
 
     async def test_update_account_success(
-            self,
-            mocker: MockerFixture,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
-            data: AccountUpdate,
+        self,
+        mocker: MockerFixture,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        data: AccountUpdate,
     ):
         user_id = existing_account.user_id
         balance = Decimal("150")
@@ -522,12 +525,12 @@ class TestUpdateAccount:
         )
 
     async def test_update_account_does_not_change_currency(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
+        data: AccountUpdate,
     ):
         original_currency = existing_account.currency_code
 
@@ -547,12 +550,12 @@ class TestUpdateAccount:
         assert call_args.currency_code == original_currency
 
     async def test_update_account_archived_allowed(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
+        data: AccountUpdate,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -572,10 +575,10 @@ class TestUpdateAccount:
         account_repo_mock.update.assert_called_once()
 
     async def test_update_account_not_found(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        data: AccountUpdate,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -585,11 +588,11 @@ class TestUpdateAccount:
         account_repo_mock.update.assert_not_called()
 
     async def test_update_account_wrong_owner(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
+        data: AccountUpdate,
     ):
         wrong_user_id = existing_account.user_id + 1
 
@@ -605,12 +608,12 @@ class TestUpdateAccount:
         account_repo_mock.update.assert_not_called()
 
     async def test_update_account_duplicate_name(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
-            existing_currency: Currency,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
+        existing_currency: Currency,
+        data: AccountUpdate,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -632,12 +635,12 @@ class TestUpdateAccount:
         account_repo_mock.update.assert_not_called()
 
     async def test_update_account_same_name_allowed(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
-            data: AccountUpdate,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
+        data: AccountUpdate,
     ):
         data.name = existing_account.name
 
@@ -659,11 +662,11 @@ class TestUpdateAccount:
 
 class TestArchiveAccount:
     async def test_archive_account_success(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -677,10 +680,10 @@ class TestArchiveAccount:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_archive_account_not_found(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            unit_of_work_mock: UnitOfWork,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        unit_of_work_mock: UnitOfWork,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -692,10 +695,10 @@ class TestArchiveAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_archive_account_wrong_owner(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
     ):
         wrong_user_id = existing_account.user_id + 1
 
@@ -707,10 +710,10 @@ class TestArchiveAccount:
         account_repo_mock.archive.assert_not_called()
 
     async def test_archive_account_already_archived(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -727,12 +730,12 @@ class TestArchiveAccount:
 
 class TestRestoreAccount:
     async def test_restore_account_success(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -763,10 +766,10 @@ class TestRestoreAccount:
         )
 
     async def test_restore_account_not_found(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            unit_of_work_mock: UnitOfWork,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        unit_of_work_mock: UnitOfWork,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -778,10 +781,10 @@ class TestRestoreAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_restore_account_wrong_owner(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
         wrong_user_id = existing_account.user_id + 1
@@ -794,10 +797,10 @@ class TestRestoreAccount:
         account_repo_mock.restore.assert_not_called()
 
     async def test_restore_account_not_archived(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -810,11 +813,11 @@ class TestRestoreAccount:
         account_repo_mock.restore.assert_not_called()
 
     async def test_restore_account_duplicate_active_name(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            existing_account: Account,
-            existing_currency: Currency,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        existing_account: Account,
+        existing_currency: Currency,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -830,7 +833,9 @@ class TestRestoreAccount:
         account_repo_mock.get_by_id.return_value = existing_account
         account_repo_mock.get_by_user_and_name.return_value = active_duplicate
 
-        with pytest.raises(ValueExistsException, match="Active account with this name already exists"):
+        with pytest.raises(
+            ValueExistsException, match="Active account with this name already exists"
+        ):
             await account_service.restore_account(
                 existing_account.id,
                 existing_account.user_id,
@@ -841,12 +846,12 @@ class TestRestoreAccount:
 
 class TestReconcileAccount:
     async def test_reconcile_account_positive_difference(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("4700.00")
@@ -878,11 +883,11 @@ class TestReconcileAccount:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_reconcile_account_negative_difference(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("5000.00")
@@ -908,12 +913,12 @@ class TestReconcileAccount:
         )
 
     async def test_reconcile_account_no_difference_creates_nothing(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("5000.00")
@@ -935,11 +940,11 @@ class TestReconcileAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_reconcile_account_to_zero(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
     ):
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("500.00")
@@ -957,12 +962,12 @@ class TestReconcileAccount:
         assert result.account.balance == Decimal("0")
 
     async def test_reconcile_account_archived_fails(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
     ):
         existing_account.archived_at = datetime.now(timezone.utc)
 
@@ -970,7 +975,9 @@ class TestReconcileAccount:
 
         data = AccountReconcile(actual_balance=Decimal("5000.00"))
 
-        with pytest.raises(NotAllowedActionException, match="Archived account is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived account is not allowed to use"
+        ):
             await account_service.reconcile_account(
                 existing_account.id,
                 data,
@@ -982,10 +989,10 @@ class TestReconcileAccount:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_reconcile_account_not_found(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
     ):
         account_repo_mock.get_by_id.return_value = None
 
@@ -997,11 +1004,11 @@ class TestReconcileAccount:
         transaction_repo_mock.add.assert_not_called()
 
     async def test_reconcile_account_wrong_owner(
-            self,
-            account_service: AccountService,
-            account_repo_mock: AccountRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_account: Account,
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_account: Account,
     ):
         wrong_user_id = existing_account.user_id + 1
 

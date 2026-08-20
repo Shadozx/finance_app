@@ -12,9 +12,9 @@ API_AUTH_LOGIN = "/api/v1/auth/login"
 
 class TestCreateCategory:
     async def test_create_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload()
 
@@ -34,18 +34,21 @@ class TestCreateCategory:
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert "id" in body
 
-    @pytest.mark.parametrize("name, reason", [
-        ("a", "min_length_allowed"),
-        ("a" * 100, "max_length_allowed"),
-        ("Food & Drinks", "special_chars_allowed"),
-        ("Home Bills", "spaces_allowed"),
-    ])
+    @pytest.mark.parametrize(
+        "name, reason",
+        [
+            ("a", "min_length_allowed"),
+            ("a" * 100, "max_length_allowed"),
+            ("Food & Drinks", "special_chars_allowed"),
+            ("Home Bills", "spaces_allowed"),
+        ],
+    )
     async def test_create_category_valid_names(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            name: str,
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        name: str,
+        reason: str,
     ):
         response = await client.post(
             API_CATEGORIES,
@@ -57,9 +60,9 @@ class TestCreateCategory:
         assert response.json()["name"] == name
 
     async def test_create_category_duplicate_name(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload()
 
@@ -81,10 +84,10 @@ class TestCreateCategory:
         assert "detail" in response.json()
 
     async def test_create_category_with_archived_name_conflicts(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
     ):
         payload = category_payload(archived_category["name"])
 
@@ -98,10 +101,10 @@ class TestCreateCategory:
         assert "detail" in response.json()
 
     async def test_create_category_same_name_allowed_for_other_user(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload()
 
@@ -123,18 +126,21 @@ class TestCreateCategory:
 
         assert second_response.json()["user_id"] == other_authenticated_user["user"]["id"]
 
-    @pytest.mark.parametrize("payload, reason", [
-        (category_payload(""), "empty_name"),
-        (category_payload(" "), "blank_after_trim"),
-        (category_payload("a" * 101), "too_long"),
-        ({}, "missing_name"),
-    ])
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            (category_payload(""), "empty_name"),
+            (category_payload(" "), "blank_after_trim"),
+            (category_payload("a" * 101), "too_long"),
+            ({}, "missing_name"),
+        ],
+    )
     async def test_create_category_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            payload: dict[str, str],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        payload: dict[str, str],
+        reason: str,
     ):
         response = await client.post(
             API_CATEGORIES,
@@ -145,10 +151,7 @@ class TestCreateCategory:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
-    async def test_create_category_without_token(
-            self,
-            client: AsyncClient
-    ):
+    async def test_create_category_without_token(self, client: AsyncClient):
         response = await client.post(
             API_CATEGORIES,
             json=category_payload(),
@@ -160,9 +163,9 @@ class TestCreateCategory:
 
 class TestGetCategories:
     async def test_get_categories_empty(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(API_CATEGORIES, headers=authenticated_user["headers"])
 
@@ -171,9 +174,9 @@ class TestGetCategories:
         assert response.json() == []
 
     async def test_get_categories_default_returns_active_categories(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         first_payload = category_payload("Food")
 
@@ -199,10 +202,10 @@ class TestGetCategories:
         assert all(cat["archived_at"] is None for cat in user_categories)
 
     async def test_get_categories_returns_only_own_categories(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload()
 
@@ -221,9 +224,9 @@ class TestGetCategories:
         assert user_categories[0]["user_id"] == authenticated_user["user"]["id"]
 
     async def test_get_categories_category_status_archived_returns_archived_categories(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload()
 
@@ -231,9 +234,11 @@ class TestGetCategories:
 
         await archive_category(client, category["id"], authenticated_user["headers"])
 
-        response = await client.get(API_CATEGORIES,
-                                    headers=authenticated_user["headers"],
-                                    params={"category_status": "archived"})
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"category_status": "archived"},
+        )
 
         assert response.status_code == status.HTTP_200_OK
 
@@ -245,9 +250,9 @@ class TestGetCategories:
         assert user_categories[0]["archived_at"] is not None
 
     async def test_get_categories_category_status_all_returns_active_and_archived_categories(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         active_category_payload = category_payload()
 
@@ -255,13 +260,15 @@ class TestGetCategories:
 
         archived_category_payload = category_payload("Salary")
 
-        category = await create_category(client, archived_category_payload, authenticated_user["headers"])
+        category = await create_category(
+            client, archived_category_payload, authenticated_user["headers"]
+        )
 
         await archive_category(client, category["id"], authenticated_user["headers"])
 
-        response = await client.get(API_CATEGORIES,
-                                    headers=authenticated_user["headers"],
-                                    params={"category_status": "all"})
+        response = await client.get(
+            API_CATEGORIES, headers=authenticated_user["headers"], params={"category_status": "all"}
+        )
 
         assert response.status_code == status.HTTP_200_OK
 
@@ -278,21 +285,23 @@ class TestGetCategories:
         assert any(cat["archived_at"] is not None for cat in user_categories)
 
     async def test_get_categories_invalid_category_status(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
-        response = await client.get(API_CATEGORIES,
-                                    headers=authenticated_user["headers"],
-                                    params={"category_status": "wrong_status"})
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"category_status": "wrong_status"},
+        )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
         assert "detail" in response.json()
 
     async def test_get_categories_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_CATEGORIES)
 
@@ -303,17 +312,17 @@ class TestGetCategories:
 
 class TestUpdateCategory:
     async def test_update_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         payload = category_payload("Salary")
 
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
             json=payload,
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -324,58 +333,64 @@ class TestUpdateCategory:
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["archived_at"] is None
 
-    @pytest.mark.parametrize("name, reason", [
-        ("a", "min_length_allowed"),
-        ("a" * 100, "max_length_allowed"),
-        ("Food & Drinks", "special_chars_allowed"),
-        ("Home Bills", "spaces_allowed"),
-    ])
+    @pytest.mark.parametrize(
+        "name, reason",
+        [
+            ("a", "min_length_allowed"),
+            ("a" * 100, "max_length_allowed"),
+            ("Food & Drinks", "special_chars_allowed"),
+            ("Home Bills", "spaces_allowed"),
+        ],
+    )
     async def test_update_category_valid_names(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            name: str,
-            reason: str
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        name: str,
+        reason: str,
     ):
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
             json=category_payload(name),
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_200_OK, reason
         assert response.json()["name"] == name
 
     async def test_update_category_same_name_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
             json=category_payload(created_category["name"]),
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_200_OK
 
         assert response.json()["name"] == created_category["name"]
 
-    @pytest.mark.parametrize("payload, reason", [
-        (category_payload(""), "empty_name"),
-        (category_payload(" "), "blank_after_trim"),
-        (category_payload("a" * 101), "too_long"),
-        ({}, "missing_name"),
-    ])
+    @pytest.mark.parametrize(
+        "payload, reason",
+        [
+            (category_payload(""), "empty_name"),
+            (category_payload(" "), "blank_after_trim"),
+            (category_payload("a" * 101), "too_long"),
+            ({}, "missing_name"),
+        ],
+    )
     async def test_update_category_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            payload: dict[str, str],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        payload: dict[str, str],
+        reason: str,
     ):
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
@@ -387,10 +402,10 @@ class TestUpdateCategory:
         assert "detail" in response.json()
 
     async def test_update_category_duplicate_name(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         payload = category_payload("Salary")
 
@@ -399,7 +414,7 @@ class TestUpdateCategory:
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
             json=payload,
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -407,18 +422,18 @@ class TestUpdateCategory:
         assert "detail" in response.json()
 
     async def test_update_category_of_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         payload = category_payload("Salary")
 
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
             json=payload,
-            headers=other_authenticated_user["headers"]
+            headers=other_authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -426,16 +441,14 @@ class TestUpdateCategory:
         assert "detail" in response.json()
 
     async def test_update_category_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         payload = category_payload("Salary")
 
         response = await client.put(
-            f"{API_CATEGORIES}/999",
-            json=payload,
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/999", json=payload, headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -443,13 +456,12 @@ class TestUpdateCategory:
         assert "detail" in response.json()
 
     async def test_update_category_without_token(
-            self,
-            client: AsyncClient,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        created_category: CategoryData,
     ):
         response = await client.put(
-            f"{API_CATEGORIES}/{created_category['id']}",
-            json=category_payload()
+            f"{API_CATEGORIES}/{created_category['id']}", json=category_payload()
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -459,14 +471,13 @@ class TestUpdateCategory:
 
 class TestArchiveCategory:
     async def test_archive_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         response = await client.delete(
-            f"{API_CATEGORIES}/{created_category['id']}",
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/{created_category['id']}", headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -474,8 +485,7 @@ class TestArchiveCategory:
         assert response.content == b""
 
         user_categories_response = await client.get(
-            API_CATEGORIES,
-            headers=authenticated_user["headers"]
+            API_CATEGORIES, headers=authenticated_user["headers"]
         )
 
         assert user_categories_response.status_code == status.HTTP_200_OK
@@ -497,13 +507,12 @@ class TestArchiveCategory:
         assert archived_categories[0]["archived_at"] is not None
 
     async def test_archive_category_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
-            f"{API_CATEGORIES}/999",
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/999", headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -511,15 +520,15 @@ class TestArchiveCategory:
         assert "detail" in response.json()
 
     async def test_archive_category_of_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         response = await client.delete(
             f"{API_CATEGORIES}/{created_category['id']}",
-            headers=other_authenticated_user["headers"]
+            headers=other_authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -527,21 +536,19 @@ class TestArchiveCategory:
         assert "detail" in response.json()
 
     async def test_archive_category_already_archived(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         response = await client.delete(
-            f"{API_CATEGORIES}/{created_category['id']}",
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/{created_category['id']}", headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         response = await client.delete(
-            f"{API_CATEGORIES}/{created_category['id']}",
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/{created_category['id']}", headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -549,9 +556,9 @@ class TestArchiveCategory:
         assert "detail" in response.json()
 
     async def test_archive_category_without_token(
-            self,
-            client: AsyncClient,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        created_category: CategoryData,
     ):
         response = await client.delete(
             f"{API_CATEGORIES}/{created_category['id']}",
@@ -564,14 +571,14 @@ class TestArchiveCategory:
 
 class TestRestoreCategory:
     async def test_restore_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
     ):
         response = await client.post(
             f"{API_CATEGORIES}/{archived_category['id']}/restore",
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -608,13 +615,12 @@ class TestRestoreCategory:
         assert active_categories[0]["archived_at"] is None
 
     async def test_restore_category_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.post(
-            f"{API_CATEGORIES}/999/restore",
-            headers=authenticated_user["headers"]
+            f"{API_CATEGORIES}/999/restore", headers=authenticated_user["headers"]
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -622,15 +628,15 @@ class TestRestoreCategory:
         assert "detail" in response.json()
 
     async def test_restore_category_of_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            archived_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
     ):
         response = await client.post(
             f"{API_CATEGORIES}/{archived_category['id']}/restore",
-            headers=other_authenticated_user["headers"]
+            headers=other_authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -638,14 +644,14 @@ class TestRestoreCategory:
         assert "detail" in response.json()
 
     async def test_restore_category_not_archived(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
     ):
         response = await client.post(
             f"{API_CATEGORIES}/{created_category['id']}/restore",
-            headers=authenticated_user["headers"]
+            headers=authenticated_user["headers"],
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -653,9 +659,9 @@ class TestRestoreCategory:
         assert "detail" in response.json()
 
     async def test_restore_category_without_token(
-            self,
-            client: AsyncClient,
-            archived_category: CategoryData,
+        self,
+        client: AsyncClient,
+        archived_category: CategoryData,
     ):
         response = await client.post(
             f"{API_CATEGORIES}/{archived_category['id']}/restore",

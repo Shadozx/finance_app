@@ -8,17 +8,24 @@ from app.services import TransactionTemplateService, validators
 from app.repositories import TransactionTemplateRepository, CurrencyRepository, CategoryRepository
 from app.models import TransactionTemplate, TransactionType, Currency, Category
 from app.core.exceptions import NotAllowedActionException, ValueExistsException, NotFoundException
-from app.schemas import TransactionTemplateCreate, TransactionTemplateResponse, TransactionTemplateUpdate
-from tests.units.services.helpers import assert_model_fields, make_transaction_template, as_persisted
+from app.schemas import (
+    TransactionTemplateCreate,
+    TransactionTemplateResponse,
+    TransactionTemplateUpdate,
+)
+from tests.units.services.helpers import (
+    assert_model_fields,
+    make_transaction_template,
+    as_persisted,
+)
 
 
 class TestCreateTemplate:
-
     @pytest.fixture
     def data(
-            self,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
+        self,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
     ):
         return TransactionTemplateCreate(
             type=TransactionType.EXPENSE,
@@ -29,16 +36,16 @@ class TestCreateTemplate:
         )
 
     async def test_create_template_success(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            existing_category: Category,
-            data: TransactionTemplateCreate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionTemplateCreate,
     ):
         data.category_id = existing_category.id
         user_id = existing_category.user_id
@@ -67,13 +74,10 @@ class TestCreateTemplate:
         )
 
         validate_category_spy.assert_called_once_with(
-            transaction_template_service.category_repository,
-            user_id,
-            existing_category.id
+            transaction_template_service.category_repository, user_id, existing_category.id
         )
         validate_currency_spy.assert_called_once_with(
-            transaction_template_service.currency_repository,
-            existing_currency.code
+            transaction_template_service.currency_repository, existing_currency.code
         )
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -85,14 +89,14 @@ class TestCreateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_template_without_category(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: TransactionTemplateCreate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: TransactionTemplateCreate,
     ):
         user_id = 1
 
@@ -125,18 +129,20 @@ class TestCreateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_create_template_duplicate_name(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            data: TransactionTemplateCreate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        data: TransactionTemplateCreate,
     ):
         user_id = existing_template.user_id
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = existing_template
 
-        with pytest.raises(ValueExistsException, match="Transaction template with this name already exists"):
+        with pytest.raises(
+            ValueExistsException, match="Transaction template with this name already exists"
+        ):
             await transaction_template_service.create_template(data, user_id)
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -148,13 +154,13 @@ class TestCreateTemplate:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_template_archived_category(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_category: Category,
-            data: TransactionTemplateCreate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_category: Category,
+        data: TransactionTemplateCreate,
     ):
         data.category_id = existing_category.id
         user_id = existing_category.user_id
@@ -163,7 +169,9 @@ class TestCreateTemplate:
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         category_repo_mock.get_by_id.return_value = existing_category
 
-        with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived category is not allowed to use"
+        ):
             await transaction_template_service.create_template(data, user_id)
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -175,13 +183,13 @@ class TestCreateTemplate:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_create_template_inactive_currency(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_currency: Currency,
-            data: TransactionTemplateCreate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_currency: Currency,
+        data: TransactionTemplateCreate,
     ):
         user_id = 1
 
@@ -203,11 +211,10 @@ class TestCreateTemplate:
 
 
 class TestUpdateTemplate:
-
     @pytest.fixture
     def data(
-            self,
-            existing_template: TransactionTemplate,
+        self,
+        existing_template: TransactionTemplate,
     ):
         return TransactionTemplateUpdate(
             type=existing_template.type,
@@ -218,17 +225,17 @@ class TestUpdateTemplate:
         )
 
     async def test_update_template_success(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            existing_category: Category,
-            data: TransactionTemplateUpdate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionTemplateUpdate,
     ):
         user_id = existing_template.user_id
         data.category_id = existing_category.id
@@ -244,7 +251,9 @@ class TestUpdateTemplate:
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
-        result = await transaction_template_service.update_template(existing_template.id, data, user_id)
+        result = await transaction_template_service.update_template(
+            existing_template.id, data, user_id
+        )
 
         call_args = transaction_template_repo_mock.update.call_args[0][0]
 
@@ -261,7 +270,7 @@ class TestUpdateTemplate:
         validate_template_spy.assert_called_once_with(
             transaction_template_service.transaction_template_repository,
             user_id,
-            existing_template.id
+            existing_template.id,
         )
 
         validate_category_spy.assert_called_once_with(
@@ -285,15 +294,15 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_template_without_category(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            category_repo_mock: CategoryRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        category_repo_mock: CategoryRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        data: TransactionTemplateUpdate,
     ):
         data.category_id = None
         user_id = existing_template.user_id
@@ -321,12 +330,12 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_template_duplicate_name(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        data: TransactionTemplateUpdate,
     ):
         user_id = existing_template.user_id
         duplicate = make_transaction_template(
@@ -337,10 +346,10 @@ class TestUpdateTemplate:
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = duplicate
 
-        with pytest.raises(ValueExistsException, match="Transaction template with this name already exists"):
-            await transaction_template_service.update_template(
-                existing_template.id, data, user_id
-            )
+        with pytest.raises(
+            ValueExistsException, match="Transaction template with this name already exists"
+        ):
+            await transaction_template_service.update_template(existing_template.id, data, user_id)
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
             data.name, user_id
@@ -351,15 +360,15 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_template_self_not_duplicate(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            category_repo_mock: CategoryRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        category_repo_mock: CategoryRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        data: TransactionTemplateUpdate,
     ):
         data.name = existing_template.name
         user_id = existing_template.user_id
@@ -386,11 +395,11 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_template_not_found_template(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            unit_of_work_mock: UnitOfWork,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: TransactionTemplateUpdate,
     ):
         template_id = 999
         user_id = 1
@@ -410,14 +419,14 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_template_archived_category(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_category: Category,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_category: Category,
+        data: TransactionTemplateUpdate,
     ):
         data.category_id = existing_category.id
         user_id = existing_template.user_id
@@ -427,30 +436,30 @@ class TestUpdateTemplate:
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         category_repo_mock.get_by_id.return_value = existing_category
 
-        with pytest.raises(NotAllowedActionException, match="Archived category is not allowed to use"):
+        with pytest.raises(
+            NotAllowedActionException, match="Archived category is not allowed to use"
+        ):
             await transaction_template_service.update_template(existing_template.id, data, user_id)
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
             data.name, user_id
         )
 
-        category_repo_mock.get_by_id.assert_called_once_with(
-            data.category_id
-        )
+        category_repo_mock.get_by_id.assert_called_once_with(data.category_id)
 
         transaction_template_repo_mock.update.assert_not_called()
 
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_template_inactive_currency(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            data: TransactionTemplateUpdate,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        data: TransactionTemplateUpdate,
     ):
         existing_template.category_id = None
         user_id = existing_template.user_id
@@ -471,17 +480,17 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_template_keeps_archived_category_allowed(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            existing_category: Category,
-            data: TransactionTemplateUpdate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionTemplateUpdate,
     ):
         user_id = existing_template.user_id
 
@@ -498,9 +507,7 @@ class TestUpdateTemplate:
 
         validate_category_spy = mocker.spy(validators, "validate_category")
 
-        await transaction_template_service.update_template(
-            existing_template.id, data, user_id
-        )
+        await transaction_template_service.update_template(existing_template.id, data, user_id)
 
         validate_category_spy.assert_called_once_with(
             transaction_template_service.category_repository,
@@ -514,17 +521,17 @@ class TestUpdateTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_update_template_keeps_inactive_currency_allowed(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            currency_repo_mock: CurrencyRepository,
-            category_repo_mock: CategoryRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
-            existing_currency: Currency,
-            existing_category: Category,
-            data: TransactionTemplateUpdate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionTemplateUpdate,
     ):
         user_id = existing_template.user_id
 
@@ -541,9 +548,7 @@ class TestUpdateTemplate:
 
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
-        await transaction_template_service.update_template(
-            existing_template.id, data, user_id
-        )
+        await transaction_template_service.update_template(existing_template.id, data, user_id)
 
         validate_currency_spy.assert_called_once_with(
             transaction_template_service.currency_repository,
@@ -557,14 +562,13 @@ class TestUpdateTemplate:
 
 
 class TestDeleteTemplate:
-
     async def test_delete_template_success(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            unit_of_work_mock: UnitOfWork,
-            existing_template: TransactionTemplate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_template: TransactionTemplate,
     ):
         user_id = existing_template.user_id
 
@@ -577,7 +581,7 @@ class TestDeleteTemplate:
         validate_template_spy.assert_called_once_with(
             transaction_template_service.transaction_template_repository,
             user_id,
-            existing_template.id
+            existing_template.id,
         )
 
         transaction_template_repo_mock.delete.assert_called_once()
@@ -585,10 +589,10 @@ class TestDeleteTemplate:
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_delete_template_not_found_template(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            unit_of_work_mock: UnitOfWork,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        unit_of_work_mock: UnitOfWork,
     ):
         template_id = 999
         user_id = 1
@@ -605,11 +609,11 @@ class TestDeleteTemplate:
 
 class TestGetTemplate:
     async def test_get_template_success(
-            self,
-            mocker: MockerFixture,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
-            existing_template: TransactionTemplate,
+        self,
+        mocker: MockerFixture,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        existing_template: TransactionTemplate,
     ):
         user_id = existing_template.user_id
 
@@ -624,15 +628,15 @@ class TestGetTemplate:
         validate_template_spy.assert_called_once_with(
             transaction_template_service.transaction_template_repository,
             user_id,
-            existing_template.id
+            existing_template.id,
         )
 
         transaction_template_repo_mock.get_by_id.assert_called_once()
 
     async def test_get_template_not_found_template(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
     ):
         template_id = 999
         user_id = 1
@@ -647,9 +651,9 @@ class TestGetTemplate:
 
 class TestGetUserTemplates:
     async def test_get_user_templates_success(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
     ):
         user_id = 1
 
@@ -666,7 +670,7 @@ class TestGetUserTemplates:
                 name="Salary",
                 description="Salary",
                 amount=Decimal("25000.00"),
-            )
+            ),
         ]
 
         limit = 20
@@ -676,20 +680,14 @@ class TestGetUserTemplates:
 
         result = await transaction_template_service.get_user_templates(user_id, limit, offset)
 
-        assert result == [
-            TransactionTemplateResponse.model_validate(t) for t in user_templates
-        ]
+        assert result == [TransactionTemplateResponse.model_validate(t) for t in user_templates]
 
-        transaction_template_repo_mock.get_by_user.assert_called_once_with(
-            user_id,
-            limit,
-            offset
-        )
+        transaction_template_repo_mock.get_by_user.assert_called_once_with(user_id, limit, offset)
 
     async def test_get_empty_user_templates(
-            self,
-            transaction_template_service: TransactionTemplateService,
-            transaction_template_repo_mock: TransactionTemplateRepository,
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
     ):
         user_id = 1
 
@@ -702,12 +700,6 @@ class TestGetUserTemplates:
 
         result = await transaction_template_service.get_user_templates(user_id, limit, offset)
 
-        assert result == [
-            TransactionTemplateResponse.model_validate(t) for t in user_templates
-        ]
+        assert result == [TransactionTemplateResponse.model_validate(t) for t in user_templates]
 
-        transaction_template_repo_mock.get_by_user.assert_called_once_with(
-            user_id,
-            limit,
-            offset
-        )
+        transaction_template_repo_mock.get_by_user.assert_called_once_with(user_id, limit, offset)

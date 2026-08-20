@@ -7,8 +7,8 @@ API_HEALTH_READY = "/api/v1/health/ready"
 
 class TestHealth:
     async def test_health_success(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_HEALTH)
 
@@ -18,8 +18,8 @@ class TestHealth:
 
 class TestReady:
     async def test_ready_success(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_HEALTH_READY)
 

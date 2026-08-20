@@ -6,7 +6,14 @@ from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
 from app.models import User, Category, Currency, Account
-from app.repositories import UserRepository, CategoryRepository, TransactionRepository, TransactionTemplateRepository, BudgetRepository, AccountRepository
+from app.repositories import (
+    UserRepository,
+    CategoryRepository,
+    TransactionRepository,
+    TransactionTemplateRepository,
+    BudgetRepository,
+    AccountRepository,
+)
 
 
 @pytest.fixture(scope="session")
@@ -72,15 +79,8 @@ async def user(test_session: AsyncSession):
 
 
 @pytest.fixture
-async def category(
-        test_session: AsyncSession,
-        user: User
-):
-    category = Category(
-        name="General",
-        user_id=user.id,
-        archived_at=None
-    )
+async def category(test_session: AsyncSession, user: User):
+    category = Category(name="General", user_id=user.id, archived_at=None)
 
     test_session.add(category)
 
@@ -93,12 +93,7 @@ async def category(
 
 @pytest.fixture
 async def uah_currency(test_session: AsyncSession):
-    currency = Currency(
-        code="UAH",
-        symbol="₴",
-        name="Ukrainian Hryvnia",
-        is_active=True
-    )
+    currency = Currency(code="UAH", symbol="₴", name="Ukrainian Hryvnia", is_active=True)
 
     test_session.add(currency)
 
@@ -111,12 +106,7 @@ async def uah_currency(test_session: AsyncSession):
 
 @pytest.fixture
 async def usd_currency(test_session):
-    currency = Currency(
-        code="USD",
-        symbol="$",
-        name="US Dollar",
-        is_active=True
-    )
+    currency = Currency(code="USD", symbol="$", name="US Dollar", is_active=True)
 
     test_session.add(currency)
 
@@ -126,11 +116,12 @@ async def usd_currency(test_session):
 
     return currency
 
+
 @pytest.fixture
 async def uah_account(
-        test_session: AsyncSession,
-        user: User,
-        uah_currency: Currency,
+    test_session: AsyncSession,
+    user: User,
+    uah_currency: Currency,
 ):
     account = Account(
         name="UAH Account",
@@ -147,9 +138,9 @@ async def uah_account(
 
 @pytest.fixture
 async def usd_account(
-        test_session: AsyncSession,
-        user: User,
-        usd_currency: Currency,
+    test_session: AsyncSession,
+    user: User,
+    usd_currency: Currency,
 ):
     account = Account(
         name="USD Account",
@@ -171,15 +162,13 @@ def category_repository(test_session: AsyncSession):
 
 @pytest.fixture
 def transaction_repository(
-        test_session: AsyncSession,
+    test_session: AsyncSession,
 ):
     return TransactionRepository(test_session)
 
 
 @pytest.fixture
-def transaction_template_repository(
-        test_session: AsyncSession
-):
+def transaction_template_repository(test_session: AsyncSession):
     return TransactionTemplateRepository(test_session)
 
 
@@ -187,9 +176,11 @@ def transaction_template_repository(
 def user_repository(test_session):
     return UserRepository(test_session)
 
+
 @pytest.fixture
 def budget_repository(test_session):
     return BudgetRepository(test_session)
+
 
 @pytest.fixture
 def account_repository(test_session: AsyncSession) -> AccountRepository:

@@ -8,8 +8,8 @@ API_GET_CURRENCIES = "/api/v1/currencies"
 
 class TestGetCurrencies:
     async def test_get_currencies_empty_success_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(API_GET_CURRENCIES)
 
@@ -18,10 +18,10 @@ class TestGetCurrencies:
         assert response.json() == []
 
     async def test_get_currencies_returns_only_active(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
+        inactive_currency: CurrencyData,
     ):
         response = await client.get(API_GET_CURRENCIES)
 
@@ -37,9 +37,9 @@ class TestGetCurrencies:
 
 class TestGetCurrencyByCode:
     async def test_get_currency_by_code_success(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
     ):
         response = await client.get(f"{API_GET_CURRENCIES}/{active_currency['code']}")
 
@@ -53,9 +53,9 @@ class TestGetCurrencyByCode:
         assert body["is_active"] == active_currency["is_active"]
 
     async def test_get_currency_by_code_lowercase_normalized(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
     ):
         response = await client.get(f"{API_GET_CURRENCIES}/{active_currency['code'].lower()}")
 
@@ -69,8 +69,8 @@ class TestGetCurrencyByCode:
         assert body["is_active"] == active_currency["is_active"]
 
     async def test_get_currency_by_code_unknown(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(f"{API_GET_CURRENCIES}/XXX")
 
@@ -79,9 +79,9 @@ class TestGetCurrencyByCode:
         assert "detail" in response.json()
 
     async def test_get_currency_by_code_returns_inactive_currency(
-            self,
-            client: AsyncClient,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        inactive_currency: CurrencyData,
     ):
         response = await client.get(f"{API_GET_CURRENCIES}/{inactive_currency['code']}")
 

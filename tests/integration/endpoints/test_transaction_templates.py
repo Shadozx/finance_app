@@ -3,42 +3,47 @@ from fastapi import status
 
 from httpx import AsyncClient
 
-from tests.integration.endpoints.types import CategoryData, CurrencyData, AuthenticatedUser, TransactionTemplateData, \
-    AccountData
-from tests.integration.endpoints.helpers import transaction_template_payload, create_transaction_template, archive_category
+from tests.integration.endpoints.types import (
+    CategoryData,
+    CurrencyData,
+    AuthenticatedUser,
+    TransactionTemplateData,
+    AccountData,
+)
+from tests.integration.endpoints.helpers import (
+    transaction_template_payload,
+    create_transaction_template,
+    archive_category,
+)
 
 API_TRANSACTION_TEMPLATES = "/api/v1/transactions/templates"
 
 
 @pytest.fixture
 async def created_transaction_template(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    active_currency: CurrencyData,
 ):
     payload = transaction_template_payload(
         currency_code=active_currency["code"],
     )
 
-    return await create_transaction_template(
-        client,
-        payload,
-        authenticated_user["headers"]
-    )
+    return await create_transaction_template(client, payload, authenticated_user["headers"])
 
 
 class TestCreateTransactionTemplate:
     async def test_create_template_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
             category_id=created_category["id"],
-            description="Daily lunch"
+            description="Daily lunch",
         )
 
         response = await client.post(
@@ -70,10 +75,10 @@ class TestCreateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_create_template_without_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -108,10 +113,10 @@ class TestCreateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_create_template_zero_amount_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             amount="0.00",
@@ -137,10 +142,10 @@ class TestCreateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_create_template_duplicate_name(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -173,11 +178,11 @@ class TestCreateTransactionTemplate:
         assert "detail" in duplicate_response.json()
 
     async def test_create_template_same_name_for_different_users_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -204,12 +209,12 @@ class TestCreateTransactionTemplate:
         assert other_user_response.json()["user_id"] == other_authenticated_user["user"]["id"]
 
     async def test_create_template_with_other_user_category_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -227,11 +232,11 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_with_archived_category_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -249,10 +254,10 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_with_unknown_category_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -270,10 +275,10 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_with_inactive_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        inactive_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=inactive_currency["code"],
@@ -290,9 +295,9 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_with_unknown_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         payload = transaction_template_payload(
             currency_code="XXX",
@@ -309,10 +314,10 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_currency_code_normalized(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"].lower(),
@@ -328,27 +333,30 @@ class TestCreateTransactionTemplate:
 
         assert response.json()["currency_code"] == active_currency["code"]
 
-    @pytest.mark.parametrize("payload_update, reason", [
-        ({"name": ""}, "empty_name"),
-        ({"name": "   "}, "blank_name"),
-        ({"name": "a" * 101}, "name_too_long"),
-        ({"name": None}, "name_null"),
-        ({"amount": "-1.00"}, "negative_amount"),
-        ({"amount": None}, "amount_null"),
-        ({"type": None}, "type_null"),
-        ({"type": "wrong"}, "invalid_type"),
-        ({"currency_code": None}, "currency_code_null"),
-        ({"currency_code": "US"}, "currency_code_too_short"),
-        ({"currency_code": "USDD"}, "currency_code_too_long"),
-        ({"description": "x" * 1025}, "description_too_long"),
-    ])
+    @pytest.mark.parametrize(
+        "payload_update, reason",
+        [
+            ({"name": ""}, "empty_name"),
+            ({"name": "   "}, "blank_name"),
+            ({"name": "a" * 101}, "name_too_long"),
+            ({"name": None}, "name_null"),
+            ({"amount": "-1.00"}, "negative_amount"),
+            ({"amount": None}, "amount_null"),
+            ({"type": None}, "type_null"),
+            ({"type": "wrong"}, "invalid_type"),
+            ({"currency_code": None}, "currency_code_null"),
+            ({"currency_code": "US"}, "currency_code_too_short"),
+            ({"currency_code": "USDD"}, "currency_code_too_long"),
+            ({"description": "x" * 1025}, "description_too_long"),
+        ],
+    )
     async def test_create_template_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            payload_update: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        payload_update: dict[str, object],
+        reason: str,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -365,18 +373,21 @@ class TestCreateTransactionTemplate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("missing_field", [
-        "name",
-        "amount",
-        "type",
-        "currency_code",
-    ])
+    @pytest.mark.parametrize(
+        "missing_field",
+        [
+            "name",
+            "amount",
+            "type",
+            "currency_code",
+        ],
+    )
     async def test_create_template_required_fields_missing(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
-            missing_field: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        missing_field: str,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -394,9 +405,9 @@ class TestCreateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_create_template_without_token(
-            self,
-            client: AsyncClient,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -414,9 +425,9 @@ class TestCreateTransactionTemplate:
 
 class TestGetTransactionTemplates:
     async def test_get_templates_empty(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_TRANSACTION_TEMPLATES,
@@ -428,10 +439,10 @@ class TestGetTransactionTemplates:
         assert response.json() == []
 
     async def test_get_templates_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.get(
             API_TRANSACTION_TEMPLATES,
@@ -451,11 +462,11 @@ class TestGetTransactionTemplates:
         assert body[0]["user_id"] == authenticated_user["user"]["id"]
 
     async def test_get_templates_returns_only_own_templates(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         other_user_transaction_template = await create_transaction_template(
             client,
@@ -463,7 +474,7 @@ class TestGetTransactionTemplates:
                 name=created_transaction_template["name"],
                 currency_code=created_transaction_template["currency_code"],
             ),
-            other_authenticated_user["headers"]
+            other_authenticated_user["headers"],
         )
 
         response = await client.get(
@@ -486,10 +497,10 @@ class TestGetTransactionTemplates:
         assert other_user_transaction_template["id"] not in ids
 
     async def test_get_templates_pagination_limit(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         first_template = await create_transaction_template(
             client,
@@ -498,7 +509,7 @@ class TestGetTransactionTemplates:
                 amount="800.00",
                 currency_code=created_transaction_template["currency_code"],
             ),
-            authenticated_user["headers"]
+            authenticated_user["headers"],
         )
 
         second_template = await create_transaction_template(
@@ -508,7 +519,7 @@ class TestGetTransactionTemplates:
                 amount="255.00",
                 currency_code=created_transaction_template["currency_code"],
             ),
-            authenticated_user["headers"]
+            authenticated_user["headers"],
         )
 
         limit = 2
@@ -540,10 +551,10 @@ class TestGetTransactionTemplates:
         assert limited_ids.issubset(all_ids)
 
     async def test_get_templates_pagination_offset(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         await create_transaction_template(
             client,
@@ -552,7 +563,7 @@ class TestGetTransactionTemplates:
                 amount="800.00",
                 currency_code=created_transaction_template["currency_code"],
             ),
-            authenticated_user["headers"]
+            authenticated_user["headers"],
         )
 
         await create_transaction_template(
@@ -562,7 +573,7 @@ class TestGetTransactionTemplates:
                 amount="255.00",
                 currency_code=created_transaction_template["currency_code"],
             ),
-            authenticated_user["headers"]
+            authenticated_user["headers"],
         )
 
         all_response = await client.get(
@@ -598,8 +609,8 @@ class TestGetTransactionTemplates:
         assert offset_ids.issubset(all_ids)
 
     async def test_get_templates_without_token(
-            self,
-            client: AsyncClient,
+        self,
+        client: AsyncClient,
     ):
         response = await client.get(
             API_TRANSACTION_TEMPLATES,
@@ -609,11 +620,12 @@ class TestGetTransactionTemplates:
 
         assert "detail" in response.json()
 
+
 class TestTemplatePaginationBoundaries:
     async def test_get_templates_limit_above_max_rejected(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             API_TRANSACTION_TEMPLATES,
@@ -624,12 +636,13 @@ class TestTemplatePaginationBoundaries:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
+
 class TestGetTransactionTemplateById:
     async def test_get_template_by_id_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -651,9 +664,9 @@ class TestGetTransactionTemplateById:
         assert body["created_at"] is not None
 
     async def test_get_template_by_id_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/999",
@@ -665,11 +678,11 @@ class TestGetTransactionTemplateById:
         assert "detail" in response.json()
 
     async def test_get_template_by_id_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -681,9 +694,9 @@ class TestGetTransactionTemplateById:
         assert "detail" in response.json()
 
     async def test_get_template_by_id_without_token(
-            self,
-            client: AsyncClient,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}"
@@ -694,9 +707,9 @@ class TestGetTransactionTemplateById:
         assert "detail" in response.json()
 
     async def test_get_template_by_id_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/abc",
@@ -710,12 +723,12 @@ class TestGetTransactionTemplateById:
 
 class TestUpdateTransactionTemplate:
     async def test_update_template_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -747,11 +760,11 @@ class TestUpdateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_update_template_without_category_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -781,11 +794,11 @@ class TestUpdateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_update_template_zero_amount_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -811,10 +824,10 @@ class TestUpdateTransactionTemplate:
         assert body["user_id"] == authenticated_user["user"]["id"]
 
     async def test_update_template_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -833,12 +846,12 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -857,11 +870,11 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_duplicate_name_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Salary",
@@ -890,11 +903,11 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_same_name_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name=created_transaction_template["name"],
@@ -916,11 +929,11 @@ class TestUpdateTransactionTemplate:
         assert body["created_at"] is not None
 
     async def test_update_template_with_other_user_category_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         other_template = await create_transaction_template(
             client,
@@ -937,7 +950,8 @@ class TestUpdateTransactionTemplate:
             json=transaction_template_payload(
                 name="Updated template",
                 currency_code=active_currency["code"],
-                category_id=created_category["id"]),
+                category_id=created_category["id"],
+            ),
             headers=other_authenticated_user["headers"],
         )
 
@@ -946,12 +960,12 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_with_archived_category_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            archived_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        archived_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         response = await client.put(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -968,11 +982,11 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_with_unknown_category_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         response = await client.put(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -989,17 +1003,16 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_with_inactive_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            inactive_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        inactive_currency: CurrencyData,
     ):
         response = await client.put(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
             json=transaction_template_payload(
-                name="Updated template",
-                currency_code=inactive_currency["code"]
+                name="Updated template", currency_code=inactive_currency["code"]
             ),
             headers=authenticated_user["headers"],
         )
@@ -1009,17 +1022,14 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_with_unknown_currency_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.put(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
-            json=transaction_template_payload(
-                name="Updated template",
-                currency_code="XXX"
-            ),
+            json=transaction_template_payload(name="Updated template", currency_code="XXX"),
             headers=authenticated_user["headers"],
         )
 
@@ -1028,11 +1038,11 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_currency_code_normalized(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         payload = transaction_template_payload(
             name="Updated template",
@@ -1053,28 +1063,31 @@ class TestUpdateTransactionTemplate:
         assert body["currency_code"] == active_currency["code"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
-    @pytest.mark.parametrize("payload_update, reason", [
-        ({"name": ""}, "empty_name"),
-        ({"name": "   "}, "blank_name"),
-        ({"name": "a" * 101}, "name_too_long"),
-        ({"name": None}, "name_null"),
-        ({"amount": "-1.00"}, "negative_amount"),
-        ({"amount": None}, "amount_null"),
-        ({"type": None}, "type_null"),
-        ({"type": "wrong"}, "invalid_type"),
-        ({"currency_code": None}, "currency_code_null"),
-        ({"currency_code": "US"}, "currency_code_too_short"),
-        ({"currency_code": "USDD"}, "currency_code_too_long"),
-        ({"description": "x" * 1025}, "description_too_long"),
-    ])
+    @pytest.mark.parametrize(
+        "payload_update, reason",
+        [
+            ({"name": ""}, "empty_name"),
+            ({"name": "   "}, "blank_name"),
+            ({"name": "a" * 101}, "name_too_long"),
+            ({"name": None}, "name_null"),
+            ({"amount": "-1.00"}, "negative_amount"),
+            ({"amount": None}, "amount_null"),
+            ({"type": None}, "type_null"),
+            ({"type": "wrong"}, "invalid_type"),
+            ({"currency_code": None}, "currency_code_null"),
+            ({"currency_code": "US"}, "currency_code_too_short"),
+            ({"currency_code": "USDD"}, "currency_code_too_long"),
+            ({"description": "x" * 1025}, "description_too_long"),
+        ],
+    )
     async def test_update_template_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
-            payload_update: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
+        payload_update: dict[str, object],
+        reason: str,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -1091,19 +1104,22 @@ class TestUpdateTransactionTemplate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("missing_field", [
-        "name",
-        "amount",
-        "type",
-        "currency_code",
-    ])
+    @pytest.mark.parametrize(
+        "missing_field",
+        [
+            "name",
+            "amount",
+            "type",
+            "currency_code",
+        ],
+    )
     async def test_update_template_required_fields_missing(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
-            missing_field: str
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
+        missing_field: str,
     ):
         payload = transaction_template_payload(
             currency_code=active_currency["code"],
@@ -1121,11 +1137,11 @@ class TestUpdateTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_update_template_keeps_archived_category_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_category: CategoryData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
     ):
         created_transaction_template = await create_transaction_template(
             client,
@@ -1161,10 +1177,10 @@ class TestUpdateTransactionTemplate:
         assert body["category_id"] == created_category["id"]
 
     async def test_update_template_without_token(
-            self,
-            client: AsyncClient,
-            created_transaction_template: TransactionTemplateData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        created_transaction_template: TransactionTemplateData,
+        active_currency: CurrencyData,
     ):
         response = await client.put(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -1180,10 +1196,10 @@ class TestUpdateTransactionTemplate:
 
 class TestDeleteTransactionTemplate:
     async def test_delete_template_hard_delete_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.delete(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -1204,9 +1220,9 @@ class TestDeleteTransactionTemplate:
         assert "detail" in not_found_response.json()
 
     async def test_delete_template_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
             f"{API_TRANSACTION_TEMPLATES}/999",
@@ -1218,10 +1234,10 @@ class TestDeleteTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_delete_template_other_user_forbidden(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.delete(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -1233,9 +1249,9 @@ class TestDeleteTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_delete_template_without_token(
-            self,
-            client: AsyncClient,
-            created_transaction_template: TransactionTemplateData,
+        self,
+        client: AsyncClient,
+        created_transaction_template: TransactionTemplateData,
     ):
         response = await client.delete(
             f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}",
@@ -1246,9 +1262,9 @@ class TestDeleteTransactionTemplate:
         assert "detail" in response.json()
 
     async def test_delete_template_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
             f"{API_TRANSACTION_TEMPLATES}/abc",

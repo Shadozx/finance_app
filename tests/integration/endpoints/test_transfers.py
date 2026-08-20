@@ -29,9 +29,9 @@ API_ACCOUNTS = "/api/v1/accounts"
 
 @pytest.fixture
 async def same_currency_account(
-        client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
-        active_currency: CurrencyData,
+    client: AsyncClient,
+    authenticated_user: AuthenticatedUser,
+    active_currency: CurrencyData,
 ) -> AccountData:
     """Second USD account — for same-currency transfers, where amounts must match."""
     return await create_account(
@@ -42,9 +42,9 @@ async def same_currency_account(
 
 
 async def get_balance(
-        client: AsyncClient,
-        account_id: int,
-        headers: dict[str, str],
+    client: AsyncClient,
+    account_id: int,
+    headers: dict[str, str],
 ) -> str:
     """Read the account balance back through the API, as a serialized string."""
     response = await client.get(f"{API_ACCOUNTS}/{account_id}", headers=headers)
@@ -53,13 +53,14 @@ async def get_balance(
 
     return response.json()["balance"]
 
+
 class TestCreateTransfer:
     async def test_create_transfer_cross_currency_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -96,11 +97,11 @@ class TestCreateTransfer:
         assert body["date"] == payload["date"]
 
     async def test_create_transfer_same_currency_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -123,12 +124,12 @@ class TestCreateTransfer:
         assert body["exchange_rate"] is None
 
     async def test_create_transfer_updates_both_balances(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        created_transfer: TransferData,
     ):
         headers = authenticated_user["headers"]
 
@@ -136,10 +137,10 @@ class TestCreateTransfer:
         assert await get_balance(client, uah_account["id"], headers) == "1000.00"
 
     async def test_create_transfer_excluded_from_statistics(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
     ):
         """Money moved between own accounts is neither income nor expense."""
         response = await client.get(
@@ -153,11 +154,11 @@ class TestCreateTransfer:
         assert response.json()["currencies"] == []
 
     async def test_create_transfer_same_currency_different_amounts_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -176,11 +177,11 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_with_archived_account_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            archived_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        archived_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -197,11 +198,11 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_from_archived_account_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            archived_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_account: AccountData,
+        same_currency_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=archived_account["id"],
@@ -218,12 +219,12 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_with_other_user_account_forbidden(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
     ):
         other_account = await create_account(
             client,
@@ -246,10 +247,10 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_with_unknown_account_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -265,26 +266,29 @@ class TestCreateTransfer:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("payload_update, reason", [
-        ({"from_amount": "-1.00"}, "negative_from_amount"),
-        ({"to_amount": "-1.00"}, "negative_to_amount"),
-        ({"from_amount": "0.00", "to_amount": "0.00"}, "zero_amounts"),
-        ({"from_amount": None}, "from_amount_null"),
-        ({"to_amount": None}, "to_amount_null"),
-        ({"date": "not-a-date"}, "invalid_date_format"),
-        ({"date": None}, "date_null"),
-        ({"description": "x" * 1025}, "description_too_long"),
-        ({"from_account_id": "abc"}, "from_account_id_not_int"),
-        ({"to_account_id": None}, "to_account_id_null"),
-    ])
+    @pytest.mark.parametrize(
+        "payload_update, reason",
+        [
+            ({"from_amount": "-1.00"}, "negative_from_amount"),
+            ({"to_amount": "-1.00"}, "negative_to_amount"),
+            ({"from_amount": "0.00", "to_amount": "0.00"}, "zero_amounts"),
+            ({"from_amount": None}, "from_amount_null"),
+            ({"to_amount": None}, "to_amount_null"),
+            ({"date": "not-a-date"}, "invalid_date_format"),
+            ({"date": None}, "date_null"),
+            ({"description": "x" * 1025}, "description_too_long"),
+            ({"from_account_id": "abc"}, "from_account_id_not_int"),
+            ({"to_account_id": None}, "to_account_id_null"),
+        ],
+    )
     async def test_create_transfer_validation_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
-            payload_update: dict[str, object],
-            reason: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+        payload_update: dict[str, object],
+        reason: str,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -303,10 +307,10 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_to_same_account_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
     ):
         """Moving money to the same account is a no-op, not a transfer."""
         payload = transfer_payload(
@@ -323,20 +327,23 @@ class TestCreateTransfer:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
-    @pytest.mark.parametrize("missing_field", [
-        "from_account_id",
-        "to_account_id",
-        "from_amount",
-        "to_amount",
-        "date",
-    ])
+    @pytest.mark.parametrize(
+        "missing_field",
+        [
+            "from_account_id",
+            "to_account_id",
+            "from_amount",
+            "to_amount",
+            "date",
+        ],
+    )
     async def test_create_transfer_required_fields_missing(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
-            missing_field: str,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+        missing_field: str,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -355,13 +362,13 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_with_deactivated_currency_fails(
-            self,
-            client: AsyncClient,
-            test_session: AsyncSession,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            second_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        second_currency: CurrencyData,
     ):
         """A currency switched off by an admin blocks new records, transfers included."""
         currency = await test_session.get(Currency, second_currency["code"])
@@ -385,10 +392,10 @@ class TestCreateTransfer:
         assert "detail" in response.json()
 
     async def test_create_transfer_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
+        same_currency_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -403,10 +410,10 @@ class TestCreateTransfer:
 
 class TestGetTransfer:
     async def test_get_transfer_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
     ):
         response = await client.get(
             f"{API_TRANSFERS}/{created_transfer['transfer_group_id']}",
@@ -418,9 +425,9 @@ class TestGetTransfer:
         assert response.json() == created_transfer
 
     async def test_get_transfer_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_TRANSFERS}/{uuid.uuid4()}",
@@ -431,10 +438,10 @@ class TestGetTransfer:
         assert "detail" in response.json()
 
     async def test_get_transfer_other_user_not_found(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
     ):
         """A group id is not a resource id: someone else's group simply does not exist."""
         response = await client.get(
@@ -446,9 +453,9 @@ class TestGetTransfer:
         assert "detail" in response.json()
 
     async def test_get_transfer_invalid_id(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.get(
             f"{API_TRANSFERS}/abc",
@@ -459,9 +466,9 @@ class TestGetTransfer:
         assert "detail" in response.json()
 
     async def test_get_transfer_without_token(
-            self,
-            client: AsyncClient,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        created_transfer: TransferData,
     ):
         response = await client.get(
             f"{API_TRANSFERS}/{created_transfer['transfer_group_id']}",
@@ -473,12 +480,12 @@ class TestGetTransfer:
 
 class TestUpdateTransfer:
     async def test_update_transfer_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        created_transfer: TransferData,
     ):
         headers = authenticated_user["headers"]
 
@@ -511,12 +518,12 @@ class TestUpdateTransfer:
         assert await get_balance(client, uah_account["id"], headers) == "2000.00"
 
     async def test_update_transfer_swap_accounts_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        created_transfer: TransferData,
     ):
         """Swapping from/to must flip both sides, not leave two rows in one direction."""
         headers = authenticated_user["headers"]
@@ -540,12 +547,12 @@ class TestUpdateTransfer:
         assert await get_balance(client, uah_account["id"], headers) == "-1000.00"
 
     async def test_update_transfer_on_archived_account_allowed(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        created_transfer: TransferData,
     ):
         """Archiving forbids new usage, not fixing a typo in what already exists."""
         headers = authenticated_user["headers"]
@@ -574,12 +581,12 @@ class TestUpdateTransfer:
         assert response.json()["from_amount"] == "30.00"
 
     async def test_update_transfer_to_archived_account_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            archived_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        archived_account: AccountData,
+        created_transfer: TransferData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -596,11 +603,11 @@ class TestUpdateTransfer:
         assert "detail" in response.json()
 
     async def test_update_transfer_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -617,11 +624,11 @@ class TestUpdateTransfer:
         assert "detail" in response.json()
 
     async def test_update_transfer_other_user_not_found(
-            self,
-            client: AsyncClient,
-            other_authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
-            active_currency: CurrencyData,
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
+        active_currency: CurrencyData,
     ):
         other_account = await create_account(
             client,
@@ -650,11 +657,11 @@ class TestUpdateTransfer:
         assert "detail" in response.json()
 
     async def test_update_transfer_same_currency_different_amounts_fails(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            same_currency_account: AccountData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
     ):
         created = await create_transfer(
             client,
@@ -682,11 +689,11 @@ class TestUpdateTransfer:
         assert "detail" in response.json()
 
     async def test_update_transfer_without_token(
-            self,
-            client: AsyncClient,
-            created_account: AccountData,
-            same_currency_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+        created_transfer: TransferData,
     ):
         payload = transfer_payload(
             from_account_id=created_account["id"],
@@ -704,12 +711,12 @@ class TestUpdateTransfer:
 
 class TestDeleteTransfer:
     async def test_delete_transfer_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_account: AccountData,
-            uah_account: AccountData,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        created_transfer: TransferData,
     ):
         headers = authenticated_user["headers"]
 
@@ -729,10 +736,10 @@ class TestDeleteTransfer:
         assert registry.json() == []
 
     async def test_delete_transfer_hard_delete_success(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
     ):
         delete_response = await client.delete(
             f"{API_TRANSFERS}/{created_transfer['transfer_group_id']}",
@@ -750,9 +757,9 @@ class TestDeleteTransfer:
         assert "detail" in get_response.json()
 
     async def test_delete_transfer_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
     ):
         response = await client.delete(
             f"{API_TRANSFERS}/{uuid.uuid4()}",
@@ -763,11 +770,11 @@ class TestDeleteTransfer:
         assert "detail" in response.json()
 
     async def test_delete_transfer_other_user_not_found(
-            self,
-            client: AsyncClient,
-            authenticated_user: AuthenticatedUser,
-            other_authenticated_user: AuthenticatedUser,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_transfer: TransferData,
     ):
         response = await client.delete(
             f"{API_TRANSFERS}/{created_transfer['transfer_group_id']}",
@@ -786,9 +793,9 @@ class TestDeleteTransfer:
         assert get_response.status_code == status.HTTP_200_OK
 
     async def test_delete_transfer_without_token(
-            self,
-            client: AsyncClient,
-            created_transfer: TransferData,
+        self,
+        client: AsyncClient,
+        created_transfer: TransferData,
     ):
         response = await client.delete(
             f"{API_TRANSFERS}/{created_transfer['transfer_group_id']}",
