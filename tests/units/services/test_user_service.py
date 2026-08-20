@@ -2,12 +2,12 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
-from app.repositories import UserRepository
-from app.services import UserService
+from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
 from app.models import User
-from app.schemas import UserCreate, UserLogin, UserResponse, UsernameUpdate, PasswordUpdate
-from app.core.exceptions import ValueExistsException, AuthenticationException, ValidationException
-from tests.units.services.helpers import assert_model_fields, as_persisted, make_user
+from app.repositories import UserRepository
+from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
+from app.services import UserService
+from tests.units.services.helpers import as_persisted, assert_model_fields, make_user
 
 
 class TestRegister:

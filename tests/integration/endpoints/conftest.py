@@ -5,29 +5,27 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.api.dependencies import get_session
+from app.main import app
 from app.models import Currency
-
 from tests.integration.endpoints.helpers import (
-    register_payload,
-    category_payload,
-    create_category,
-    archive_category,
-    create_account,
     account_payload,
     archive_account,
-    transfer_payload,
+    archive_category,
+    category_payload,
+    create_account,
+    create_category,
     create_transfer,
+    register_payload,
+    transfer_payload,
 )
-
 from tests.integration.endpoints.types import (
+    AccountData,
     AuthenticatedUser,
     CategoryData,
     CurrencyData,
-    UserData,
-    AccountData,
     TransferData,
+    UserData,
 )
 
 

@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.repositories import UserRepository
 from app.models import User
+from app.repositories import UserRepository
 
 
 class TestAdd:

@@ -1,21 +1,20 @@
 import uuid
 
 import pytest
-from httpx import AsyncClient
 from fastapi import status
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Currency
-
 from tests.integration.endpoints.helpers import (
-    transfer_payload,
-    create_transfer,
     account_payload,
     create_account,
+    create_transfer,
+    transfer_payload,
 )
 from tests.integration.endpoints.types import (
-    AuthenticatedUser,
     AccountData,
+    AuthenticatedUser,
     CurrencyData,
     TransferData,
 )

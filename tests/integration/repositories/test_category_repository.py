@@ -1,11 +1,11 @@
 from datetime import datetime
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories import UserRepository, CategoryRepository
-from app.models import User, Category
+from app.models import Category, User
+from app.repositories import CategoryRepository, UserRepository
 from app.schemas import CategoryStatus
 
 

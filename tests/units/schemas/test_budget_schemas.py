@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import BudgetCreate, BudgetFilters, BudgetStatusResponse, BudgetResponse
+from app.schemas import BudgetCreate, BudgetFilters, BudgetResponse, BudgetStatusResponse
 
 
 class TestBudgetCreate:

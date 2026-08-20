@@ -1,6 +1,6 @@
+from app.core.exceptions import NotFoundException
 from app.repositories import CurrencyRepository
 from app.schemas import CurrencyResponse
-from app.core.exceptions import NotFoundException
 
 
 class CurrencyService:

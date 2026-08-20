@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
-from app.schemas.validators import username_validator, password_validator
+from app.schemas.validators import password_validator, username_validator
 
 
 # --- Pydantic-схеми ---

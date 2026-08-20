@@ -2,14 +2,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    ForeignKey,
-    Numeric,
-    Enum,
-    String,
-    DateTime,
-    UniqueConstraint,
     CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
     Index,
+    Numeric,
+    String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, validates
 

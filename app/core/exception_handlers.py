@@ -1,11 +1,8 @@
+import structlog
 from fastapi import Request
 from fastapi.responses import JSONResponse
-
-from sqlalchemy.exc import IntegrityError
-
 from pydantic import ValidationError
-
-import structlog
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.exceptions import AppException

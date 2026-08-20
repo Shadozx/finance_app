@@ -1,13 +1,13 @@
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_current_user, get_transaction_template_service
-from app.services import TransactionTemplateService
+from app.models import User
 from app.schemas import (
-    TransactionTemplateResponse,
     TransactionTemplateCreate,
+    TransactionTemplateResponse,
     TransactionTemplateUpdate,
 )
-from app.models import User
+from app.services import TransactionTemplateService
 
 router = APIRouter(prefix="/transactions/templates", tags=["transaction templates"])
 

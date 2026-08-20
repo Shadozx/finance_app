@@ -1,9 +1,8 @@
-from pytest_mock import MockerFixture
 from fastapi import status
 from httpx import AsyncClient
+from pytest_mock import MockerFixture
 
 from app.repositories import CategoryRepository
-
 from tests.integration.endpoints.helpers import category_payload, create_category
 from tests.integration.endpoints.types import AuthenticatedUser
 

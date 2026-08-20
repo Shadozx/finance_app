@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, InvalidHashError
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
+from jose import JWTError, jwt
 
 from app.core import settings
 

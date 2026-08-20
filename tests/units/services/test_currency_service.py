@@ -1,10 +1,10 @@
 import pytest
 
+from app.core.exceptions import NotFoundException
 from app.models import Currency
-from app.services import CurrencyService
 from app.repositories import CurrencyRepository
 from app.schemas import CurrencyResponse
-from app.core.exceptions import NotFoundException
+from app.services import CurrencyService
 
 
 class TestGetActiveCurrencies:

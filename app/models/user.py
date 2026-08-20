@@ -1,8 +1,8 @@
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import String, DateTime
-from sqlalchemy.orm import mapped_column, Mapped, validates
+from sqlalchemy import DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
 from app.models.mixins import utc_now

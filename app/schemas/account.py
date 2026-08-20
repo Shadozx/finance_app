@@ -1,11 +1,10 @@
 from datetime import datetime
 from decimal import Decimal
-
 from enum import Enum
 
-from pydantic import BaseModel, field_validator, ConfigDict, field_serializer
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
-from app.schemas.validators import name_validator, currency_code_validator
+from app.schemas.validators import currency_code_validator, name_validator
 
 
 class AccountStatus(str, Enum):

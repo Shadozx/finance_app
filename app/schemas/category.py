@@ -1,7 +1,7 @@
+from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, field_validator, ConfigDict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.schemas.validators import name_validator
 

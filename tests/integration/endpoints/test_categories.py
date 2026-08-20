@@ -2,7 +2,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from tests.integration.endpoints.helpers import category_payload, create_category, archive_category
+from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
 from tests.integration.endpoints.types import AuthenticatedUser, CategoryData
 
 API_CATEGORIES = "/api/v1/categories"

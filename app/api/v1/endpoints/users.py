@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, status, Request
+from fastapi import APIRouter, Depends, Request, status
 
-from app.models import User
-from app.schemas import UserResponse, UsernameUpdate, PasswordUpdate
 from app.api.dependencies import get_current_user, get_user_service
-from app.services import UserService
-
 from app.core.rate_limiter import limiter
+from app.models import User
+from app.schemas import PasswordUpdate, UsernameUpdate, UserResponse
+from app.services import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 

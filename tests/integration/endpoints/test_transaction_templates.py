@@ -1,19 +1,18 @@
 import pytest
 from fastapi import status
-
 from httpx import AsyncClient
 
+from tests.integration.endpoints.helpers import (
+    archive_category,
+    create_transaction_template,
+    transaction_template_payload,
+)
 from tests.integration.endpoints.types import (
+    AccountData,
+    AuthenticatedUser,
     CategoryData,
     CurrencyData,
-    AuthenticatedUser,
     TransactionTemplateData,
-    AccountData,
-)
-from tests.integration.endpoints.helpers import (
-    transaction_template_payload,
-    create_transaction_template,
-    archive_category,
 )
 
 API_TRANSACTION_TEMPLATES = "/api/v1/transactions/templates"

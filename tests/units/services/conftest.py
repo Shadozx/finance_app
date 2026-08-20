@@ -1,47 +1,47 @@
-import pytest
-from pytest_mock import MockerFixture
-
 import datetime
 from decimal import Decimal
 
+import pytest
+from pytest_mock import MockerFixture
+
 from app.core import UnitOfWork
-from app.services import (
-    TransactionService,
-    CategoryService,
-    CurrencyService,
-    UserService,
-    TransactionTemplateService,
-    BudgetService,
-    AccountService,
-    TransferService,
+from app.models import (
+    Account,
+    Budget,
+    Category,
+    Currency,
+    Transaction,
+    TransactionKind,
+    TransactionTemplate,
+    TransactionType,
+    User,
 )
 from app.repositories import (
-    TransactionRepository,
-    CurrencyRepository,
-    CategoryRepository,
-    UserRepository,
-    TransactionTemplateRepository,
-    BudgetRepository,
     AccountRepository,
+    BudgetRepository,
+    CategoryRepository,
+    CurrencyRepository,
+    TransactionRepository,
+    TransactionTemplateRepository,
+    UserRepository,
 )
-from app.models import (
-    Transaction,
-    TransactionType,
-    TransactionKind,
-    Currency,
-    Category,
-    User,
-    TransactionTemplate,
-    Budget,
-    Account,
+from app.services import (
+    AccountService,
+    BudgetService,
+    CategoryService,
+    CurrencyService,
+    TransactionService,
+    TransactionTemplateService,
+    TransferService,
+    UserService,
 )
 from tests.units.services.helpers import (
-    make_user,
     make_account,
-    make_transaction_template,
-    make_transaction,
     make_budget,
     make_category,
+    make_transaction,
+    make_transaction_template,
+    make_user,
 )
 
 

@@ -1,18 +1,18 @@
 import asyncio
-import pytest
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
-from app.models import User, Category, Currency, Account
+from app.models import Account, Category, Currency, User
 from app.repositories import (
-    UserRepository,
+    AccountRepository,
+    BudgetRepository,
     CategoryRepository,
     TransactionRepository,
     TransactionTemplateRepository,
-    BudgetRepository,
-    AccountRepository,
+    UserRepository,
 )
 
 

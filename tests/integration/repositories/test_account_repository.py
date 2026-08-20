@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories import UserRepository, AccountRepository
-from app.models import User, Account, Currency
+from app.models import Account, Currency, User
+from app.repositories import AccountRepository, UserRepository
 from app.schemas import AccountStatus
 
 

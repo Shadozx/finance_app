@@ -1,30 +1,30 @@
 from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.core import get_session, verify_token, UnitOfWork
+from app.core import UnitOfWork, get_session, verify_token
 from app.core.exceptions import AuthenticationException
-from app.services import (
-    UserService,
-    CategoryService,
-    TransactionService,
-    CurrencyService,
-    TransactionTemplateService,
-    StatisticsService,
-    BudgetService,
-    AccountService,
-    TransferService,
-)
-from app.repositories import (
-    UserRepository,
-    CategoryRepository,
-    TransactionRepository,
-    CurrencyRepository,
-    TransactionTemplateRepository,
-    BudgetRepository,
-    AccountRepository,
-)
 from app.models import User
+from app.repositories import (
+    AccountRepository,
+    BudgetRepository,
+    CategoryRepository,
+    CurrencyRepository,
+    TransactionRepository,
+    TransactionTemplateRepository,
+    UserRepository,
+)
+from app.services import (
+    AccountService,
+    BudgetService,
+    CategoryService,
+    CurrencyService,
+    StatisticsService,
+    TransactionService,
+    TransactionTemplateService,
+    TransferService,
+    UserService,
+)
 
 
 def get_user_service(

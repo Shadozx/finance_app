@@ -1,18 +1,14 @@
+from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import ColumnElement, Select, and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, Select, func, ColumnElement, case, delete, and_
-
-from decimal import Decimal
-
-from datetime import date
-
 from sqlalchemy.orm import aliased
 
-from app.models import Transaction, Category, TransactionType, TransactionKind
-from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
-
-from app.repositories.types import SummaryRow, CategorySummaryRow, TransactionFilterProtocol
+from app.models import Category, Transaction, TransactionKind, TransactionType
+from app.repositories.types import CategorySummaryRow, SummaryRow, TransactionFilterProtocol
+from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 
 
 class TransactionRepository:

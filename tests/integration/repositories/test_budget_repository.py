@@ -1,15 +1,15 @@
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
+from app.models import Account, Budget, Category, Currency, TransactionKind, TransactionType, User
 from app.repositories import (
+    AccountRepository,
     BudgetRepository,
     TransactionRepository,
     UserRepository,
-    AccountRepository,
 )
-from app.models import Budget, TransactionType, TransactionKind, User, Category, Currency, Account
 from tests.integration.repositories.helpers import make_transaction
 
 

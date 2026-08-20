@@ -1,11 +1,11 @@
 from decimal import Decimal
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User, TransactionTemplate, TransactionType, Currency
-from app.repositories import UserRepository, TransactionTemplateRepository
+from app.models import Currency, TransactionTemplate, TransactionType, User
+from app.repositories import TransactionTemplateRepository, UserRepository
 
 
 @pytest.fixture

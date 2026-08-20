@@ -1,7 +1,6 @@
 import re
-from decimal import Decimal
-
 from datetime import date
+from decimal import Decimal
 
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 

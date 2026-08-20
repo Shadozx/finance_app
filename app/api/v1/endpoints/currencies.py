@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import get_currency_service
-from app.services import CurrencyService
 from app.schemas import CurrencyResponse
+from app.services import CurrencyService
 
 router = APIRouter(prefix="/currencies", tags=["currencies"])
 

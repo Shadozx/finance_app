@@ -6,11 +6,11 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
-from app.services import TransferService, validators
-from app.repositories import TransactionRepository, AccountRepository, CurrencyRepository
-from app.models import Transaction, TransactionType, TransactionKind, Account, Currency
+from app.core.exceptions import NotAllowedActionException, NotFoundException
+from app.models import Account, Currency, Transaction, TransactionKind, TransactionType
+from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import TransferCreate, TransferUpdate
-from app.core.exceptions import NotFoundException, NotAllowedActionException
+from app.services import TransferService, validators
 from tests.units.services.helpers import assert_model_fields, make_transaction
 
 

@@ -1,10 +1,11 @@
 import calendar
-import pytest
 from datetime import date
+
+import pytest
 from pydantic import ValidationError
 
 from app.models import TransactionType
-from app.schemas import StatisticsFilters, CategoryStatisticsFilters
+from app.schemas import CategoryStatisticsFilters, StatisticsFilters
 
 
 class TestStatisticsFilters:

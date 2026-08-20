@@ -1,14 +1,14 @@
 import structlog
 
 from app.core import UnitOfWork
-from app.repositories import TransactionTemplateRepository, CategoryRepository, CurrencyRepository
+from app.core.exceptions import ValueExistsException
+from app.models import TransactionTemplate
+from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository
 from app.schemas import (
     TransactionTemplateCreate,
-    TransactionTemplateUpdate,
     TransactionTemplateResponse,
+    TransactionTemplateUpdate,
 )
-from app.models import TransactionTemplate
-from app.core.exceptions import ValueExistsException
 from app.services import validators
 
 logger = structlog.get_logger()

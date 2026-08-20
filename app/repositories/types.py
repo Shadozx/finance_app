@@ -1,6 +1,6 @@
+from datetime import date
 from decimal import Decimal
 from typing import NamedTuple, Protocol
-from datetime import date
 
 from app.models import TransactionType
 

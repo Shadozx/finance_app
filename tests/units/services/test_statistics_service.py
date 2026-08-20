@@ -1,12 +1,13 @@
-import pytest
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
+
+import pytest
 
 from app.models import TransactionType
 from app.repositories import TransactionRepository
-from app.repositories.types import SummaryRow, CategorySummaryRow
+from app.repositories.types import CategorySummaryRow, SummaryRow
+from app.schemas import CategoryStatisticsFilters, StatisticsFilters
 from app.services import StatisticsService
-from app.schemas import StatisticsFilters, CategoryStatisticsFilters
 
 
 @pytest.fixture

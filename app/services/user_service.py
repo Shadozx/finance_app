@@ -1,12 +1,11 @@
 import structlog
 
 from app.core import UnitOfWork
+from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models import User
 from app.repositories import UserRepository
-from app.schemas import UserCreate, UserResponse, UserLogin, UsernameUpdate, PasswordUpdate
-from app.core.security import create_access_token, verify_password, hash_password
-from app.core.exceptions import AuthenticationException, ValueExistsException, ValidationException
-
+from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import validators
 
 logger = structlog.get_logger()

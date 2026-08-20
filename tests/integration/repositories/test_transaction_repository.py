@@ -1,20 +1,21 @@
-from decimal import Decimal
-from datetime import date
 import uuid
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories import UserRepository, TransactionRepository, AccountRepository
 from app.models import (
-    User,
-    Transaction,
-    TransactionType,
-    TransactionKind,
+    Account,
     Category,
     Currency,
-    Account,
+    Transaction,
+    TransactionKind,
+    TransactionType,
+    User,
 )
-from app.schemas import TransactionFilters, StatisticsFilters, CategoryStatisticsFilters
+from app.repositories import AccountRepository, TransactionRepository, UserRepository
+from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 from tests.integration.repositories.helpers import make_transaction
 
 

@@ -1,14 +1,14 @@
 import pytest
-from httpx import AsyncClient
 from fastapi import status
+from httpx import AsyncClient
 
-from tests.integration.endpoints.helpers import create_category, category_payload, archive_category
+from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
 from tests.integration.endpoints.types import (
-    AuthenticatedUser,
-    CurrencyData,
-    CategoryData,
-    BudgetData,
     AccountData,
+    AuthenticatedUser,
+    BudgetData,
+    CategoryData,
+    CurrencyData,
 )
 
 API_BUDGETS = "/api/v1/budgets"

@@ -2,9 +2,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.api.dependencies import get_transfer_service, get_current_user
+from app.api.dependencies import get_current_user, get_transfer_service
 from app.models import User
-from app.schemas import TransferCreate, TransferUpdate, TransferResponse
+from app.schemas import TransferCreate, TransferResponse, TransferUpdate
 from app.services import TransferService
 
 router = APIRouter(prefix="/transfers", tags=["transfers"])

@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 
-from pydantic import field_validator, PostgresDsn, ValidationInfo, AnyHttpUrl, computed_field
+from pydantic import AnyHttpUrl, PostgresDsn, ValidationInfo, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _FORBIDDEN_SECRETS = {"", "changeme", "secret"}

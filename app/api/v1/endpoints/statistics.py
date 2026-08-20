@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_statistics_service, get_current_user
-from app.services import StatisticsService
+from app.api.dependencies import get_current_user, get_statistics_service
+from app.models import User
 from app.schemas import (
-    SummaryResponse,
-    StatisticsFilters,
     CategoryStatisticsFilters,
     CategorySummaryResponse,
+    StatisticsFilters,
+    SummaryResponse,
 )
-from app.models import User
+from app.services import StatisticsService
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 

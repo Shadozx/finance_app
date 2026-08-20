@@ -8,7 +8,7 @@ from tests.integration.endpoints.helpers import (
     create_transaction,
     transaction_payload,
 )
-from tests.integration.endpoints.types import AuthenticatedUser, CurrencyData, AccountData
+from tests.integration.endpoints.types import AccountData, AuthenticatedUser, CurrencyData
 
 API_ACCOUNTS = "/api/v1/accounts"
 

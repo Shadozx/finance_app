@@ -2,9 +2,9 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
-from app.schemas.validators import amount_validator, MAX_DESCRIPTION_LENGTH
+from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator
 
 
 class TransferCreate(BaseModel):

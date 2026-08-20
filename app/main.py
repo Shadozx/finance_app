@@ -1,36 +1,33 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from pydantic import ValidationError
 from slowapi.middleware import SlowAPIMiddleware
-
 from sqlalchemy.exc import IntegrityError
 
-from pydantic import ValidationError
-
 from app.api.v1.endpoints import (
+    accounts,
     auth,
-    users,
+    budgets,
     categories,
     currencies,
-    transactions,
     health,
-    transaction_templates,
     statistics,
-    budgets,
-    accounts,
+    transaction_templates,
+    transactions,
     transfers,
+    users,
 )
-from app.core.config import settings, Environment
+from app.core.config import Environment, settings
 from app.core.exception_handlers import (
     app_exception_handler,
     global_exception_handler,
-    validation_exception_handler,
     integrity_error_handler,
+    validation_exception_handler,
 )
 from app.core.exceptions import AppException
-from app.core.middleware import RequestIDMiddleware
 from app.core.logging_config import setup_logging
+from app.core.middleware import RequestIDMiddleware
 from app.core.rate_limiter import limiter
 
 is_prod = settings.ENVIRONMENT == Environment.PROD

@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
 from typing import cast
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Category
-
 from app.schemas import CategoryStatus
 
 

@@ -1,22 +1,23 @@
+from datetime import datetime, timezone
+from decimal import Decimal
+
 import pytest
 from pytest_mock import MockerFixture
-from decimal import Decimal
-from datetime import datetime, timezone
 
 from app.core import UnitOfWork
-from app.services import TransactionTemplateService, validators
-from app.repositories import TransactionTemplateRepository, CurrencyRepository, CategoryRepository
-from app.models import TransactionTemplate, TransactionType, Currency, Category
-from app.core.exceptions import NotAllowedActionException, ValueExistsException, NotFoundException
+from app.core.exceptions import NotAllowedActionException, NotFoundException, ValueExistsException
+from app.models import Category, Currency, TransactionTemplate, TransactionType
+from app.repositories import CategoryRepository, CurrencyRepository, TransactionTemplateRepository
 from app.schemas import (
     TransactionTemplateCreate,
     TransactionTemplateResponse,
     TransactionTemplateUpdate,
 )
+from app.services import TransactionTemplateService, validators
 from tests.units.services.helpers import (
+    as_persisted,
     assert_model_fields,
     make_transaction_template,
-    as_persisted,
 )
 
 
