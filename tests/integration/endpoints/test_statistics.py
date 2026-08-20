@@ -4,9 +4,7 @@ from datetime import date
 import pytest
 from fastapi import status
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Currency
 from tests.integration.endpoints.helpers import (
     account_payload,
     category_payload,

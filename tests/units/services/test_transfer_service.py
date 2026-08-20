@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -7,7 +7,7 @@ from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
 from app.core.exceptions import NotAllowedActionException, NotFoundException
-from app.models import Account, Currency, Transaction, TransactionKind, TransactionType
+from app.models import Account, Currency, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import TransferCreate, TransferUpdate
 from app.services import TransferService, validators
@@ -227,7 +227,7 @@ class TestCreateTransfer:
         existing_account: Account,
         data: TransferCreate,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         with pytest.raises(
             NotAllowedActionException, match="Archived account is not allowed to use"
@@ -245,7 +245,7 @@ class TestCreateTransfer:
         existing_usd_account: Account,
         data: TransferCreate,
     ):
-        existing_usd_account.archived_at = datetime.now(timezone.utc)
+        existing_usd_account.archived_at = datetime.now(UTC)
 
         with pytest.raises(
             NotAllowedActionException, match="Archived account is not allowed to use"
@@ -452,7 +452,7 @@ class TestUpdateTransfer:
         data: TransferUpdate,
     ):
         """Editing amounts of a transfer whose account was archived later must stay possible."""
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         from_side, to_side = existing_transfer
 
@@ -485,8 +485,8 @@ class TestUpdateTransfer:
             name="Closed card",
             currency_code=existing_usd_account.currency_code,
             user_id=existing_account.user_id,
-            created_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
-            archived_at=datetime.now(timezone.utc),
+            created_at=datetime(2026, 2, 10, tzinfo=UTC),
+            archived_at=datetime.now(UTC),
         )
 
         accounts = {

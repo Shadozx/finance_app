@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -412,7 +412,7 @@ class TestCreateTransaction:
     ):
         data.category_id = existing_category.id
         user_id = 1
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         category_repo_mock.get_by_id.return_value = existing_category
         account_repo_mock.get_by_id.return_value = existing_account
@@ -627,7 +627,7 @@ class TestCreateTransactionFromTemplate:
     ):
         data.category_id = existing_category.id
         user_id = existing_template.user_id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         category_repo_mock.get_by_id.return_value = existing_category
@@ -1116,7 +1116,7 @@ class TestUpdateTransaction:
         data: TransactionUpdate,
     ):
         data.category_id = existing_category.id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         category_repo_mock.get_by_id.return_value = existing_category
@@ -1215,7 +1215,7 @@ class TestUpdateTransaction:
         existing_account: Account,
         data: TransactionUpdate,
     ):
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         category_repo_mock.get_by_id.return_value = existing_category

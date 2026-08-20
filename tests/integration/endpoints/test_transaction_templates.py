@@ -8,7 +8,6 @@ from tests.integration.endpoints.helpers import (
     transaction_template_payload,
 )
 from tests.integration.endpoints.types import (
-    AccountData,
     AuthenticatedUser,
     CategoryData,
     CurrencyData,

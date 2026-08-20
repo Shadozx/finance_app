@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
 from app.core.exceptions import NotAllowedActionException, NotFoundException, PermissionException
-from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate, User
+from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate
 from app.repositories import (
     BudgetRepository,
     CategoryRepository,
@@ -114,7 +114,7 @@ class TestValidateCategory:
         """
 
         category_repo_mock.get_by_id.return_value = existing_category
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         with pytest.raises(
             NotAllowedActionException, match="Archived category is not allowed to use"

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -165,7 +165,7 @@ class TestCreateTemplate:
     ):
         data.category_id = existing_category.id
         user_id = existing_category.user_id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         category_repo_mock.get_by_id.return_value = existing_category
@@ -431,7 +431,7 @@ class TestUpdateTemplate:
     ):
         data.category_id = existing_category.id
         user_id = existing_template.user_id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
@@ -498,7 +498,7 @@ class TestUpdateTemplate:
         data.category_id = existing_template.category_id
         data.currency_code = existing_template.currency_code
 
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         transaction_template_repo_mock.get_by_id.return_value = existing_template

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -187,7 +187,7 @@ class TestCreateBudget:
         data: BudgetCreate,
     ):
         data.category_id = existing_category.id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         category_repo_mock.get_by_id.return_value = existing_category
         budget_repo_mock.find_same_budget.return_value = None
@@ -416,7 +416,7 @@ class TestUpdateBudget:
         data.category_id = existing_budget.category_id
         data.currency_code = existing_budget.currency_code
 
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         budget_repo_mock.find_same_budget.return_value = None
         budget_repo_mock.get_by_id.return_value = existing_budget
@@ -499,7 +499,7 @@ class TestUpdateBudget:
     ):
         data.category_id = existing_budget.category_id + 1
         existing_category.id = data.category_id
-        existing_category.archived_at = datetime.now(timezone.utc)
+        existing_category.archived_at = datetime.now(UTC)
 
         budget_repo_mock.find_same_budget.return_value = None
         budget_repo_mock.get_by_id.return_value = existing_budget

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TypeVar
 
@@ -42,7 +42,7 @@ def as_persisted(obj: T, obj_id: int = 1) -> T:
     obj.id = obj_id
 
     if hasattr(obj, "created_at") and obj.created_at is None:
-        obj.created_at = datetime.now(timezone.utc)
+        obj.created_at = datetime.now(UTC)
 
     return obj
 
@@ -63,7 +63,7 @@ def make_account(**kwargs) -> Account:
     kwargs.setdefault("name", "Cash")
     kwargs.setdefault("currency_code", "UAH")
     kwargs.setdefault("user_id", 1)
-    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+    kwargs.setdefault("created_at", datetime.now(UTC))
     kwargs.setdefault("archived_at", None)
     return Account(**kwargs)
 
@@ -73,7 +73,7 @@ def make_category(**kwargs) -> Category:
     kwargs.setdefault("id", 1)
     kwargs.setdefault("name", "Foods")
     kwargs.setdefault("user_id", 1)
-    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+    kwargs.setdefault("created_at", datetime.now(UTC))
     kwargs.setdefault("archived_at", None)
 
     return Category(**kwargs)
@@ -102,7 +102,7 @@ def make_transaction_template(**kwargs) -> TransactionTemplate:
     kwargs.setdefault("currency_code", "UAH")
     kwargs.setdefault("user_id", 1)
     kwargs.setdefault("type", TransactionType.EXPENSE)
-    kwargs.setdefault("created_at", datetime.now(timezone.utc))
+    kwargs.setdefault("created_at", datetime.now(UTC))
 
     return TransactionTemplate(**kwargs)
 

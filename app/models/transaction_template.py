@@ -1,9 +1,7 @@
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
-    DateTime,
     Enum,
     ForeignKey,
     Index,

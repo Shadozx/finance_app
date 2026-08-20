@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -16,7 +16,6 @@ from app.repositories import AccountRepository, CurrencyRepository, TransactionR
 from app.schemas import (
     AccountCreate,
     AccountReconcile,
-    AccountReconcileResponse,
     AccountResponse,
     AccountStatus,
     AccountUpdate,
@@ -371,7 +370,7 @@ class TestGetAccount:
         transaction_repo_mock: TransactionRepository,
         existing_account: Account,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.get_balance.return_value = Decimal("150")
@@ -556,7 +555,7 @@ class TestUpdateAccount:
         existing_account: Account,
         data: AccountUpdate,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         account_repo_mock.get_by_id.return_value = existing_account
         account_repo_mock.get_by_user_and_name.return_value = None
@@ -714,7 +713,7 @@ class TestArchiveAccount:
         account_repo_mock: AccountRepository,
         existing_account: Account,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -736,7 +735,7 @@ class TestRestoreAccount:
         unit_of_work_mock: UnitOfWork,
         existing_account: Account,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         account_repo_mock.get_by_id.return_value = existing_account
         account_repo_mock.get_by_user_and_name.return_value = existing_account
@@ -785,7 +784,7 @@ class TestRestoreAccount:
         account_repo_mock: AccountRepository,
         existing_account: Account,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
         wrong_user_id = existing_account.user_id + 1
 
         account_repo_mock.get_by_id.return_value = existing_account
@@ -818,14 +817,14 @@ class TestRestoreAccount:
         existing_account: Account,
         existing_currency: Currency,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         active_duplicate = make_account(
             id=existing_account.id + 1,
             name=existing_account.name,
             currency_code=existing_currency.code,
             user_id=existing_account.user_id,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             archived_at=None,
         )
 
@@ -968,7 +967,7 @@ class TestReconcileAccount:
         unit_of_work_mock: UnitOfWork,
         existing_account: Account,
     ):
-        existing_account.archived_at = datetime.now(timezone.utc)
+        existing_account.archived_at = datetime.now(UTC)
 
         account_repo_mock.get_by_id.return_value = existing_account
 

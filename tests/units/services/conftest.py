@@ -7,12 +7,9 @@ from pytest_mock import MockerFixture
 from app.core import UnitOfWork
 from app.models import (
     Account,
-    Budget,
     Category,
     Currency,
-    Transaction,
     TransactionKind,
-    TransactionTemplate,
     TransactionType,
     User,
 )

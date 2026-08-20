@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -35,7 +35,7 @@ async def archived_account(
             name="Closed Card",
             currency_code=uah_currency.code,
             user_id=user.id,
-            archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+            archived_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
     )
 
@@ -265,7 +265,7 @@ class TestGetByUser:
                 name="Other Archived Account",
                 currency_code=uah_currency.code,
                 user_id=other_user.id,
-                archived_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+                archived_at=datetime(2020, 1, 1, tzinfo=UTC),
             )
         )
 

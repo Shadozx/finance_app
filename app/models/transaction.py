@@ -1,12 +1,11 @@
 import enum
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     Date,
-    DateTime,
     Enum,
     ForeignKey,
     Index,
