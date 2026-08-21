@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.core.exceptions import (
     AuthenticationException,
@@ -16,6 +16,7 @@ from app.repositories import (
     TransactionTemplateRepository,
     UserRepository,
 )
+from app.schemas import TransactionSplitCreate
 
 
 async def validate_category(
@@ -31,6 +32,10 @@ async def validate_category(
         category_repository: Repository to fetch category
         user_id: User who should own the category
         category_id: Category to validate (None = skip validation)
+        allow_archived: Skip the archived check. Editing an existing
+            transaction must stay possible even if its category was
+            archived later; only attaching a transaction TO an archived
+            category is forbidden.
 
     Returns:
         Validated Category instance, or None if category_id is None
@@ -69,6 +74,10 @@ async def validate_currency(
     Args:
         currency_repository: Repository to fetch currency
         currency_code: Currency code to validate
+        allow_inactive: Skip the active check. Editing an existing
+            transaction must stay possible even if its currency was
+            deactivated later; only attaching a transaction TO an
+            inactive currency is forbidden.
 
     Returns:
         Validated Currency instance
@@ -280,3 +289,28 @@ def resolve_settled_amount(
         )
 
     return settled_amount
+
+
+def resolve_splits(
+    amount: Decimal,
+    settled_amount: Decimal,
+    splits: list[TransactionSplitCreate],
+) -> list[Decimal]:
+    """Distribute settled_amount across splits proportionally to their amount.
+
+    Ratio is kept at full Decimal precision — rounding it first would push
+    error into every part, not just the last one.
+    Returns settled amounts in the same order as the input splits.
+    The last split takes the remainder so the parts add up exactly.
+    Assumes amount > 0 — the schema rejects splits on a zero-amount transaction.
+    """
+    ratio = settled_amount / amount
+
+    settled_amounts = [
+        (split.amount * ratio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        for split in splits[:-1]
+    ]
+
+    settled_amounts.append(settled_amount - sum(settled_amounts))
+
+    return settled_amounts

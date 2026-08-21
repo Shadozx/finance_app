@@ -12,8 +12,10 @@ from app.repositories import (
     TransactionRepository,
     TransactionTemplateRepository,
 )
+from app.schemas import TransactionSplitCreate
 from app.services.validators import (
     resolve_settled_amount,
+    resolve_splits,
     validate_budget,
     validate_category,
     validate_currency,
@@ -481,3 +483,80 @@ class TestResolveSettledAmount:
             resolve_settled_amount(
                 existing_account, existing_usd_currency.code, Decimal("20.00"), None
             )
+
+
+class TestResolveSplits:
+    def test_resolve_splits_same_currency(self):
+        """
+        GIVEN: Transaction and account share a currency, so settled equals amount
+        WHEN: resolve_splits called
+        THEN: Each split keeps its own amount
+        """
+        splits = [
+            TransactionSplitCreate(category_id=7, amount=Decimal("800.00")),
+            TransactionSplitCreate(category_id=12, amount=Decimal("200.00")),
+        ]
+
+        result = resolve_splits(Decimal("1000.00"), Decimal("1000.00"), splits)
+
+        assert result == [Decimal("800.00"), Decimal("200.00")]
+
+    def test_resolve_splits_different_currency(self):
+        """
+        GIVEN: 24.00 spent abroad, charged as 1000.00, split 15 / 9
+        WHEN: resolve_splits called
+        THEN: Parts scale by the operation rate, dividing evenly
+        """
+        splits = [
+            TransactionSplitCreate(category_id=7, amount=Decimal("15.00")),
+            TransactionSplitCreate(category_id=12, amount=Decimal("9.00")),
+        ]
+
+        result = resolve_splits(Decimal("24.00"), Decimal("1000.00"), splits)
+
+        assert result == [Decimal("625.00"), Decimal("375.00")]
+
+    def test_resolve_splits_uneven_division_last_takes_remainder(self):
+        """
+        GIVEN: 24.00 spent abroad, charged as 1000.00, split 2 / 20 / 2
+        WHEN: resolve_splits called
+        THEN: Equal input parts get different settled amounts — the last absorbs the cent
+        """
+        splits = [
+            TransactionSplitCreate(category_id=7, amount=Decimal("2.00")),
+            TransactionSplitCreate(category_id=12, amount=Decimal("20.00")),
+            TransactionSplitCreate(category_id=15, amount=Decimal("2.00")),
+        ]
+
+        result = resolve_splits(Decimal("24.00"), Decimal("1000.00"), splits)
+
+        assert result == [Decimal("83.33"), Decimal("833.33"), Decimal("83.34")]
+        assert result[0] != result[2]
+
+    def test_resolve_splits_sum_matches_settled_amount(self):
+        """
+        GIVEN: An amount that does not divide evenly across seven splits
+        WHEN: resolve_splits called
+        THEN: The parts add up to settled_amount exactly
+        """
+        splits = [TransactionSplitCreate(category_id=i, amount=Decimal("1.00")) for i in range(7)]
+
+        result = resolve_splits(Decimal("7.00"), Decimal("100.00"), splits)
+
+        assert sum(result) == Decimal("100.00")
+
+    def test_resolve_splits_three_equal_parts(self):
+        """
+        GIVEN: 10.00 split into three equal parts, settled in the same currency
+        WHEN: resolve_splits called
+        THEN: Parts add up exactly, the last one absorbs the rounding
+        """
+        splits = [
+            TransactionSplitCreate(category_id=7, amount=Decimal("1.00")),
+            TransactionSplitCreate(category_id=12, amount=Decimal("1.00")),
+            TransactionSplitCreate(category_id=15, amount=Decimal("1.00")),
+        ]
+
+        result = resolve_splits(Decimal("3.00"), Decimal("10.00"), splits)
+
+        assert result == [Decimal("3.33"), Decimal("3.33"), Decimal("3.34")]

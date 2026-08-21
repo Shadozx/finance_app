@@ -11,7 +11,7 @@ from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator, cur
 class TransactionSplitCreate(BaseModel):
     category_id: int | None = None
     amount: Decimal
-    description: str | None = Field(None, max_length=MAX_DESCRIPTION_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
 
     @field_validator("amount")
     @classmethod
@@ -55,6 +55,9 @@ class TransactionCreate(BaseModel):
 
         if self.category_id is not None:
             raise ValueError("Transaction with splits cannot have its own category")
+
+        if self.amount == 0:
+            raise ValueError("Transaction with zero amount cannot be split")
 
         total = sum(split.amount for split in self.splits)
 

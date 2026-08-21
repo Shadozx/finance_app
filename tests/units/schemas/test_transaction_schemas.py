@@ -179,3 +179,28 @@ class TestTransactionCreate:
                     {"category_id": 12, "amount": Decimal("200.00")},
                 ],
             )
+
+    def test_zero_amount_with_splits_raises(self):
+        with pytest.raises(ValidationError, match="zero amount"):
+            TransactionCreate(
+                type=TransactionType.EXPENSE,
+                amount=Decimal("0"),
+                currency_code="UAH",
+                account_id=1,
+                date=date(2026, 8, 20),
+                splits=[
+                    {"category_id": 7, "amount": Decimal("0")},
+                    {"category_id": 12, "amount": Decimal("0")},
+                ],
+            )
+
+    def test_zero_amount_without_splits_allowed(self):
+        t = TransactionCreate(
+            type=TransactionType.EXPENSE,
+            amount=Decimal("0"),
+            currency_code="UAH",
+            category_id=7,
+            account_id=1,
+            date=date(2026, 8, 20),
+        )
+        assert t.amount == Decimal("0")
