@@ -8,6 +8,27 @@ from app.models.transaction import TransactionKind, TransactionType
 from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator, currency_code_validator
 
 
+class TransactionSplitCreate(BaseModel):
+    category_id: int | None = None
+    amount: Decimal
+    description: str | None = Field(None, max_length=MAX_DESCRIPTION_LENGTH)
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: Decimal) -> Decimal:
+        return amount_validator(v)
+
+
+class TransactionSplitResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    category_id: int | None
+    amount: Decimal
+    settled_amount: Decimal
+    description: str | None
+
+
 class TransactionCreate(BaseModel):
     type: TransactionType
 
@@ -24,6 +45,23 @@ class TransactionCreate(BaseModel):
     account_id: int
 
     date: date
+
+    splits: list[TransactionSplitCreate] | None = Field(None, min_length=2, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_splits(self):
+        if self.splits is None:
+            return self
+
+        if self.category_id is not None:
+            raise ValueError("Transaction with splits cannot have its own category")
+
+        total = sum(split.amount for split in self.splits)
+
+        if total != self.amount:
+            raise ValueError(f"Split amounts must add up to {self.amount}, got {total}")
+
+        return self
 
     @field_validator("amount")
     @classmethod
@@ -75,6 +113,10 @@ class TransactionResponse(BaseModel):
     transfer_group_id: UUID | None = None
 
     counterpart_account_id: int | None = None
+
+    splits: list[TransactionSplitResponse] | None = None
+
+    has_splits: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

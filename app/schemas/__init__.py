@@ -31,6 +31,8 @@ from .transaction import (
     TransactionCreate,
     TransactionFilters,
     TransactionResponse,
+    TransactionSplitCreate,
+    TransactionSplitResponse,
     TransactionUpdate,
 )
 from .transaction_template import (
@@ -79,6 +81,8 @@ __all__ = [
     "TransactionCreate",
     "TransactionFilters",
     "TransactionResponse",
+    "TransactionSplitCreate",
+    "TransactionSplitResponse",
     "TransactionTemplateCreate",
     "TransactionTemplateResponse",
     "TransactionTemplateUpdate",
