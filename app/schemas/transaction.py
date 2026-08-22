@@ -88,7 +88,7 @@ class TransactionUpdate(TransactionCreate):
     pass
 
 
-class TransactionResponse(BaseModel):
+class TransactionListItem(BaseModel):
     id: int
 
     amount: Decimal
@@ -117,11 +117,13 @@ class TransactionResponse(BaseModel):
 
     counterpart_account_id: int | None = None
 
-    splits: list[TransactionSplitResponse] | None = None
-
     has_splits: bool = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TransactionResponse(TransactionListItem):
+    splits: list[TransactionSplitResponse] | None = None
 
 
 class TransactionFilters(BaseModel):

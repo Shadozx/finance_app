@@ -27,13 +27,19 @@ from app.repositories import (
 from app.schemas import (
     TransactionCreate,
     TransactionFilters,
+    TransactionListItem,
     TransactionResponse,
     TransactionSplitCreate,
     TransactionUpdate,
     UseTemplateRequest,
 )
 from app.services import TransactionService, validators
-from tests.units.services.helpers import as_persisted, assert_model_fields, make_transaction
+from tests.units.services.helpers import (
+    as_persisted,
+    as_persisted_all,
+    assert_model_fields,
+    make_transaction,
+)
 
 
 class TestGetTransaction:
@@ -42,12 +48,14 @@ class TestGetTransaction:
         mocker: MockerFixture,
         transaction_service: TransactionService,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         existing_transaction: Transaction,
     ):
         user_id = existing_transaction.user_id
         transaction_id = existing_transaction.id
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         validate_transaction_spy = mocker.spy(validators, "validate_transaction")
 
@@ -60,6 +68,8 @@ class TestGetTransaction:
         )
 
         transaction_repo_mock.get_by_id.assert_called_once()
+
+        transaction_split_repo_mock.get_by_transaction.assert_called_once()
 
     async def test_get_transaction_not_found_transaction(
         self, transaction_service: TransactionService, transaction_repo_mock: TransactionRepository
@@ -78,6 +88,7 @@ class TestGetTransaction:
         self,
         transaction_service: TransactionService,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         existing_transaction: Transaction,
     ):
         group_id = uuid.uuid4()
@@ -88,6 +99,7 @@ class TestGetTransaction:
         transaction_repo_mock.get_counterpart_account_ids.return_value = {
             existing_transaction.id: 777
         }
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         result = await transaction_service.get_transaction(
             existing_transaction.id,
@@ -221,6 +233,7 @@ class TestCreateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
@@ -237,6 +250,7 @@ class TestCreateTransaction:
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
 
         validate_category_spy = mocker.spy(validators, "validate_category")
         validate_currency_spy = mocker.spy(validators, "validate_currency")
@@ -458,6 +472,7 @@ class TestCreateTransaction:
 
     async def test_create_transaction_with_splits(
         self,
+        mocker: MockerFixture,
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
@@ -490,6 +505,13 @@ class TestCreateTransaction:
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
+
+        validate_category_spy = mocker.spy(validators, "validate_category")
+        validate_currency_spy = mocker.spy(validators, "validate_currency")
+        validate_account_spy = mocker.spy(validators, "validate_account")
+        resolve_settled_amount_spy = mocker.spy(validators, "resolve_settled_amount")
+        resolve_splits_spy = mocker.spy(validators, "resolve_splits")
 
         await transaction_service.create_transaction(data, user_id)
 
@@ -516,6 +538,31 @@ class TestCreateTransaction:
             category_id=existing_category.id + 1,
             amount=Decimal("200.00"),
             settled_amount=Decimal("200.00"),
+        )
+
+        assert validate_category_spy.call_count == 3
+
+        assert category_repo_mock.get_by_id.call_count == 2
+
+        validate_currency_spy.assert_called_once_with(
+            transaction_service.currency_repository, existing_currency.code
+        )
+
+        validate_account_spy.assert_called_once_with(
+            transaction_service.account_repository, user_id, existing_account.id
+        )
+
+        resolve_settled_amount_spy.assert_called_once_with(
+            existing_account,
+            data.currency_code,
+            data.amount,
+            data.settled_amount,
+        )
+
+        resolve_splits_spy.assert_called_once_with(
+            data.amount,
+            data.amount,
+            data.splits,
         )
 
         transaction_split_repo_mock.add_all.assert_called_once()
@@ -550,6 +597,7 @@ class TestCreateTransaction:
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
 
         await transaction_service.create_transaction(data, user_id)
 
@@ -861,6 +909,7 @@ class TestGetUserTransactions:
         self,
         transaction_service: TransactionService,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         existing_account: Account,
     ):
         user_id = 1
@@ -891,6 +940,7 @@ class TestGetUserTransactions:
         ]
 
         transaction_repo_mock.get_by_user.return_value = user_transactions
+        transaction_split_repo_mock.get_transaction_ids_with_splits.return_value = set()
 
         limit = 20
         offset = 0
@@ -900,9 +950,10 @@ class TestGetUserTransactions:
             user_id=user_id, limit=limit, offset=offset, filters=filters
         )
 
-        assert result == [TransactionResponse.model_validate(t) for t in user_transactions]
+        assert result == [TransactionListItem.model_validate(t) for t in user_transactions]
 
         transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
+        transaction_split_repo_mock.get_transaction_ids_with_splits.assert_called_once()
 
     async def test_get_user_empty_transactions(
         self,
@@ -923,7 +974,7 @@ class TestGetUserTransactions:
             user_id=user_id, limit=limit, offset=offset, filters=filters
         )
 
-        assert result == [TransactionResponse.model_validate(t) for t in user_transactions]
+        assert result == [TransactionListItem.model_validate(t) for t in user_transactions]
 
         transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
 
@@ -1000,6 +1051,57 @@ class TestGetUserTransactions:
         )
 
         transaction_repo_mock.get_counterpart_account_ids.assert_not_called()
+
+    async def test_get_user_transactions_marks_transactions_with_splits(
+        self,
+        transaction_service: TransactionService,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        existing_account: Account,
+    ):
+        user_id = 1
+
+        user_transactions = [
+            make_transaction(
+                id=1,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("500.00"),
+                currency_code="UAH",
+                description="Foods",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            ),
+            make_transaction(
+                id=2,
+                type=TransactionType.INCOME,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("20000.00"),
+                currency_code="UAH",
+                description="Salary",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            ),
+        ]
+
+        transaction_repo_mock.get_by_user.return_value = user_transactions
+        transaction_split_repo_mock.get_transaction_ids_with_splits.return_value = {2}
+
+        limit = 20
+        offset = 0
+        filters = TransactionFilters()
+
+        result = await transaction_service.get_user_transactions(
+            user_id=user_id, limit=limit, offset=offset, filters=filters
+        )
+
+        assert result[0].has_splits is False
+        assert result[1].has_splits is True
+
+        transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
+        transaction_split_repo_mock.get_transaction_ids_with_splits.assert_called_once_with([1, 2])
 
 
 class TestUpdateTransaction:

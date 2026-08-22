@@ -5,6 +5,7 @@ from app.models import User
 from app.schemas import (
     TransactionCreate,
     TransactionFilters,
+    TransactionListItem,
     TransactionResponse,
     TransactionUpdate,
     UseTemplateRequest,
@@ -43,7 +44,7 @@ async def create_transaction_from_template(
     )
 
 
-@router.get("", response_model=list[TransactionResponse])
+@router.get("", response_model=list[TransactionListItem])
 async def get_transactions(
     filters: TransactionFilters = Depends(),
     limit: int = Query(20, ge=1, le=100),

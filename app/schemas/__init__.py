@@ -30,6 +30,7 @@ from .statistics import (
 from .transaction import (
     TransactionCreate,
     TransactionFilters,
+    TransactionListItem,
     TransactionResponse,
     TransactionSplitCreate,
     TransactionSplitResponse,
@@ -80,6 +81,7 @@ __all__ = [
     "TokenResponse",
     "TransactionCreate",
     "TransactionFilters",
+    "TransactionListItem",
     "TransactionResponse",
     "TransactionSplitCreate",
     "TransactionSplitResponse",

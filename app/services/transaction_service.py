@@ -14,7 +14,9 @@ from app.repositories import (
 from app.schemas import (
     TransactionCreate,
     TransactionFilters,
+    TransactionListItem,
     TransactionResponse,
+    TransactionSplitResponse,
     TransactionUpdate,
     UseTemplateRequest,
 )
@@ -81,6 +83,8 @@ class TransactionService:
 
         created_transaction = await self.transaction_repository.add(new_transaction)
 
+        splits: list[TransactionSplit] = []
+
         if data.splits is not None:
             settled_amounts = validators.resolve_splits(data.amount, settled_amount, data.splits)
 
@@ -103,7 +107,7 @@ class TransactionService:
             "transaction_create_success", user_id=user_id, transaction_id=created_transaction.id
         )
 
-        return self._to_response(created_transaction)
+        return self._to_response(created_transaction, splits=splits)
 
     async def create_transaction_from_template(
         self,
@@ -179,7 +183,9 @@ class TransactionService:
             )
             counterpart_account_id = counterparts.get(existing_transaction.id)
 
-        return self._to_response(existing_transaction, counterpart_account_id)
+        splits = await self.transaction_split_repository.get_by_transaction(transaction_id)
+
+        return self._to_response(existing_transaction, counterpart_account_id, splits)
 
     async def get_user_transactions(
         self,
@@ -187,7 +193,7 @@ class TransactionService:
         filters: TransactionFilters,
         limit: int = 20,
         offset: int = 0,
-    ) -> list[TransactionResponse]:
+    ) -> list[TransactionListItem]:
         transactions = await self.transaction_repository.get_by_user(
             user_id, filters, limit, offset
         )
@@ -205,8 +211,23 @@ class TransactionService:
                 group_ids, user_id
             )
 
+        transaction_ids = [transaction.id for transaction in transactions]
+
+        ids_with_splits: set[int] = set()
+
+        if transaction_ids:
+            ids_with_splits = (
+                await self.transaction_split_repository.get_transaction_ids_with_splits(
+                    transaction_ids
+                )
+            )
+
         return [
-            self._to_response(transaction, counterparts.get(transaction.id))
+            self._to_list_item(
+                transaction,
+                counterparts.get(transaction.id),
+                transaction.id in ids_with_splits,
+            )
             for transaction in transactions
         ]
 
@@ -306,12 +327,29 @@ class TransactionService:
                 "transaction_delete_success", user_id=user_id, transaction_id=transaction_id
             )
 
+    def _to_list_item(
+        self,
+        transaction: Transaction,
+        counterpart_account_id: int | None = None,
+        has_splits: bool = False,
+    ) -> TransactionListItem:
+        response = TransactionListItem.model_validate(transaction)
+        response.counterpart_account_id = counterpart_account_id
+        response.has_splits = has_splits
+
+        return response
+
     def _to_response(
         self,
         transaction: Transaction,
         counterpart_account_id: int | None = None,
+        splits: list[TransactionSplit] | None = None,
     ) -> TransactionResponse:
         response = TransactionResponse.model_validate(transaction)
         response.counterpart_account_id = counterpart_account_id
+        response.splits = (
+            [TransactionSplitResponse.model_validate(split) for split in splits] if splits else None
+        )
+        response.has_splits = bool(splits)
 
         return response

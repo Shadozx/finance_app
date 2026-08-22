@@ -17,6 +17,13 @@ class TransactionSplitRepository:
 
         return list((await self.session.execute(query)).scalars().all())
 
+    async def get_transaction_ids_with_splits(self, transaction_ids: list[int]) -> set[int]:
+        query = select(TransactionSplit.transaction_id).where(
+            TransactionSplit.transaction_id.in_(transaction_ids)
+        )
+
+        return set((await self.session.execute(query)).scalars().all())
+
     async def add_all(self, splits: list[TransactionSplit]) -> list[TransactionSplit]:
         self.session.add_all(splits)
 

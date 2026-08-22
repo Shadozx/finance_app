@@ -47,6 +47,14 @@ def as_persisted(obj: T, obj_id: int = 1) -> T:
     return obj
 
 
+def as_persisted_all(objects: list[T], start_id: int = 1) -> list[T]:
+    """Models as they come back from add_all(): each gets its own id.
+
+    Ids are sequential, mirroring how the database assigns them.
+    """
+    return [as_persisted(obj, start_id + index) for index, obj in enumerate(objects)]
+
+
 def make_transaction(**kwargs) -> Transaction:
     """Transaction with settled fields defaulted to the operation amount.
 
