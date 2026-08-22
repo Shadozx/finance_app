@@ -2,12 +2,13 @@ import structlog
 
 from app.core import UnitOfWork
 from app.core.exceptions import NotAllowedActionException
-from app.models import Transaction, TransactionKind
+from app.models import Transaction, TransactionKind, TransactionSplit
 from app.repositories import (
     AccountRepository,
     CategoryRepository,
     CurrencyRepository,
     TransactionRepository,
+    TransactionSplitRepository,
     TransactionTemplateRepository,
 )
 from app.schemas import (
@@ -26,6 +27,7 @@ class TransactionService:
     def __init__(
         self,
         transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
         transaction_template_repository: TransactionTemplateRepository,
         account_repository: AccountRepository,
         category_repository: CategoryRepository,
@@ -33,6 +35,7 @@ class TransactionService:
         unit_of_work: UnitOfWork,
     ):
         self.transaction_repository = transaction_repository
+        self.transaction_split_repository = transaction_split_repository
         self.transaction_template_repository = transaction_template_repository
         self.account_repository = account_repository
         self.category_repository = category_repository
@@ -43,6 +46,14 @@ class TransactionService:
         self, data: TransactionCreate, user_id: int
     ) -> TransactionResponse:
         await validators.validate_category(self.category_repository, user_id, data.category_id)
+
+        if data.splits is not None:
+            split_category_ids = {
+                split.category_id for split in data.splits if split.category_id is not None
+            }
+
+            for category_id in split_category_ids:
+                await validators.validate_category(self.category_repository, user_id, category_id)
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
@@ -69,6 +80,22 @@ class TransactionService:
         )
 
         created_transaction = await self.transaction_repository.add(new_transaction)
+
+        if data.splits is not None:
+            settled_amounts = validators.resolve_splits(data.amount, settled_amount, data.splits)
+
+            splits = [
+                TransactionSplit(
+                    transaction_id=created_transaction.id,
+                    category_id=split.category_id,
+                    amount=split.amount,
+                    settled_amount=split_settled,
+                    description=split.description,
+                )
+                for split, split_settled in zip(data.splits, settled_amounts, strict=True)
+            ]
+
+            await self.transaction_split_repository.add_all(splits)
 
         await self.unit_of_work.commit()
 

@@ -21,12 +21,14 @@ from app.repositories import (
     CategoryRepository,
     CurrencyRepository,
     TransactionRepository,
+    TransactionSplitRepository,
     TransactionTemplateRepository,
 )
 from app.schemas import (
     TransactionCreate,
     TransactionFilters,
     TransactionResponse,
+    TransactionSplitCreate,
     TransactionUpdate,
     UseTemplateRequest,
 )
@@ -451,6 +453,186 @@ class TestCreateTransaction:
         currency_repo_mock.get_by_code.assert_called_once()
 
         transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_create_transaction_with_splits(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionCreate,
+    ):
+        user_id = existing_category.user_id
+        data.category_id = None
+        data.splits = [
+            TransactionSplitCreate(
+                category_id=existing_category.id,
+                amount=Decimal("800.00"),
+                description="Groceries",
+            ),
+            TransactionSplitCreate(
+                category_id=existing_category.id + 1,
+                amount=Decimal("200.00"),
+            ),
+        ]
+        data.amount = Decimal("1000.00")
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.add.side_effect = as_persisted
+
+        await transaction_service.create_transaction(data, user_id)
+
+        created_transaction = transaction_repo_mock.add.call_args[0][0]
+
+        assert created_transaction.category_id is None
+
+        splits = transaction_split_repo_mock.add_all.call_args[0][0]
+
+        assert len(splits) == 2
+
+        assert_model_fields(
+            splits[0],
+            transaction_id=created_transaction.id,
+            category_id=existing_category.id,
+            amount=Decimal("800.00"),
+            settled_amount=Decimal("800.00"),
+            description="Groceries",
+        )
+
+        assert_model_fields(
+            splits[1],
+            transaction_id=created_transaction.id,
+            category_id=existing_category.id + 1,
+            amount=Decimal("200.00"),
+            settled_amount=Decimal("200.00"),
+        )
+
+        transaction_split_repo_mock.add_all.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_create_transaction_splits_deduplicate_categories(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionCreate,
+    ):
+        """Three parts of one receipt share a category: it is validated once, not three times."""
+        user_id = existing_category.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("300.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("300.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("400.00")),
+        ]
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.add.side_effect = as_persisted
+
+        await transaction_service.create_transaction(data, user_id)
+
+        category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+
+        splits = transaction_split_repo_mock.add_all.call_args[0][0]
+
+        assert len(splits) == 3
+
+    async def test_create_transaction_splits_archived_category(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionCreate,
+    ):
+        """Splits are validated before anything is written: the transaction is never created."""
+        user_id = existing_category.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("800.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("200.00")),
+        ]
+
+        existing_category.archived_at = datetime.now(UTC)
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(
+            NotAllowedActionException, match="Archived category is not allowed to use"
+        ):
+            await transaction_service.create_transaction(data, user_id)
+
+        transaction_repo_mock.add.assert_not_called()
+
+        transaction_split_repo_mock.add_all.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_create_transaction_splits_fail_nothing_committed(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionCreate,
+    ):
+        """Transaction and its splits belong to one operation: if splits fail, nothing is kept."""
+        user_id = existing_category.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("800.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("200.00")),
+        ]
+
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        category_repo_mock.get_by_id.return_value = existing_category
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.add.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = RuntimeError("db error")
+
+        with pytest.raises(RuntimeError):
+            await transaction_service.create_transaction(data, user_id)
+
+        transaction_repo_mock.add.assert_called_once()
 
         unit_of_work_mock.commit.assert_not_awaited()
 

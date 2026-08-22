@@ -11,6 +11,7 @@ from app.repositories import (
     CategoryRepository,
     CurrencyRepository,
     TransactionRepository,
+    TransactionSplitRepository,
     TransactionTemplateRepository,
     UserRepository,
 )
@@ -51,12 +52,14 @@ def get_transaction_service(
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
     transaction_repository = TransactionRepository(session)
+    transaction_split_repository = TransactionSplitRepository(session)
     transaction_template_repository = TransactionTemplateRepository(session)
     account_repository = AccountRepository(session)
     unit_of_work = UnitOfWork(session)
 
     return TransactionService(
         transaction_repository=transaction_repository,
+        transaction_split_repository=transaction_split_repository,
         transaction_template_repository=transaction_template_repository,
         category_repository=category_repository,
         currency_repository=currency_repository,

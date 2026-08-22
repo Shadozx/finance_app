@@ -19,6 +19,7 @@ from app.repositories import (
     CategoryRepository,
     CurrencyRepository,
     TransactionRepository,
+    TransactionSplitRepository,
     TransactionTemplateRepository,
     UserRepository,
 )
@@ -58,6 +59,11 @@ def transaction_repo_mock(mocker: MockerFixture):
 
 
 @pytest.fixture
+def transaction_split_repo_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=TransactionSplitRepository)
+
+
+@pytest.fixture
 def transaction_template_repo_mock(mocker: MockerFixture):
     return mocker.AsyncMock(spec=TransactionTemplateRepository)
 
@@ -85,14 +91,16 @@ def unit_of_work_mock(mocker: MockerFixture):
 @pytest.fixture
 def transaction_service(
     transaction_repo_mock: TransactionRepository,
-    currency_repo_mock: CurrencyRepository,
+    transaction_split_repo_mock: TransactionSplitRepository,
     transaction_template_repo_mock: TransactionTemplateRepository,
+    currency_repo_mock: CurrencyRepository,
     category_repo_mock: CategoryRepository,
     account_repo_mock: AccountRepository,
     unit_of_work_mock: UnitOfWork,
 ):
     return TransactionService(
         transaction_repository=transaction_repo_mock,
+        transaction_split_repository=transaction_split_repo_mock,
         transaction_template_repository=transaction_template_repo_mock,
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
