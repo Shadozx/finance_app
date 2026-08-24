@@ -13,6 +13,7 @@ from app.models import (
     Currency,
     Transaction,
     TransactionKind,
+    TransactionSplit,
     TransactionTemplate,
     TransactionType,
 )
@@ -1126,6 +1127,7 @@ class TestUpdateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
@@ -1142,6 +1144,7 @@ class TestUpdateTransaction:
         category_repo_mock.get_by_id.return_value = existing_category
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         transaction_repo_mock.update.side_effect = as_persisted
 
@@ -1213,6 +1216,7 @@ class TestUpdateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         existing_account: Account,
         existing_transaction: Transaction,
@@ -1225,6 +1229,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         transaction_repo_mock.update.side_effect = as_persisted
 
@@ -1261,6 +1266,7 @@ class TestUpdateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
@@ -1276,6 +1282,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         category_repo_mock.get_by_id.return_value = None
         account_repo_mock.get_by_id.return_value = existing_account
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         transaction_repo_mock.update.side_effect = as_persisted
 
@@ -1313,6 +1320,7 @@ class TestUpdateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         unit_of_work_mock: UnitOfWork,
         existing_transaction: Transaction,
@@ -1329,6 +1337,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         transaction_repo_mock.update.side_effect = as_persisted
 
@@ -1359,6 +1368,7 @@ class TestUpdateTransaction:
         transaction_service: TransactionService,
         account_repo_mock: AccountRepository,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         currency_repo_mock: CurrencyRepository,
         unit_of_work_mock: UnitOfWork,
         existing_transaction: Transaction,
@@ -1373,6 +1383,7 @@ class TestUpdateTransaction:
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         with pytest.raises(
             NotAllowedActionException,
@@ -1448,6 +1459,7 @@ class TestUpdateTransaction:
         mocker: MockerFixture,
         transaction_service: TransactionService,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         category_repo_mock: CategoryRepository,
         currency_repo_mock: CurrencyRepository,
         account_repo_mock: AccountRepository,
@@ -1465,6 +1477,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.update.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         validate_currency_spy = mocker.spy(validators, "validate_currency")
 
@@ -1489,6 +1502,7 @@ class TestUpdateTransaction:
         mocker: MockerFixture,
         transaction_service: TransactionService,
         transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
         category_repo_mock: CategoryRepository,
         currency_repo_mock: CurrencyRepository,
         account_repo_mock: AccountRepository,
@@ -1506,6 +1520,7 @@ class TestUpdateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_repo_mock.update.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = []
 
         validate_category_spy = mocker.spy(validators, "validate_category")
 
@@ -1552,5 +1567,279 @@ class TestUpdateTransaction:
         transaction_repo_mock.update.assert_not_called()
 
         category_repo_mock.get_by_id.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_update_transaction_replaces_splits(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transaction: Transaction,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionUpdate,
+    ):
+        user_id = existing_transaction.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("700.00")),
+            TransactionSplitCreate(category_id=existing_category.id + 1, amount=Decimal("300.00")),
+        ]
+
+        old_splits = [
+            TransactionSplit(
+                id=1,
+                transaction_id=existing_transaction.id,
+                category_id=existing_category.id,
+                amount=Decimal("800.00"),
+                settled_amount=Decimal("800.00"),
+            ),
+            TransactionSplit(
+                id=2,
+                transaction_id=existing_transaction.id,
+                category_id=existing_category.id + 1,
+                amount=Decimal("200.00"),
+                settled_amount=Decimal("200.00"),
+            ),
+        ]
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = old_splits
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
+
+        result = await transaction_service.update_transaction(
+            existing_transaction.id, data, user_id
+        )
+
+        transaction_split_repo_mock.delete_by_transaction.assert_called_once_with(
+            existing_transaction.id
+        )
+
+        new_splits = transaction_split_repo_mock.add_all.call_args[0][0]
+
+        assert len(new_splits) == 2
+
+        assert_model_fields(
+            new_splits[0],
+            transaction_id=existing_transaction.id,
+            category_id=existing_category.id,
+            amount=Decimal("700.00"),
+            settled_amount=Decimal("700.00"),
+        )
+
+        assert_model_fields(
+            new_splits[1],
+            transaction_id=existing_transaction.id,
+            category_id=existing_category.id + 1,
+            amount=Decimal("300.00"),
+            settled_amount=Decimal("300.00"),
+        )
+
+        assert result.has_splits is True
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_update_transaction_removes_splits(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transaction: Transaction,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionUpdate,
+    ):
+        user_id = existing_transaction.user_id
+        data.category_id = existing_category.id
+        data.splits = None
+
+        old_splits = [
+            TransactionSplit(
+                id=1,
+                transaction_id=existing_transaction.id,
+                category_id=existing_category.id,
+                amount=Decimal("800.00"),
+                settled_amount=Decimal("800.00"),
+            ),
+            TransactionSplit(
+                id=2,
+                transaction_id=existing_transaction.id,
+                category_id=existing_category.id + 1,
+                amount=Decimal("200.00"),
+                settled_amount=Decimal("200.00"),
+            ),
+        ]
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = old_splits
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = as_persisted
+
+        result = await transaction_service.update_transaction(
+            existing_transaction.id, data, user_id
+        )
+
+        transaction_split_repo_mock.delete_by_transaction.assert_called_once_with(
+            existing_transaction.id
+        )
+
+        transaction_split_repo_mock.add_all.assert_not_called()
+
+        assert result.has_splits is False
+        assert result.splits is None
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_update_transaction_adds_splits(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transaction: Transaction,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionUpdate,
+    ):
+        user_id = existing_transaction.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("600.00")),
+            TransactionSplitCreate(category_id=existing_category.id + 1, amount=Decimal("400.00")),
+        ]
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = []
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
+
+        await transaction_service.update_transaction(existing_transaction.id, data, user_id)
+
+        transaction_split_repo_mock.delete_by_transaction.assert_not_called()
+
+        new_splits = transaction_split_repo_mock.add_all.call_args[0][0]
+
+        assert len(new_splits) == 2
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_update_transaction_keeps_archived_split_category_allowed(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transaction: Transaction,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionUpdate,
+    ):
+        user_id = existing_transaction.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("600.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("400.00")),
+        ]
+
+        existing_category.archived_at = datetime.now(UTC)
+
+        old_splits = [
+            TransactionSplit(
+                id=1,
+                transaction_id=existing_transaction.id,
+                category_id=existing_category.id,
+                amount=Decimal("1000.00"),
+                settled_amount=Decimal("1000.00"),
+            ),
+        ]
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = old_splits
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        transaction_repo_mock.update.side_effect = as_persisted
+        transaction_split_repo_mock.add_all.side_effect = as_persisted_all
+
+        await transaction_service.update_transaction(existing_transaction.id, data, user_id)
+
+        transaction_split_repo_mock.add_all.assert_called_once()
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_update_transaction_new_archived_split_category_rejected(
+        self,
+        transaction_service: TransactionService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        currency_repo_mock: CurrencyRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_transaction: Transaction,
+        existing_account: Account,
+        existing_currency: Currency,
+        existing_category: Category,
+        data: TransactionUpdate,
+    ):
+        user_id = existing_transaction.user_id
+        data.category_id = None
+        data.amount = Decimal("1000.00")
+        data.splits = [
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("600.00")),
+            TransactionSplitCreate(category_id=existing_category.id, amount=Decimal("400.00")),
+        ]
+
+        existing_category.archived_at = datetime.now(UTC)
+
+        transaction_repo_mock.get_by_id.return_value = existing_transaction
+        transaction_split_repo_mock.get_by_transaction.return_value = []
+        category_repo_mock.get_by_id.return_value = existing_category
+        currency_repo_mock.get_by_code.return_value = existing_currency
+        account_repo_mock.get_by_id.return_value = existing_account
+
+        with pytest.raises(
+            NotAllowedActionException, match="Archived category is not allowed to use"
+        ):
+            await transaction_service.update_transaction(existing_transaction.id, data, user_id)
+
+        transaction_repo_mock.update.assert_not_called()
+
+        transaction_split_repo_mock.add_all.assert_not_called()
 
         unit_of_work_mock.commit.assert_not_awaited()

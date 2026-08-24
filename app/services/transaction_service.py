@@ -255,6 +255,26 @@ class TransactionService:
             allow_archived=not category_changed,
         )
 
+        old_splits = await self.transaction_split_repository.get_by_transaction(transaction_id)
+
+        if data.splits is not None:
+            old_category_ids = {
+                split.category_id for split in old_splits if split.category_id is not None
+            }
+            new_category_ids = {
+                split.category_id for split in data.splits if split.category_id is not None
+            }
+
+            for category_id in new_category_ids:
+                # A category already used by this transaction stays allowed even
+                # if archived later; attaching a new archived one is not.
+                await validators.validate_category(
+                    self.category_repository,
+                    user_id,
+                    category_id,
+                    allow_archived=category_id in old_category_ids,
+                )
+
         await validators.validate_currency(
             self.currency_repository,
             data.currency_code,
@@ -284,13 +304,34 @@ class TransactionService:
 
         updated_transaction = await self.transaction_repository.update(existing_transaction)
 
+        splits: list[TransactionSplit] = []
+
+        if old_splits:
+            await self.transaction_split_repository.delete_by_transaction(transaction_id)
+
+        if data.splits is not None:
+            settled_amounts = validators.resolve_splits(data.amount, settled_amount, data.splits)
+
+            splits = [
+                TransactionSplit(
+                    transaction_id=transaction_id,
+                    category_id=split.category_id,
+                    amount=split.amount,
+                    settled_amount=split_settled,
+                    description=split.description,
+                )
+                for split, split_settled in zip(data.splits, settled_amounts, strict=True)
+            ]
+
+            await self.transaction_split_repository.add_all(splits)
+
         await self.unit_of_work.commit()
 
         logger.info(
             "transaction_update_success", user_id=user_id, transaction_id=updated_transaction.id
         )
 
-        return self._to_response(updated_transaction)
+        return self._to_response(updated_transaction, splits=splits)
 
     async def delete_transaction(
         self,

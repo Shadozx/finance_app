@@ -11,6 +11,7 @@ from app.repositories import (
     BudgetRepository,
     CategoryRepository,
     TransactionRepository,
+    TransactionSplitRepository,
     TransactionTemplateRepository,
     UserRepository,
 )
@@ -119,9 +120,9 @@ async def usd_currency(test_session):
 
 @pytest.fixture
 async def uah_account(
-    test_session: AsyncSession,
-    user: User,
-    uah_currency: Currency,
+        test_session: AsyncSession,
+        user: User,
+        uah_currency: Currency,
 ):
     account = Account(
         name="UAH Account",
@@ -138,9 +139,9 @@ async def uah_account(
 
 @pytest.fixture
 async def usd_account(
-    test_session: AsyncSession,
-    user: User,
-    usd_currency: Currency,
+        test_session: AsyncSession,
+        user: User,
+        usd_currency: Currency,
 ):
     account = Account(
         name="USD Account",
@@ -162,9 +163,16 @@ def category_repository(test_session: AsyncSession):
 
 @pytest.fixture
 def transaction_repository(
-    test_session: AsyncSession,
+        test_session: AsyncSession,
 ):
     return TransactionRepository(test_session)
+
+
+@pytest.fixture
+def transaction_split_repository(
+        test_session: AsyncSession,
+):
+    return TransactionSplitRepository(test_session)
 
 
 @pytest.fixture
