@@ -98,6 +98,7 @@ def transaction_payload(
     account_id: int | None = None,
     category_id: int | None = None,
     description: str | None = None,
+    splits: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "date": date,
@@ -111,6 +112,9 @@ def transaction_payload(
 
     if settled_amount is not None:
         payload["settled_amount"] = settled_amount
+
+    if splits is not None:
+        payload["splits"] = splits
 
     return payload
 
