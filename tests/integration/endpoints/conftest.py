@@ -135,7 +135,9 @@ async def created_category(
     client: AsyncClient,
     authenticated_user: AuthenticatedUser,
 ) -> CategoryData:
-    return await create_category(client, category_payload(name="Active category"), authenticated_user["headers"])
+    return await create_category(
+        client, category_payload(name="Active category"), authenticated_user["headers"]
+    )
 
 
 @pytest.fixture
@@ -143,7 +145,9 @@ async def archived_category(
     client: AsyncClient,
     authenticated_user: AuthenticatedUser,
 ) -> CategoryData:
-    category = await create_category(client, category_payload(name="Archived category"), authenticated_user["headers"])
+    category = await create_category(
+        client, category_payload(name="Archived category"), authenticated_user["headers"]
+    )
 
     await archive_category(client, category["id"], authenticated_user["headers"])
 
