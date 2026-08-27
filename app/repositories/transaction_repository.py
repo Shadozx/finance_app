@@ -2,11 +2,11 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, case, delete, func, select
+from sqlalchemy import ColumnElement, Select, and_, or_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models import Category, Transaction, TransactionKind, TransactionType
+from app.models import Category, Transaction, TransactionSplit, TransactionKind, TransactionType
 from app.repositories.types import CategorySummaryRow, SummaryRow, TransactionFilterProtocol
 from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 
@@ -30,6 +30,9 @@ class TransactionRepository:
         query = select(Transaction).where(Transaction.user_id == user_id)
 
         query = self._apply_filters(query, filters)
+
+        if filters.category_id is not None:
+            query = query.where(self._belongs_to_category(filters.category_id))
 
         if filters.currency_code is not None:
             query = query.where(Transaction.currency_code == filters.currency_code)
@@ -74,6 +77,9 @@ class TransactionRepository:
 
         query = self._apply_filters(query, filters)
 
+        if filters.category_id is not None:
+            query = query.where(Transaction.category_id >= filters.category_id)
+
         if filters.currency_code is not None:
             query = query.where(Transaction.settled_currency_code == filters.currency_code)
 
@@ -100,6 +106,9 @@ class TransactionRepository:
         )
 
         query = self._apply_filters(query, filters)
+
+        if filters.category_id is not None:
+            query = query.where(Transaction.category_id == filters.category_id)
 
         if filters.currency_code is not None:
             query = query.where(Transaction.settled_currency_code == filters.currency_code)
@@ -147,10 +156,21 @@ class TransactionRepository:
         if filters.end_date is not None:
             query = query.where(Transaction.date <= filters.end_date)
 
-        if filters.category_id is not None:
-            query = query.where(Transaction.category_id == filters.category_id)
-
         return query
+
+    def _belongs_to_category(self, category_id: int) -> ColumnElement[bool]:
+        """A transaction belongs to a category by its own field or through any of its splits.
+
+        EXISTS, not JOIN: two splits pointing at the same category must not
+        make the transaction appear twice in the registry.
+        """
+        return or_(
+            Transaction.category_id == category_id,
+            select(TransactionSplit.id)
+            .where(TransactionSplit.transaction_id == Transaction.id)
+            .where(TransactionSplit.category_id == category_id)
+            .exists(),
+        )
 
     def _counts_in_totals(self) -> ColumnElement[bool]:
         """Умова 'ця транзакція враховується в підрахунках'.

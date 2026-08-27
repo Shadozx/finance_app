@@ -11,10 +11,17 @@ from app.models import (
     Currency,
     Transaction,
     TransactionKind,
+    TransactionSplit,
     TransactionType,
     User,
 )
-from app.repositories import AccountRepository, TransactionRepository, UserRepository
+from app.repositories import (
+    AccountRepository,
+    CategoryRepository,
+    TransactionRepository,
+    TransactionSplitRepository,
+    UserRepository,
+)
 from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 from tests.integration.repositories.helpers import make_transaction
 
@@ -446,6 +453,316 @@ class TestFilters:
             for t in user_transactions
         )
 
+    async def test_filter_by_category_finds_split(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="ATB",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 3, 1),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+            ]
+        )
+
+        user_transactions = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(category_id=category.id)
+        )
+
+        assert len(user_transactions) == 1
+
+        assert user_transactions[0].id == split_transaction.id
+        assert user_transactions[0].category_id is None
+        assert user_transactions[0].amount == Decimal("1000.00")
+
+    async def test_filter_by_category_skips_unrelated_splits(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="Unrelated",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 3, 1),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+            ]
+        )
+
+        user_transactions = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(category_id=category.id)
+        )
+
+        assert user_transactions == []
+
+    async def test_filter_by_category_no_duplicates(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """Two lines of one receipt share a category: the transaction is still one row."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="Ice cream and pasta",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 3, 1),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+            ]
+        )
+
+        user_transactions = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(category_id=category.id)
+        )
+
+        assert len(user_transactions) == 1
+
+        assert user_transactions[0].id == split_transaction.id
+
+    async def test_filter_by_category_and_account(
+        self,
+        account_repository: AccountRepository,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """The category condition is an OR: it must not loosen the other filters."""
+        second_account = await account_repository.add(
+            Account(
+                name="Second account",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
+
+        wanted = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="Right account",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 3, 1),
+            )
+        )
+
+        unwanted = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="Wrong account",
+                amount=Decimal("500.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=second_account.id,
+                date=date(2026, 3, 1),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=wanted.id,
+                    category_id=category.id,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=wanted.id,
+                    category_id=None,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=unwanted.id,
+                    category_id=category.id,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=unwanted.id,
+                    category_id=None,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+            ]
+        )
+
+        user_transactions = await transaction_repository.get_by_user(
+            user.id,
+            TransactionFilters(category_id=category.id, account_id=uah_account.id),
+        )
+
+        assert len(user_transactions) == 1
+
+        assert user_transactions[0].id == wanted.id
+
+    async def test_filter_by_category_and_date_range(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """Same guard for dates: a matching split does not pull in an out-of-range date."""
+        in_range = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="March",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 3, 15),
+            )
+        )
+
+        out_of_range = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                description="April",
+                amount=Decimal("500.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 4, 15),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=in_range.id,
+                    category_id=category.id,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=in_range.id,
+                    category_id=None,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=out_of_range.id,
+                    category_id=category.id,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=out_of_range.id,
+                    category_id=None,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+            ]
+        )
+
+        user_transactions = await transaction_repository.get_by_user(
+            user.id,
+            TransactionFilters(
+                category_id=category.id,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        assert len(user_transactions) == 1
+
+        assert user_transactions[0].id == in_range.id
+
 
 class TestUpdate:
     async def test_update(
@@ -856,6 +1173,64 @@ class TestGetByCategory:
 
         assert ("UAH", None) not in totals
         assert ("USD", category.id) not in totals
+
+    async def test_get_by_category_filter_by_category_id(
+        self,
+        category_repository: CategoryRepository,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """The filter narrows to one category — categories created later must stay out."""
+        later_category = await category_repository.add(Category(name="Household", user_id=user.id))
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("300.00"),
+                description="Groceries",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=category.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("700.00"),
+                description="Soap",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=later_category.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+                category_id=category.id,
+            ),
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[(uah_currency.code, category.id)].total == Decimal("300.00")
+
+        assert (uah_currency.code, later_category.id) not in totals
 
     async def test_get_by_category_does_not_mix_types(
         self,
