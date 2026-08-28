@@ -1581,6 +1581,439 @@ class TestGetByCategory:
         assert totals[("UAH", category.id)].total == Decimal("100.00")
         assert totals[("UAH", category.id)].category_name == category.name
 
+    async def test_get_by_category_spreads_split_across_categories(
+        self,
+        category_repository: CategoryRepository,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """A split receipt lands in its categories, not in the uncategorised bucket."""
+        household = await category_repository.add(Category(name="Household", user_id=user.id))
+
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=household.id,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        assert len(summary) == 2
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("800.00")
+        assert totals[("UAH", household.id)].total == Decimal("200.00")
+
+        assert ("UAH", None) not in totals
+
+    async def test_get_by_category_merges_repeated_split_category(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """Ice cream and pasta are two lines of one category: the report shows one row."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Ice cream and pasta",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        assert len(summary) == 1
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("1000.00")
+
+    async def test_get_by_category_counts_uncategorised_split_part(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """An unsorted part of a receipt is uncategorised money, and the report says so."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Partly sorted",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("700.00"),
+                    settled_amount=Decimal("700.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        assert len(summary) == 2
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("700.00")
+        assert totals[("UAH", None)].total == Decimal("300.00")
+        assert totals[("UAH", None)].category_name is None
+
+    async def test_get_by_category_sums_plain_and_split_transactions(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """Both sources land in the same row, and neither is counted twice."""
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("300.00"),
+                description="Coffee",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=category.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 5),
+            )
+        )
+
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("1100.00")
+        assert totals[("UAH", None)].total == Decimal("200.00")
+
+    async def test_get_by_category_keeps_split_currencies_apart(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        usd_account: Account,
+        uah_currency: Currency,
+        usd_currency: Currency,
+        category: Category,
+    ):
+        """Splits are grouped by the settled currency, so two accounts never blend."""
+        uah_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        usd_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("40.00"),
+                description="Lidl",
+                currency_code=usd_currency.code,
+                settled_currency_code=usd_currency.code,
+                settled_amount=Decimal("40.00"),
+                user_id=user.id,
+                category_id=None,
+                account_id=usd_account.id,
+                date=date(2026, 2, 12),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=uah_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=uah_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=usd_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("30.00"),
+                    settled_amount=Decimal("30.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=usd_transaction.id,
+                    category_id=None,
+                    amount=Decimal("10.00"),
+                    settled_amount=Decimal("10.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        totals = {(row.currency_code, row.category_id): row for row in summary}
+
+        assert totals[("UAH", category.id)].total == Decimal("800.00")
+        assert totals[("USD", category.id)].total == Decimal("30.00")
+
+    async def test_get_by_category_total_matches_summary(
+        self,
+        category_repository: CategoryRepository,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        """Two independent queries must agree: every hryvnia is counted exactly once."""
+        household = await category_repository.add(Category(name="Household", user_id=user.id))
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("300.00"),
+                description="Coffee",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=category.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 5),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("150.00"),
+                description="Unsorted",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 6),
+            )
+        )
+
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                category_id=None,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("500.00"),
+                    settled_amount=Decimal("500.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=household.id,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        summary = await transaction_repository.get_summary(
+            user.id,
+            StatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        by_category = await transaction_repository.get_by_category(
+            user.id,
+            CategoryStatisticsFilters(
+                type=TransactionType.EXPENSE,
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 3, 31),
+            ),
+        )
+
+        assert len(summary) == 1
+        expense_total = summary[0].total
+
+        assert expense_total == Decimal("1450.00")
+
+        assert sum(row.total for row in by_category) == expense_total
+
 
 class TestGetSpent:
     async def test_get_spent(

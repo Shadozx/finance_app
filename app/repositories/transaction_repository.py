@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, case, delete, func, or_, select
+from sqlalchemy import ColumnElement, Select, Subquery, and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -92,15 +92,18 @@ class TransactionRepository:
         user_id: int,
         filters: CategoryStatisticsFilters,
     ) -> list[CategorySummaryRow]:
+        contributions = self._category_contributions()
+
         query = (
             select(
                 Transaction.settled_currency_code,
-                Transaction.category_id,
+                contributions.c.category_id,
                 Category.name,
-                func.sum(Transaction.settled_amount),
+                func.sum(contributions.c.settled_amount),
             )
-            .join(Category, Category.id == Transaction.category_id, isouter=True)
-            .group_by(Transaction.settled_currency_code, Transaction.category_id, Category.name)
+            .join(contributions, contributions.c.transaction_id == Transaction.id)
+            .join(Category, Category.id == contributions.c.category_id, isouter=True)
+            .group_by(Transaction.settled_currency_code, contributions.c.category_id, Category.name)
             .where(Transaction.user_id == user_id)
             .where(self._counts_in_totals())
         )
@@ -108,7 +111,7 @@ class TransactionRepository:
         query = self._apply_filters(query, filters)
 
         if filters.category_id is not None:
-            query = query.where(Transaction.category_id == filters.category_id)
+            query = query.where(contributions.c.category_id == filters.category_id)
 
         if filters.currency_code is not None:
             query = query.where(Transaction.settled_currency_code == filters.currency_code)
@@ -200,6 +203,26 @@ class TransactionRepository:
             .where(TransactionSplit.transaction_id == Transaction.id)
             .exists()
         )
+
+    def _category_contributions(self) -> Subquery:
+        """One row per (transaction, category) with the amount belonging to that category.
+
+        A split transaction contributes one row per split; a plain one contributes
+        a single row carrying its own category. The two sets never overlap.
+        """
+        from_splits = select(
+            TransactionSplit.transaction_id.label("transaction_id"),
+            TransactionSplit.category_id.label("category_id"),
+            TransactionSplit.settled_amount.label("settled_amount"),
+        )
+
+        from_transactions = select(
+            Transaction.id.label("transaction_id"),
+            Transaction.category_id.label("category_id"),
+            Transaction.settled_amount.label("settled_amount"),
+        ).where(~self._has_splits())
+
+        return from_splits.union_all(from_transactions).subquery()
 
     def _apply_filters(
         self,
