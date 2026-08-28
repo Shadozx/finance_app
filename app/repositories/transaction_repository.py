@@ -2,11 +2,11 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, and_, or_, case, delete, func, select
+from sqlalchemy import ColumnElement, Select, and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models import Category, Transaction, TransactionSplit, TransactionKind, TransactionType
+from app.models import Category, Transaction, TransactionKind, TransactionSplit, TransactionType
 from app.repositories.types import CategorySummaryRow, SummaryRow, TransactionFilterProtocol
 from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 
@@ -130,6 +130,32 @@ class TransactionRepository:
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        """Money spent in a category: plain transactions plus the matching parts of split ones."""
+        from_transactions = await self._spent_from_transactions(
+            user_id, category_id, currency_code, start_date, end_date
+        )
+
+        from_splits = await self._spent_from_splits(
+            user_id, category_id, currency_code, start_date, end_date
+        )
+
+        return from_transactions + from_splits
+
+    async def _spent_from_transactions(
+        self,
+        user_id: int,
+        category_id: int,
+        currency_code: str,
+        start_date: date,
+        end_date: date,
+    ) -> Decimal:
+        """Transactions carrying the category themselves.
+
+        The NOT EXISTS guard is redundant while the schema holds — a transaction
+        with splits has no category of its own. It is kept because the invariant
+        lives in Pydantic, not in the database: a future import or migration that
+        writes both would otherwise be counted twice, silently.
+        """
         query = (
             select(func.coalesce(func.sum(Transaction.settled_amount), Decimal("0")))
             .where(Transaction.user_id == user_id)
@@ -139,8 +165,41 @@ class TransactionRepository:
             .where(Transaction.date >= start_date)
             .where(Transaction.date <= end_date)
             .where(self._counts_in_totals())
+            .where(~self._has_splits())
         )
+
         return (await self.session.execute(query)).scalar_one()
+
+    async def _spent_from_splits(
+        self,
+        user_id: int,
+        category_id: int,
+        currency_code: str,
+        start_date: date,
+        end_date: date,
+    ) -> Decimal:
+        """The amount comes from the split; ownership, currency, type and dates from its parent."""
+        query = (
+            select(func.coalesce(func.sum(TransactionSplit.settled_amount), Decimal("0")))
+            .join(Transaction, Transaction.id == TransactionSplit.transaction_id)
+            .where(TransactionSplit.category_id == category_id)
+            .where(Transaction.user_id == user_id)
+            .where(Transaction.settled_currency_code == currency_code)
+            .where(Transaction.type == TransactionType.EXPENSE)
+            .where(Transaction.date >= start_date)
+            .where(Transaction.date <= end_date)
+            .where(self._counts_in_totals())
+        )
+
+        return (await self.session.execute(query)).scalar_one()
+
+    def _has_splits(self) -> ColumnElement[bool]:
+        """Whether this transaction has a breakdown of its own."""
+        return (
+            select(TransactionSplit.id)
+            .where(TransactionSplit.transaction_id == Transaction.id)
+            .exists()
+        )
 
     def _apply_filters(
         self,

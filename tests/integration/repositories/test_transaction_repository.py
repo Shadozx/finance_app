@@ -1934,6 +1934,497 @@ class TestGetSpent:
 
         assert spent == Decimal("1000.00")
 
+    async def test_get_spent_counts_split_part_only(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """A 1000.00 receipt with 800.00 of groceries adds 800.00 to the budget, not 1000.00."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("800.00")
+
+    async def test_get_spent_counts_repeated_split_category(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """Ice cream and pasta are two lines of one category: both add up."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Ice cream and pasta",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("1000.00")
+
+    async def test_get_spent_sums_plain_and_split_transactions(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """Both sources feed one budget, and neither is counted twice."""
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("300.00"),
+                description="Coffee",
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 5),
+            )
+        )
+
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="ATB",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("1100.00")
+
+    async def test_get_spent_ignores_splits_of_other_categories(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Nothing for this budget",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("600.00"),
+                    settled_amount=Decimal("600.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("400.00"),
+                    settled_amount=Decimal("400.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("0")
+
+    async def test_get_spent_splits_use_settled_amount(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        usd_currency: Currency,
+    ):
+        """A budget is set in the account currency, so splits enter it settled, not as billed."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("24.00"),
+                description="Lidl",
+                currency_code=usd_currency.code,
+                settled_currency_code=uah_currency.code,
+                settled_amount=Decimal("1000.00"),
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("2.00"),
+                    settled_amount=Decimal("83.33"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("22.00"),
+                    settled_amount=Decimal("916.67"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("83.33")
+
+    async def test_get_spent_ignores_splits_of_adjustments(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """The kind lives on the parent: a split inherits its exclusion through the join."""
+        adjustment = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.ADJUSTMENT,
+                amount=Decimal("1000.00"),
+                description="Balance correction",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=adjustment.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=adjustment.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("0")
+
+    async def test_get_spent_ignores_splits_of_income(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        income = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.INCOME,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Refund and bonus",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=income.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=income.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("0")
+
+    async def test_get_spent_ignores_splits_out_of_range(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """The date lives on the parent too: an April receipt stays out of a February budget."""
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="April receipt",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 4, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("0")
+
+    async def test_get_spent_ignores_splits_of_other_users(
+        self,
+        account_repository: AccountRepository,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user_repository: UserRepository,
+        user: User,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        """Splits carry no owner: ownership reaches them through the parent transaction."""
+        other_user = await user_repository.add(
+            User(
+                email="othersplitspent@test.com",
+                username="othersplitspent",
+                hashed_password="hashed_password",
+            )
+        )
+
+        other_account = await account_repository.add(
+            Account(
+                name="Other user account",
+                currency_code=uah_currency.code,
+                user_id=other_user.id,
+            )
+        )
+
+        other_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                description="Other user receipt",
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=other_user.id,
+                account_id=other_account.id,
+                date=date(2026, 2, 10),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=other_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("800.00"),
+                    settled_amount=Decimal("800.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=other_transaction.id,
+                    category_id=None,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent(
+            user.id,
+            category.id,
+            uah_currency.code,
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+
+        assert spent == Decimal("0")
+
 
 class TestGetBalance:
     async def test_get_balance_empty_account_returns_zero(
