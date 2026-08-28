@@ -1,5 +1,6 @@
 import calendar
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from fastapi import status
@@ -11,6 +12,7 @@ from tests.integration.endpoints.helpers import (
     create_account,
     create_category,
     create_transaction,
+    split_payload,
     transaction_payload,
 )
 from tests.integration.endpoints.types import (
@@ -859,3 +861,260 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
+
+    async def test_get_categories_counts_splits(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """A split receipt lands in its categories, not in the uncategorized group."""
+        food = await create_category(
+            client,
+            category_payload(name="Food"),
+            authenticated_user["headers"],
+        )
+
+        household = await create_category(
+            client,
+            category_payload(name="Household"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-10",
+                amount="1000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(food["id"], "800.00"),
+                    split_payload(household["id"], "200.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_CATEGORIES,
+            params={
+                "type": "EXPENSE",
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-31",
+            },
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        cats = categories_of(body, active_currency["code"])
+        by_name = {c["category_name"]: c for c in cats}
+
+        assert by_name["Food"]["total"] == "800.00"
+        assert by_name["Household"]["total"] == "200.00"
+
+        assert None not in by_name
+
+    async def test_get_categories_counts_uncategorized_split_part(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """An unsorted part of a receipt is uncategorized money, and the report says so."""
+        food = await create_category(
+            client,
+            category_payload(name="Food"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-10",
+                amount="1000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(food["id"], "700.00"),
+                    split_payload(None, "300.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_CATEGORIES,
+            params={
+                "type": "EXPENSE",
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-31",
+            },
+            headers=authenticated_user["headers"],
+        )
+
+        body = response.json()
+
+        cats = categories_of(body, active_currency["code"])
+        by_name = {c["category_name"]: c for c in cats}
+
+        assert by_name["Food"]["total"] == "700.00"
+
+        assert by_name[None]["total"] == "300.00"
+        assert by_name[None]["category_id"] is None
+
+    async def test_get_categories_sums_plain_and_split_transactions(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """Both sources land in the same row, and neither is counted twice."""
+        food = await create_category(
+            client,
+            category_payload(name="Food"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-05",
+                amount="300.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=food["id"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-10",
+                amount="1000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(food["id"], "800.00"),
+                    split_payload(None, "200.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_CATEGORIES,
+            params={
+                "type": "EXPENSE",
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-31",
+            },
+            headers=authenticated_user["headers"],
+        )
+
+        body = response.json()
+
+        cats = categories_of(body, active_currency["code"])
+        by_name = {c["category_name"]: c for c in cats}
+
+        assert by_name["Food"]["total"] == "1100.00"
+        assert by_name[None]["total"] == "200.00"
+
+    async def test_get_categories_total_matches_summary(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """Two endpoints, two queries: every unit of money is counted exactly once."""
+        food = await create_category(
+            client,
+            category_payload(name="Food"),
+            authenticated_user["headers"],
+        )
+
+        household = await create_category(
+            client,
+            category_payload(name="Household"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-05",
+                amount="300.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=food["id"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-06",
+                amount="150.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=None,
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-02-10",
+                amount="1000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(food["id"], "500.00"),
+                    split_payload(household["id"], "300.00"),
+                    split_payload(None, "200.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        params = {
+            "start_date": "2026-01-01",
+            "end_date": "2026-03-31",
+        }
+
+        summary_response = await client.get(
+            API_SUMMARY,
+            params=params,
+            headers=authenticated_user["headers"],
+        )
+
+        categories_response = await client.get(
+            API_CATEGORIES,
+            params={**params, "type": "EXPENSE"},
+            headers=authenticated_user["headers"],
+        )
+
+        summary = summaries_by_code(summary_response.json())[active_currency["code"]]
+
+        assert summary["expense"] == "1450.00"
+
+        cats = categories_of(categories_response.json(), active_currency["code"])
+
+        assert sum(Decimal(c["total"]) for c in cats) == Decimal(summary["expense"])

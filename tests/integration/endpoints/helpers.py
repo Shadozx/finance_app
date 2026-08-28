@@ -193,3 +193,18 @@ async def create_transfer(
     assert response.status_code == status.HTTP_201_CREATED
 
     return response.json()
+
+
+def split_payload(
+    category_id: int | None = None,
+    amount: str = "500.00",
+    description: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {"amount": amount}
+
+    if category_id is not None:
+        payload["category_id"] = category_id
+    if description is not None:
+        payload["description"] = description
+
+    return payload

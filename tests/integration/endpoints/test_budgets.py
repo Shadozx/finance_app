@@ -2,7 +2,14 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
+from tests.integration.endpoints.helpers import (
+    archive_category,
+    category_payload,
+    create_category,
+    create_transaction,
+    split_payload,
+    transaction_payload,
+)
 from tests.integration.endpoints.types import (
     AccountData,
     AuthenticatedUser,
@@ -735,8 +742,6 @@ class TestBudgetStatusWithRealTransactions:
         active_currency: CurrencyData,
         created_category: CategoryData,
     ):
-        from tests.integration.endpoints.helpers import create_transaction, transaction_payload
-
         await create_transaction(
             client,
             transaction_payload(
@@ -810,8 +815,6 @@ class TestBudgetStatusWithRealTransactions:
         active_currency: CurrencyData,
         created_category: CategoryData,
     ):
-        from tests.integration.endpoints.helpers import create_transaction, transaction_payload
-
         await create_transaction(
             client,
             transaction_payload(
@@ -836,3 +839,139 @@ class TestBudgetStatusWithRealTransactions:
         assert body["remaining"] == "-1000.00"
         assert body["percent"] == "120.00"
         assert body["is_exceeded"] is True
+
+    async def test_status_counts_split_part_only(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        """A 2500.00 receipt with 2000.00 of groceries spends 2000.00 of the budget."""
+        household = await create_category(
+            client,
+            category_payload(name="Household"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-10",
+                amount="2500.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(created_category["id"], "2000.00"),
+                    split_payload(household["id"], "500.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_BUDGETS}/{created_budget['id']}/status",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+
+        assert body["spent"] == "2000.00"
+        assert body["remaining"] == "3000.00"
+        assert body["percent"] == "40.00"
+        assert body["is_exceeded"] is False
+
+    async def test_status_sums_plain_and_split_transactions(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        """Both sources feed one budget, and neither is counted twice."""
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-10",
+                amount="1000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+                account_id=created_account["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-12",
+                amount="2500.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(created_category["id"], "2000.00"),
+                    split_payload(None, "500.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_BUDGETS}/{created_budget['id']}/status",
+            headers=authenticated_user["headers"],
+        )
+
+        body = response.json()
+
+        assert body["spent"] == "3000.00"
+        assert body["remaining"] == "2000.00"
+        assert body["is_exceeded"] is False
+
+    async def test_status_ignores_splits_of_other_categories(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """A receipt split entirely into other categories leaves this budget untouched."""
+        household = await create_category(
+            client,
+            category_payload(name="Household"),
+            authenticated_user["headers"],
+        )
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-10",
+                amount="2500.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(household["id"], "2000.00"),
+                    split_payload(None, "500.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_BUDGETS}/{created_budget['id']}/status",
+            headers=authenticated_user["headers"],
+        )
+
+        body = response.json()
+
+        assert body["spent"] == "0.00"
+        assert body["is_exceeded"] is False

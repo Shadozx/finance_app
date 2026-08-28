@@ -10,6 +10,7 @@ from tests.integration.endpoints.helpers import (
     create_category,
     create_transaction,
     create_transaction_template,
+    split_payload,
     transaction_payload,
     transaction_template_payload,
 )
@@ -123,21 +124,6 @@ def transaction_from_template_payload(
 
     if account_id is not None:
         payload["account_id"] = account_id
-
-    return payload
-
-
-def split_payload(
-    category_id: int | None = None,
-    amount: str = "500.00",
-    description: str | None = None,
-) -> dict[str, object]:
-    payload: dict[str, object] = {"amount": amount}
-
-    if category_id is not None:
-        payload["category_id"] = category_id
-    if description is not None:
-        payload["description"] = description
 
     return payload
 
