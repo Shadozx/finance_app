@@ -78,7 +78,7 @@ class TransactionRepository:
         query = self._apply_filters(query, filters)
 
         if filters.category_id is not None:
-            query = query.where(Transaction.category_id >= filters.category_id)
+            query = query.where(Transaction.category_id == filters.category_id)
 
         if filters.currency_code is not None:
             query = query.where(Transaction.settled_currency_code == filters.currency_code)
