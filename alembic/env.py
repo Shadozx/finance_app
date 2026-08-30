@@ -14,6 +14,7 @@ from app.models.currency import Currency
 from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_template import TransactionTemplate
+from app.models.transaction_template_split import TransactionTemplateSplit
 from app.models.user import User
 
 # Alembic Config
