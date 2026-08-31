@@ -8,6 +8,7 @@ from app.models import (
     Category,
     Transaction,
     TransactionTemplate,
+    TransactionTemplateSplit,
     TransactionType,
     User,
 )
@@ -113,6 +114,17 @@ def make_transaction_template(**kwargs) -> TransactionTemplate:
     kwargs.setdefault("created_at", datetime.now(UTC))
 
     return TransactionTemplate(**kwargs)
+
+
+def make_transaction_template_split(**kwargs) -> TransactionTemplateSplit:
+    """Template split with all required fields defaulted: tests pass only what they assert on."""
+    kwargs.setdefault("id", 1)
+    kwargs.setdefault("transaction_template_id", 1)
+    kwargs.setdefault("category_id", 1)
+    kwargs.setdefault("amount", Decimal("100.00"))
+    kwargs.setdefault("description", None)
+
+    return TransactionTemplateSplit(**kwargs)
 
 
 def make_user(**kwargs) -> User:

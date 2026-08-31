@@ -62,8 +62,9 @@ def transaction_template_payload(
     currency_code: str = "USD",
     category_id: int | None = None,
     description: str | None = None,
+    splits: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "name": name,
         "amount": amount,
         "type": template_type,
@@ -71,6 +72,11 @@ def transaction_template_payload(
         "category_id": category_id,
         "description": description,
     }
+
+    if splits is not None:
+        payload["splits"] = splits
+
+    return payload
 
 
 async def create_transaction_template(

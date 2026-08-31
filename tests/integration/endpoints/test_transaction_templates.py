@@ -1,10 +1,15 @@
+from decimal import Decimal
+
 import pytest
 from fastapi import status
 from httpx import AsyncClient
 
 from tests.integration.endpoints.helpers import (
     archive_category,
+    category_payload,
+    create_category,
     create_transaction_template,
+    split_payload,
     transaction_template_payload,
 )
 from tests.integration.endpoints.types import (
@@ -251,6 +256,229 @@ class TestCreateTransactionTemplate:
 
         assert "detail" in response.json()
 
+    async def test_create_template_with_splits_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        household = await create_category(
+            client, category_payload(name="Household"), authenticated_user["headers"]
+        )
+
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(created_category["id"], "100.00", "Groceries"),
+                split_payload(household["id"], "50.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        body = response.json()
+
+        assert body["category_id"] is None
+
+        assert body["has_splits"] is True
+
+        assert len(body["splits"]) == 2
+
+        assert all(split["id"] is not None for split in body["splits"])
+
+        assert body["splits"][0]["category_id"] == created_category["id"]
+        assert body["splits"][0]["amount"] == "100.00"
+        assert body["splits"][0]["description"] == "Groceries"
+
+        assert body["splits"][1]["category_id"] == household["id"]
+        assert body["splits"][1]["amount"] == "50.00"
+        assert body["splits"][1]["description"] is None
+
+    async def test_create_template_splits_sum_mismatch_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(created_category["id"], "100.00"),
+                split_payload(None, "30.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        detail = response.json()["detail"]
+
+        assert any("add up to" in error["msg"] for error in detail)
+
+        # The whole payload is at fault, not one field: splits only make sense
+        # against the template's own amount.
+        assert detail[0]["loc"] == ["body"]
+
+    async def test_create_template_splits_with_own_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """A template is categorized either as a whole or per split, never both."""
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+            splits=[
+                split_payload(created_category["id"], "100.00"),
+                split_payload(None, "50.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        detail = response.json()["detail"]
+
+        assert any("cannot have its own category" in error["msg"] for error in detail)
+
+    async def test_create_template_single_split_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """One split is not a split: min_length rejects it before any custom rule."""
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[split_payload(created_category["id"], "150.00")],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        detail = response.json()["detail"]
+
+        assert any(error["type"] == "too_short" for error in detail)
+
+    async def test_create_template_split_amount_too_many_decimals_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """Precision is checked per split, before the parts are summed: 50.005 + 99.995 adds up."""
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(created_category["id"], "50.005"),
+                split_payload(None, "99.995"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        detail = response.json()["detail"]
+
+        assert any("more than 2 decimal places" in error["msg"] for error in detail)
+
+    async def test_create_template_split_with_other_user_category_forbidden(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """Ownership is enforced on split categories, not just the template's own."""
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(created_category["id"], "100.00"),
+                split_payload(None, "50.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=other_authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        assert "detail" in response.json()
+
+    async def test_create_template_split_with_archived_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        archived_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_template_payload(
+            amount="150.00",
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(archived_category["id"], "100.00"),
+                split_payload(None, "50.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        assert "detail" in response.json()
+
     async def test_create_template_with_unknown_category_fails(
         self,
         client: AsyncClient,
@@ -459,6 +687,58 @@ class TestGetTransactionTemplates:
 
         assert body[0]["user_id"] == authenticated_user["user"]["id"]
 
+    async def test_get_templates_marks_splits_without_returning_them(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """The list stays light: it says a template is split, it does not carry the splits."""
+        split_template = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                name="Split template",
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        plain_template = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                name="Plain template",
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            API_TRANSACTION_TEMPLATES,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert len(body) == 2
+
+        by_id = {template["id"]: template for template in body}
+
+        assert by_id[split_template["id"]]["has_splits"] is True
+        assert by_id[plain_template["id"]]["has_splits"] is False
+
+        assert "splits" not in body[0]
+        assert "splits" not in body[1]
+
     async def test_get_templates_returns_only_own_templates(
         self,
         client: AsyncClient,
@@ -660,6 +940,57 @@ class TestGetTransactionTemplateById:
         assert body["type"] == created_transaction_template["type"]
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["created_at"] is not None
+
+    async def test_get_template_by_id_returns_splits(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        household = await create_category(
+            client, category_payload(name="Household"), authenticated_user["headers"]
+        )
+
+        created = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00", "Groceries"),
+                    split_payload(household["id"], "50.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["has_splits"] is True
+
+        assert len(body["splits"]) == 2
+
+        assert [split["id"] for split in body["splits"]] == sorted(
+            split["id"] for split in body["splits"]
+        )
+
+        assert body["splits"][0]["category_id"] == created_category["id"]
+        assert body["splits"][0]["amount"] == "100.00"
+        assert body["splits"][0]["description"] == "Groceries"
+
+        assert body["splits"][1]["category_id"] == household["id"]
+        assert body["splits"][1]["amount"] == "50.00"
+
+        assert sum(Decimal(split["amount"]) for split in body["splits"]) == Decimal(body["amount"])
 
     async def test_get_template_by_id_not_found(
         self,
@@ -1134,13 +1465,19 @@ class TestUpdateTransactionTemplate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
-    async def test_update_template_keeps_archived_category_allowed(
+    async def test_update_template_rejects_archived_category(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
         created_category: CategoryData,
         active_currency: CurrencyData,
     ):
+        """A template describes the future, so keeping an already attached category is no excuse.
+
+        Unlike a transaction, which records something that already happened, a
+        template with an archived category would only produce transactions that
+        cannot be created.
+        """
         created_transaction_template = await create_transaction_template(
             client,
             transaction_template_payload(
@@ -1167,12 +1504,204 @@ class TestUpdateTransactionTemplate:
             headers=authenticated_user["headers"],
         )
 
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        assert "detail" in response.json()
+
+    async def test_update_template_replaces_splits(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """The old rows are gone from the database, not merely absent from the PUT response."""
+        created = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        old_split_ids = {split["id"] for split in created["splits"]}
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            json=transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "70.00"),
+                    split_payload(None, "50.00"),
+                    split_payload(None, "30.00", "Tip"),
+                ],
+            ),
+            headers=authenticated_user["headers"],
+        )
+
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        get_response = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            headers=authenticated_user["headers"],
+        )
 
-        assert body["name"] == "Renamed template"
+        body = get_response.json()
+
+        assert body["has_splits"] is True
+
+        assert len(body["splits"]) == 3
+
+        assert [split["amount"] for split in body["splits"]] == ["70.00", "50.00", "30.00"]
+
+        assert not old_split_ids & {split["id"] for split in body["splits"]}
+
+    async def test_update_template_removes_splits(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        created = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            json=transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        get_response = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        body = get_response.json()
+
+        assert body["has_splits"] is False
+
+        assert not body["splits"]
+
         assert body["category_id"] == created_category["id"]
+
+    async def test_update_template_adds_splits_to_plain_template(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """The other direction: a plain template becomes a split one."""
+        created = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            json=transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        get_response = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        body = get_response.json()
+
+        assert body["has_splits"] is True
+
+        assert len(body["splits"]) == 2
+
+        assert body["category_id"] is None
+
+    async def test_update_template_split_with_archived_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        """The strict rule reaches split rows too: an archived category blocks the update."""
+        created = await create_transaction_template(
+            client,
+            transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            authenticated_user["headers"],
+        )
+
+        await archive_category(
+            client,
+            created_category["id"],
+            authenticated_user["headers"],
+        )
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}",
+            json=transaction_template_payload(
+                amount="150.00",
+                currency_code=active_currency["code"],
+                category_id=None,
+                splits=[
+                    split_payload(created_category["id"], "100.00"),
+                    split_payload(None, "50.00"),
+                ],
+            ),
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        assert "detail" in response.json()
 
     async def test_update_template_without_token(
         self,
