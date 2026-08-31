@@ -38,7 +38,10 @@ from .transaction import (
 )
 from .transaction_template import (
     TransactionTemplateCreate,
+    TransactionTemplateListItem,
     TransactionTemplateResponse,
+    TransactionTemplateSplitCreate,
+    TransactionTemplateSplitResponse,
     TransactionTemplateUpdate,
     UseTemplateRequest,
 )
@@ -86,7 +89,10 @@ __all__ = [
     "TransactionSplitCreate",
     "TransactionSplitResponse",
     "TransactionTemplateCreate",
+    "TransactionTemplateListItem",
     "TransactionTemplateResponse",
+    "TransactionTemplateSplitCreate",
+    "TransactionTemplateSplitResponse",
     "TransactionTemplateUpdate",
     "TransactionUpdate",
     "TransferCreate",

@@ -13,6 +13,7 @@ from app.repositories import (
     TransactionRepository,
     TransactionSplitRepository,
     TransactionTemplateRepository,
+    TransactionTemplateSplitRepository,
     UserRepository,
 )
 from app.services import (
@@ -29,7 +30,7 @@ from app.services import (
 
 
 def get_user_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> UserService:
     user_repository = UserRepository(session)
     unit_of_work = UnitOfWork(session)
@@ -38,7 +39,7 @@ def get_user_service(
 
 
 def get_category_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> CategoryService:
     category_repository = CategoryRepository(session)
     unit_of_work = UnitOfWork(session)
@@ -47,7 +48,7 @@ def get_category_service(
 
 
 def get_transaction_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> TransactionService:
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
@@ -69,15 +70,17 @@ def get_transaction_service(
 
 
 def get_transaction_template_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> TransactionTemplateService:
     category_repository = CategoryRepository(session)
     currency_repository = CurrencyRepository(session)
     transaction_template_repository = TransactionTemplateRepository(session)
+    transaction_template_split_repository = TransactionTemplateSplitRepository(session)
     unit_of_work = UnitOfWork(session)
 
     return TransactionTemplateService(
         transaction_template_repository=transaction_template_repository,
+        transaction_template_split_repository=transaction_template_split_repository,
         category_repository=category_repository,
         currency_repository=currency_repository,
         unit_of_work=unit_of_work,
@@ -97,7 +100,7 @@ def get_currency_service(session: AsyncSession = Depends(get_session)) -> Curren
 
 
 def get_budget_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> BudgetService:
     budget_repository = BudgetRepository(session)
     transaction_repository = TransactionRepository(session)
@@ -115,7 +118,7 @@ def get_budget_service(
 
 
 def get_account_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> AccountService:
     account_repository = AccountRepository(session)
     currency_repository = CurrencyRepository(session)
@@ -131,7 +134,7 @@ def get_account_service(
 
 
 def get_transfer_service(
-    session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),
 ) -> TransferService:
     transaction_repository = TransactionRepository(session)
     account_repository = AccountRepository(session)
@@ -150,8 +153,8 @@ security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    session: AsyncSession = Depends(get_session),
+        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+        session: AsyncSession = Depends(get_session),
 ) -> User:
     if not credentials:
         raise AuthenticationException("Authorization header missing")
