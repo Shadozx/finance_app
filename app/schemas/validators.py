@@ -54,6 +54,9 @@ def amount_validator(amount: Decimal) -> Decimal:
     if amount < 0:
         raise ValueError("Amount cannot be negative")
 
+    if amount.as_tuple().exponent < -2:
+        raise ValueError("Amount cannot have more than 2 decimal places")
+
     return amount
 
 
