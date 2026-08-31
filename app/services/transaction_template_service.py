@@ -136,15 +136,29 @@ class TransactionTemplateService:
             self.transaction_template_repository, user_id, template_id
         )
 
-        category_changed = data.category_id != existing_template.category_id
         currency_changed = data.currency_code != existing_template.currency_code
 
+        # Unlike transactions, a template describes the future: an archived
+        # category here would produce a transaction that cannot be created.
         await validators.validate_category(
             self.category_repository,
             user_id,
             data.category_id,
-            allow_archived=not category_changed,
+            allow_archived=False,
         )
+
+        if data.splits is not None:
+            split_category_ids = {
+                split.category_id for split in data.splits if split.category_id is not None
+            }
+
+            for category_id in split_category_ids:
+                await validators.validate_category(
+                    self.category_repository,
+                    user_id,
+                    category_id,
+                    allow_archived=False,
+                )
 
         await validators.validate_currency(
             self.currency_repository,
@@ -161,13 +175,33 @@ class TransactionTemplateService:
 
         updated_template = await self.transaction_template_repository.update(existing_template)
 
+        old_splits = await self.transaction_template_split_repository.get_by_template(template_id)
+
+        splits: list[TransactionTemplateSplit] = []
+
+        if old_splits:
+            await self.transaction_template_split_repository.delete_by_template(template_id)
+
+        if data.splits is not None:
+            splits = [
+                TransactionTemplateSplit(
+                    transaction_template_id=template_id,
+                    category_id=split.category_id,
+                    amount=split.amount,
+                    description=split.description,
+                )
+                for split in data.splits
+            ]
+
+            await self.transaction_template_split_repository.add_all(splits)
+
         await self.unit_of_work.commit()
 
         logger.info(
             "transaction_template_update_success", user_id=user_id, template_id=updated_template.id
         )
 
-        return TransactionTemplateResponse.model_validate(updated_template)
+        return self._to_response(updated_template, splits)
 
     async def delete_template(self, template_id: int, user_id: int) -> None:
         existing_template = await validators.validate_template(
