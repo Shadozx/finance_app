@@ -51,6 +51,9 @@ def username_validator(username: str) -> str:
 
 
 def amount_validator(amount: Decimal) -> Decimal:
+    if not amount.is_finite():
+        raise ValueError("Amount must be a finite number")
+
     if amount < 0:
         raise ValueError("Amount cannot be negative")
 
