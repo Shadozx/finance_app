@@ -111,11 +111,15 @@ class TestAmountValidator:
         """A zero amount is a valid record, not a missing one."""
         assert amount_validator(Decimal("0.00")) == Decimal("0.00")
 
+    def test_amount_with_trailing_zeros_allowed(self):
+        """Storing 1.0000 as NUMERIC(15, 2) loses nothing: only the form changes."""
+        assert amount_validator(Decimal("1.0000")) == Decimal("1.00")
+
     def test_negative_amount_rejected(self):
         with pytest.raises(ValueError, match="Amount cannot be negative"):
             amount_validator(Decimal("-1.00"))
 
-    @pytest.mark.parametrize("amount", [Decimal("33.333"), Decimal("0.001"), Decimal("1.0000")])
+    @pytest.mark.parametrize("amount", [Decimal("33.333"), Decimal("0.001")])
     def test_amount_with_more_than_two_decimals_rejected(self, amount: Decimal):
         """NUMERIC(15, 2) would silently round these, breaking split sums."""
         with pytest.raises(ValueError, match="more than 2 decimal places"):
@@ -123,7 +127,7 @@ class TestAmountValidator:
 
     @pytest.mark.parametrize("amount", ["NaN", "Infinity", "-Infinity"])
     def test_non_finite_amount_rejected(self, amount: str):
-        """Comparing a non-finite exponent to an int raises TypeError, not ValueError."""
+        """NaN and Infinity are not amounts: quantize would raise InvalidOperation, not ValueError."""
         with pytest.raises(ValueError, match="Amount must be a finite number"):
             amount_validator(Decimal(amount))
 
