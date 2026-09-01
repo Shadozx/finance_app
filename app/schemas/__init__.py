@@ -43,7 +43,6 @@ from .transaction_template import (
     TransactionTemplateSplitCreate,
     TransactionTemplateSplitResponse,
     TransactionTemplateUpdate,
-    UseTemplateRequest,
 )
 from .transfer import TransferCreate, TransferResponse, TransferUpdate
 from .user import (
@@ -98,7 +97,6 @@ __all__ = [
     "TransferCreate",
     "TransferResponse",
     "TransferUpdate",
-    "UseTemplateRequest",
     "UserCreate",
     "UserLogin",
     "UsernameUpdate",

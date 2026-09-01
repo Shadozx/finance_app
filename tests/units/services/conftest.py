@@ -98,7 +98,6 @@ def unit_of_work_mock(mocker: MockerFixture):
 def transaction_service(
     transaction_repo_mock: TransactionRepository,
     transaction_split_repo_mock: TransactionSplitRepository,
-    transaction_template_repo_mock: TransactionTemplateRepository,
     currency_repo_mock: CurrencyRepository,
     category_repo_mock: CategoryRepository,
     account_repo_mock: AccountRepository,
@@ -107,7 +106,6 @@ def transaction_service(
     return TransactionService(
         transaction_repository=transaction_repo_mock,
         transaction_split_repository=transaction_split_repo_mock,
-        transaction_template_repository=transaction_template_repo_mock,
         category_repository=category_repo_mock,
         currency_repository=currency_repo_mock,
         account_repository=account_repo_mock,

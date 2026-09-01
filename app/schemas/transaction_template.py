@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -116,35 +116,3 @@ class TransactionTemplateListItem(BaseModel):
 
 class TransactionTemplateResponse(TransactionTemplateListItem):
     splits: list[TransactionTemplateSplitResponse] | None = None
-
-
-class UseTemplateRequest(BaseModel):
-    type: TransactionType | None = None
-
-    amount: Decimal | None = None
-
-    currency_code: str | None = None
-
-    settled_amount: Decimal | None = None
-
-    category_id: int | None = None
-
-    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
-
-    account_id: int
-
-    date: date
-
-    @field_validator("amount", "settled_amount")
-    @classmethod
-    def validate_amounts_if_provided(cls, v: Decimal | None) -> Decimal | None:
-        if v is not None:
-            return amount_validator(v)
-        return v
-
-    @field_validator("currency_code")
-    @classmethod
-    def validate_currency_if_provided(cls, v: str | None) -> str | None:
-        if v is not None:
-            return currency_code_validator(v)
-        return v

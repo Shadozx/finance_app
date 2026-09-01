@@ -8,7 +8,6 @@ from app.schemas import (
     TransactionListItem,
     TransactionResponse,
     TransactionUpdate,
-    UseTemplateRequest,
 )
 from app.services import TransactionService
 
@@ -26,22 +25,6 @@ async def create_transaction(
     current_user: User = Depends(get_current_user),
 ):
     return await transaction_service.create_transaction(data, current_user.id)
-
-
-@router.post(
-    "/from-template/{transaction_template_id}",
-    status_code=status.HTTP_201_CREATED,
-    response_model=TransactionResponse,
-)
-async def create_transaction_from_template(
-    transaction_template_id: int,
-    data: UseTemplateRequest,
-    transaction_service: TransactionService = Depends(get_transaction_service),
-    current_user: User = Depends(get_current_user),
-):
-    return await transaction_service.create_transaction_from_template(
-        transaction_template_id, data, current_user.id
-    )
 
 
 @router.get("", response_model=list[TransactionListItem])

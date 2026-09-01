@@ -9,7 +9,6 @@ from app.repositories import (
     CurrencyRepository,
     TransactionRepository,
     TransactionSplitRepository,
-    TransactionTemplateRepository,
 )
 from app.schemas import (
     TransactionCreate,
@@ -18,7 +17,6 @@ from app.schemas import (
     TransactionResponse,
     TransactionSplitResponse,
     TransactionUpdate,
-    UseTemplateRequest,
 )
 from app.services import validators
 
@@ -30,7 +28,6 @@ class TransactionService:
         self,
         transaction_repository: TransactionRepository,
         transaction_split_repository: TransactionSplitRepository,
-        transaction_template_repository: TransactionTemplateRepository,
         account_repository: AccountRepository,
         category_repository: CategoryRepository,
         currency_repository: CurrencyRepository,
@@ -38,7 +35,6 @@ class TransactionService:
     ):
         self.transaction_repository = transaction_repository
         self.transaction_split_repository = transaction_split_repository
-        self.transaction_template_repository = transaction_template_repository
         self.account_repository = account_repository
         self.category_repository = category_repository
         self.currency_repository = currency_repository
@@ -108,67 +104,6 @@ class TransactionService:
         )
 
         return self._to_response(created_transaction, splits=splits)
-
-    async def create_transaction_from_template(
-        self,
-        template_id: int,
-        data: UseTemplateRequest,
-        user_id: int,
-    ) -> TransactionResponse:
-        existing_template = await validators.validate_template(
-            self.transaction_template_repository, user_id, template_id
-        )
-
-        final_type = data.type if data.type is not None else existing_template.type
-        final_amount = data.amount if data.amount is not None else existing_template.amount
-        final_category_id = (
-            data.category_id if data.category_id is not None else existing_template.category_id
-        )
-        final_currency_code = (
-            data.currency_code
-            if data.currency_code is not None
-            else existing_template.currency_code
-        )
-        final_description = (
-            data.description if data.description is not None else existing_template.description
-        )
-
-        await validators.validate_category(self.category_repository, user_id, final_category_id)
-        await validators.validate_currency(self.currency_repository, final_currency_code)
-
-        account = await validators.validate_account(
-            self.account_repository, user_id, data.account_id
-        )
-
-        settled_amount = validators.resolve_settled_amount(
-            account, final_currency_code, final_amount, data.settled_amount
-        )
-
-        new_transaction = Transaction(
-            type=final_type,
-            kind=TransactionKind.REGULAR,
-            amount=final_amount,
-            description=final_description,
-            currency_code=final_currency_code,
-            settled_amount=settled_amount,
-            settled_currency_code=account.currency_code,
-            account_id=data.account_id,
-            user_id=user_id,
-            category_id=final_category_id,
-            date=data.date,
-        )
-
-        created_transaction = await self.transaction_repository.add(new_transaction)
-
-        await self.unit_of_work.commit()
-
-        logger.info(
-            "transaction_create_from_template_success",
-            user_id=user_id,
-            transaction_id=created_transaction.id,
-        )
-
-        return self._to_response(created_transaction)
 
     async def get_transaction(self, transaction_id: int, user_id: int) -> TransactionResponse:
         existing_transaction = await validators.validate_transaction(
