@@ -33,20 +33,30 @@ class BudgetRepository:
     async def delete(self, budget: Budget) -> None:
         await self.session.delete(budget)
 
-    async def get_by_period(self, user_id: int, start_date: date, end_date: date) -> list[Budget]:
-        return list(
-            (
-                await self.session.execute(
-                    select(Budget)
-                    .where(Budget.user_id == user_id)
-                    .where(Budget.start_date <= end_date)
-                    .where(Budget.end_date >= start_date)
-                    .order_by(Budget.start_date, Budget.id)
-                )
-            )
-            .scalars()
-            .all()
+    async def get_by_period(
+        self,
+        user_id: int,
+        start_date: date,
+        end_date: date,
+        currency_code: str | None = None,
+        category_id: int | None = None,
+    ) -> list[Budget]:
+        query = (
+            select(Budget)
+            .where(Budget.user_id == user_id)
+            .where(Budget.start_date <= end_date)
+            .where(Budget.end_date >= start_date)
         )
+
+        if currency_code is not None:
+            query = query.where(Budget.currency_code == currency_code)
+
+        if category_id is not None:
+            query = query.where(Budget.category_id == category_id)
+
+        query = query.order_by(Budget.start_date, Budget.id)
+
+        return list((await self.session.execute(query)).scalars().all())
 
     async def find_same_budget(
         self,

@@ -281,6 +281,90 @@ class TestGetBudgets:
         other_ids = {b["id"] for b in other_response.json()}
         assert created_budget["id"] not in other_ids
 
+    async def test_get_budgets_filtered_by_currency(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        headers = authenticated_user["headers"]
+
+        first = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            headers=headers,
+        )
+        second = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                currency_code=second_currency["code"],
+                category_id=created_category["id"],
+            ),
+            headers=headers,
+        )
+        assert first.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+
+        response = await client.get(
+            API_BUDGETS,
+            params={
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "currency_code": second_currency["code"],
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {b["id"] for b in response.json()} == {second.json()["id"]}
+
+    async def test_get_budgets_filtered_by_category(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        headers = authenticated_user["headers"]
+        other_category = await create_category(client, category_payload(name="Transport"), headers)
+
+        first = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+            ),
+            headers=headers,
+        )
+        second = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                currency_code=active_currency["code"],
+                category_id=other_category["id"],
+            ),
+            headers=headers,
+        )
+        assert first.status_code == status.HTTP_201_CREATED
+        assert second.status_code == status.HTTP_201_CREATED
+
+        response = await client.get(
+            API_BUDGETS,
+            params={
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "category_id": other_category["id"],
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert {b["id"] for b in response.json()} == {second.json()["id"]}
+
     async def test_get_budgets_single_date_fails(
         self,
         client: AsyncClient,

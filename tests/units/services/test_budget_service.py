@@ -607,6 +607,9 @@ class TestGetUserBudgets:
         call_args = budget_repo_mock.get_by_period.call_args[0]
         assert call_args[1] == call_args[2]
 
+        call_kwargs = budget_repo_mock.get_by_period.call_args[1]
+        assert call_kwargs == {"currency_code": None, "category_id": None}
+
     async def test_get_user_budgets_with_period(
         self,
         budget_service: BudgetService,
@@ -627,6 +630,32 @@ class TestGetUserBudgets:
             existing_budget.user_id,
             date(2026, 7, 1),
             date(2026, 7, 31),
+            currency_code=None,
+            category_id=None,
+        )
+
+    async def test_get_user_budgets_passes_filters(
+        self,
+        budget_service: BudgetService,
+        budget_repo_mock: BudgetRepository,
+        existing_budget: Budget,
+    ):
+        budget_repo_mock.get_by_period.return_value = [existing_budget]
+
+        filters = BudgetFilters(
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+            currency_code=existing_budget.currency_code,
+            category_id=existing_budget.category_id,
+        )
+        await budget_service.get_user_budgets(existing_budget.user_id, filters)
+
+        budget_repo_mock.get_by_period.assert_called_once_with(
+            existing_budget.user_id,
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            currency_code=existing_budget.currency_code,
+            category_id=existing_budget.category_id,
         )
 
 
