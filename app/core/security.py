@@ -8,6 +8,11 @@ from app.core import settings
 
 ph = PasswordHasher()
 
+# Verified against when the email is unknown, so that a failed login costs one Argon2 run
+# either way. Computed once at import with the current hasher settings: a hardcoded hash
+# would keep the parameters it was made with and drift apart from the real one.
+DUMMY_PASSWORD_HASH = ph.hash("dummy-password-never-matched")
+
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()

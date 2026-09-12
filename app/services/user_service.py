@@ -2,7 +2,12 @@ import structlog
 
 from app.core import UnitOfWork
 from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 from app.models import User
 from app.repositories import UserRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
@@ -38,7 +43,11 @@ class UserService:
     async def authenticate(self, user: UserLogin) -> str:
         existing_user = await self.user_repository.get_by_email(user.email)
 
-        if not existing_user or not verify_password(user.password, existing_user.hashed_password):
+        hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
+
+        is_password_valid = verify_password(user.password, hashed_password)
+
+        if not existing_user or not is_password_valid:
             logger.warning("user_authenticate_failed", email=user.email)
 
             raise AuthenticationException("Invalid email or password")

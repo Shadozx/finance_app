@@ -3,6 +3,7 @@ from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
 from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
+from app.core.security import DUMMY_PASSWORD_HASH
 from app.models import User
 from app.repositories import UserRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
@@ -144,16 +145,23 @@ class TestAuthenticate:
 
     async def test_authenticate_not_found_user(
         self,
+        mocker: MockerFixture,
         user_service: UserService,
         user_repo_mock: UserRepository,
         data: UserLogin,
     ):
+        mock_password = mocker.patch(
+            "app.services.user_service.verify_password", return_value=False
+        )
+
         user_repo_mock.get_by_email.return_value = None
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
             await user_service.authenticate(data)
 
         user_repo_mock.get_by_email.assert_called_once_with(data.email)
+
+        mock_password.assert_called_once_with(data.password, DUMMY_PASSWORD_HASH)
 
     async def test_authenticate_wrong_password(
         self,
