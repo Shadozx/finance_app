@@ -71,4 +71,5 @@ def downgrade() -> None:
     op.drop_table('categories')
     op.drop_table('users')
     op.drop_table('currencies')
+    sa.Enum(name='transactiontype').drop(op.get_bind())
     # ### end Alembic commands ###
