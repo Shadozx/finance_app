@@ -180,15 +180,11 @@ class BudgetService:
     ) -> BudgetStatusResponse:
         budget = await validators.validate_budget(self.budget_repository, user_id, budget_id)
 
-        spent = await self.transaction_repository.get_spent(
-            user_id,
-            budget.category_id,
-            budget.currency_code,
-            budget.start_date,
-            budget.end_date,
+        spent_by_budget = await self.transaction_repository.get_spent_by_budgets(
+            user_id, [budget.id]
         )
 
-        return self._to_status(budget, spent)
+        return self._to_status(budget, spent_by_budget.get(budget.id, Decimal("0")))
 
     def _to_status(self, budget: Budget, spent: Decimal) -> BudgetStatusResponse:
         remaining = budget.amount - spent

@@ -11,7 +11,7 @@ from app.core.exceptions import (
     PermissionException,
     ValueExistsException,
 )
-from app.models import Budget, Category, Currency
+from app.models import Budget, Category, Currency, User
 from app.repositories import (
     BudgetRepository,
     CategoryRepository,
@@ -662,11 +662,11 @@ class TestGetUserBudgets:
         )
 
     async def test_get_user_budgets_empty(
-            self,
-            budget_service: BudgetService,
-            budget_repo_mock: BudgetRepository,
-            transaction_repo_mock: TransactionRepository,
-            existing_user: User,
+        self,
+        budget_service: BudgetService,
+        budget_repo_mock: BudgetRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_user: User,
     ):
         budget_repo_mock.get_by_period.return_value = []
         transaction_repo_mock.get_spent_by_budgets.return_value = {}
@@ -732,7 +732,9 @@ class TestGetBudgetStatus:
         existing_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = existing_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("3000.00")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {
+            existing_budget.id: Decimal("3000.00")
+        }
 
         result = await budget_service.get_budget_status(existing_budget.id, existing_budget.user_id)
 
@@ -749,7 +751,9 @@ class TestGetBudgetStatus:
         existing_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = existing_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("6000.00")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {
+            existing_budget.id: Decimal("6000.00")
+        }
 
         result = await budget_service.get_budget_status(existing_budget.id, existing_budget.user_id)
 
@@ -766,7 +770,9 @@ class TestGetBudgetStatus:
         existing_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = existing_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("5000.00")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {
+            existing_budget.id: Decimal("5000.00")
+        }
 
         result = await budget_service.get_budget_status(existing_budget.id, existing_budget.user_id)
 
@@ -782,7 +788,7 @@ class TestGetBudgetStatus:
         existing_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = existing_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("0")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {}
 
         result = await budget_service.get_budget_status(existing_budget.id, existing_budget.user_id)
 
@@ -799,7 +805,7 @@ class TestGetBudgetStatus:
         zero_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = zero_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("0")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {}
 
         result = await budget_service.get_budget_status(zero_budget.id, zero_budget.user_id)
 
@@ -814,7 +820,7 @@ class TestGetBudgetStatus:
         zero_budget: Budget,
     ):
         budget_repo_mock.get_by_id.return_value = zero_budget
-        transaction_repo_mock.get_spent.return_value = Decimal("50.00")
+        transaction_repo_mock.get_spent_by_budgets.return_value = {zero_budget.id: Decimal("50.00")}
 
         result = await budget_service.get_budget_status(zero_budget.id, zero_budget.user_id)
 
