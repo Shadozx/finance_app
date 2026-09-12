@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import structlog
 
 from app.core import UnitOfWork
@@ -89,6 +91,7 @@ class UserService:
             raise AuthenticationException("Current password is incorrect")
 
         existing_user.hashed_password = hash_password(data.new_password)
+        existing_user.password_changed_at = datetime.now(UTC)
 
         await self.user_repository.update(existing_user)
 

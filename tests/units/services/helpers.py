@@ -134,6 +134,7 @@ def make_user(**kwargs) -> User:
     kwargs.setdefault("username", "user")
     kwargs.setdefault("email", "user@test.com")
     kwargs.setdefault("hashed_password", "hashed_password")
-    kwargs.setdefault("created_at", datetime(2026, 2, 10))
+    kwargs.setdefault("created_at", datetime(2026, 2, 10, tzinfo=UTC))
+    kwargs.setdefault("password_changed_at", datetime(2026, 2, 10, tzinfo=UTC))
 
     return User(**kwargs)

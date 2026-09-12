@@ -300,6 +300,7 @@ class TestUpdatePassword:
     ):
         user_repo_mock.get_by_id.return_value = existing_user
         original_hashed_password = existing_user.hashed_password
+        original_password_changed_at = existing_user.password_changed_at
         hashed_password = "hashed"
 
         mock_password = mocker.patch("app.services.user_service.verify_password", return_value=True)
@@ -323,6 +324,8 @@ class TestUpdatePassword:
         mock_password.assert_called_once_with(data.current_password, original_hashed_password)
 
         mock_hash.assert_called_once_with(data.new_password)
+
+        assert original_password_changed_at < existing_user.password_changed_at
 
         user_repo_mock.update.assert_called_once()
 

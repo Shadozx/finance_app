@@ -24,6 +24,11 @@ class User(Base):
         default=utc_now,
     )
 
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+    )
+
     @validates("email")
     def validate_email(self, key, value):
         if not value:
