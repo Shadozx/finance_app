@@ -270,7 +270,7 @@ class TestGetBudgets:
             headers=authenticated_user["headers"],
         )
         assert response.status_code == status.HTTP_200_OK
-        ids = {b["id"] for b in response.json()}
+        ids = {b["budget"]["id"] for b in response.json()}
         assert created_budget["id"] in ids
 
         other_response = await client.get(
@@ -278,7 +278,7 @@ class TestGetBudgets:
             params={"start_date": "2026-07-01", "end_date": "2026-07-31"},
             headers=other_authenticated_user["headers"],
         )
-        other_ids = {b["id"] for b in other_response.json()}
+        other_ids = {b["budget"]["id"] for b in other_response.json()}
         assert created_budget["id"] not in other_ids
 
     async def test_get_budgets_filtered_by_currency(
@@ -321,7 +321,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert {b["id"] for b in response.json()} == {second.json()["id"]}
+        assert {b["budget"]["id"] for b in response.json()} == {second.json()["id"]}
 
     async def test_get_budgets_filtered_by_category(
         self,
@@ -363,7 +363,128 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert {b["id"] for b in response.json()} == {second.json()["id"]}
+        assert {b["budget"]["id"] for b in response.json()} == {second.json()["id"]}
+
+    async def test_get_budgets_returns_spent_for_each_budget(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        headers = authenticated_user["headers"]
+
+        other_category = await create_category(client, category_payload(name="Household"), headers)
+
+        exceeded = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                amount="100.00",
+                currency_code=active_currency["code"],
+                category_id=other_category["id"],
+            ),
+            headers=headers,
+        )
+        assert exceeded.status_code == status.HTTP_201_CREATED
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-10",
+                amount="2000.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=created_category["id"],
+                account_id=created_account["id"],
+            ),
+            headers,
+        )
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-11",
+                amount="150.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                category_id=other_category["id"],
+                account_id=created_account["id"],
+            ),
+            headers,
+        )
+
+        response = await client.get(
+            API_BUDGETS,
+            params={"start_date": "2026-07-01", "end_date": "2026-07-31"},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = {item["budget"]["id"]: item for item in response.json()}
+
+        assert len(body) == 2
+
+        assert body[created_budget["id"]]["spent"] == "2000.00"
+        assert body[created_budget["id"]]["remaining"] == "3000.00"
+        assert body[created_budget["id"]]["is_exceeded"] is False
+
+        assert body[exceeded.json()["id"]]["spent"] == "150.00"
+        assert body[exceeded.json()["id"]]["remaining"] == "-50.00"
+        assert body[exceeded.json()["id"]]["is_exceeded"] is True
+
+    async def test_get_budgets_counts_split_parts(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        """One receipt split between two categories feeds both budgets at once."""
+        headers = authenticated_user["headers"]
+
+        household = await create_category(client, category_payload(name="Household"), headers)
+
+        household_budget = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                amount="1000.00",
+                currency_code=active_currency["code"],
+                category_id=household["id"],
+            ),
+            headers=headers,
+        )
+        assert household_budget.status_code == status.HTTP_201_CREATED
+
+        await create_transaction(
+            client,
+            transaction_payload(
+                date="2026-07-10",
+                amount="2500.00",
+                transaction_type="EXPENSE",
+                currency_code=active_currency["code"],
+                account_id=created_account["id"],
+                splits=[
+                    split_payload(created_category["id"], "2000.00"),
+                    split_payload(household["id"], "500.00"),
+                ],
+            ),
+            headers,
+        )
+
+        response = await client.get(
+            API_BUDGETS,
+            params={"start_date": "2026-07-01", "end_date": "2026-07-31"},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = {item["budget"]["id"]: item for item in response.json()}
+
+        assert body[created_budget["id"]]["spent"] == "2000.00"
+        assert body[household_budget.json()["id"]]["spent"] == "500.00"
 
     async def test_get_budgets_single_date_fails(
         self,

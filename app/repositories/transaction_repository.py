@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -6,7 +7,14 @@ from sqlalchemy import ColumnElement, Select, Subquery, and_, case, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models import Category, Transaction, TransactionKind, TransactionSplit, TransactionType
+from app.models import (
+    Budget,
+    Category,
+    Transaction,
+    TransactionKind,
+    TransactionSplit,
+    TransactionType,
+)
 from app.repositories.types import CategorySummaryRow, SummaryRow, TransactionFilterProtocol
 from app.schemas import CategoryStatisticsFilters, StatisticsFilters, TransactionFilters
 
@@ -144,6 +152,56 @@ class TransactionRepository:
 
         return from_transactions + from_splits
 
+    async def get_spent_by_budgets(
+        self,
+        user_id: int,
+        budget_ids: Sequence[int],
+    ) -> dict[int, Decimal]:
+        """Money spent against each budget in one query: budget id -> amount.
+
+        A budget acts as a filter over transactions: its currency, category and
+        date range say which of them count. Budgets with no matching expenses are
+        absent from the result and the caller substitutes zero. Overlapping
+        budgets are counted independently — the same transaction may match several.
+        """
+        if not budget_ids:
+            return {}
+
+        contributions = self._category_contributions()
+
+        query = (
+            select(
+                Budget.id.label("budget_id"),
+                func.sum(contributions.c.settled_amount).label("spent"),
+            )
+            .select_from(Budget)
+            .join(
+                Transaction,
+                and_(
+                    Transaction.settled_currency_code == Budget.currency_code,
+                    Transaction.date >= Budget.start_date,
+                    Transaction.date <= Budget.end_date,
+                ),
+            )
+            .join(
+                contributions,
+                and_(
+                    contributions.c.transaction_id == Transaction.id,
+                    contributions.c.category_id == Budget.category_id,
+                ),
+            )
+            .where(Budget.user_id == user_id)
+            .where(Budget.id.in_(budget_ids))
+            .where(Transaction.user_id == user_id)
+            .where(Transaction.type == TransactionType.EXPENSE)
+            .where(self._counts_in_totals())
+            .group_by(Budget.id)
+        )
+
+        rows = (await self.session.execute(query)).all()
+
+        return {budget_id: spent for budget_id, spent in rows}
+
     async def _spent_from_transactions(
         self,
         user_id: int,
@@ -255,12 +313,12 @@ class TransactionRepository:
         )
 
     def _counts_in_totals(self) -> ColumnElement[bool]:
-        """Умова 'ця транзакція враховується в підрахунках'.
+        """Whether this transaction is counted in aggregations.
 
-        Реєстр показує ВСІ транзакції; агрегації (статистика, бюджети,
-        майбутні звіти) рахують тільки REGULAR: ADJUSTMENT — це виправлення
-        залишку, TRANSFER (v1.11) — переміщення між своїми рахунками.
-        Обидва не є доходом чи витратою.
+        The registry lists every transaction; aggregations (statistics, budgets,
+        future reports) count REGULAR only: ADJUSTMENT corrects a balance and
+        TRANSFER moves money between the user's own accounts. Neither is income
+        or expense.
         """
         return Transaction.kind == TransactionKind.REGULAR
 

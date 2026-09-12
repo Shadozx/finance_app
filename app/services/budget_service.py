@@ -53,7 +53,7 @@ class BudgetService:
         self,
         user_id: int,
         filters: BudgetFilters,
-    ) -> list[BudgetResponse]:
+    ) -> list[BudgetStatusResponse]:
         if filters.start_date is not None and filters.end_date is not None:
             start_date, end_date = filters.start_date, filters.end_date
         else:
@@ -67,7 +67,15 @@ class BudgetService:
             currency_code=filters.currency_code,
             category_id=filters.category_id,
         )
-        return [BudgetResponse.model_validate(b) for b in budgets]
+
+        spent_by_budget = await self.transaction_repository.get_spent_by_budgets(
+            user_id, [budget.id for budget in budgets]
+        )
+
+        return [
+            self._to_status(budget, spent_by_budget.get(budget.id, Decimal("0")))
+            for budget in budgets
+        ]
 
     async def create_budget(
         self,
@@ -180,6 +188,9 @@ class BudgetService:
             budget.end_date,
         )
 
+        return self._to_status(budget, spent)
+
+    def _to_status(self, budget: Budget, spent: Decimal) -> BudgetStatusResponse:
         remaining = budget.amount - spent
 
         if budget.amount != Decimal("0"):
@@ -189,12 +200,10 @@ class BudgetService:
         else:
             percent = Decimal("100")
 
-        is_exceeded = spent > budget.amount
-
         return BudgetStatusResponse(
             spent=spent,
             remaining=remaining,
             percent=percent,
-            is_exceeded=is_exceeded,
+            is_exceeded=spent > budget.amount,
             budget=BudgetResponse.model_validate(budget),
         )

@@ -23,7 +23,7 @@ async def create_budget(
     return await budget_service.create_budget(data, current_user.id)
 
 
-@router.get("", response_model=list[BudgetResponse])
+@router.get("", response_model=list[BudgetStatusResponse])
 async def get_user_budgets(
     filters: BudgetFilters = Depends(),
     current_user: User = Depends(get_current_user),

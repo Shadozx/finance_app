@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Account,
+    Budget,
     Category,
     Currency,
     Transaction,
@@ -17,6 +18,7 @@ from app.models import (
 )
 from app.repositories import (
     AccountRepository,
+    BudgetRepository,
     CategoryRepository,
     TransactionRepository,
     TransactionSplitRepository,
@@ -2857,6 +2859,697 @@ class TestGetSpent:
         )
 
         assert spent == Decimal("0")
+
+
+class TestGetSpentByBudgets:
+    @pytest.fixture
+    async def budget(
+        self,
+        budget_repository: BudgetRepository,
+        user: User,
+        category: Category,
+        uah_currency: Currency,
+    ):
+        return await budget_repository.add(
+            Budget(
+                name="Food July",
+                amount=Decimal("5000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 31),
+            )
+        )
+
+    async def test_get_spent_by_budgets_sums_budget_expenses(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("2000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 5),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 20),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("3000.00")}
+
+    async def test_get_spent_by_budgets_counts_split_parts(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("700.00"),
+                    settled_amount=Decimal("700.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("300.00")}
+
+    async def test_get_spent_by_budgets_counts_overlapping_budgets_separately(
+        self,
+        budget_repository: BudgetRepository,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        vacation_budget = await budget_repository.add(
+            Budget(
+                name="Food vacation week",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                start_date=date(2026, 7, 10),
+                end_date=date(2026, 7, 17),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("200.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 5),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(
+            user.id, [budget.id, vacation_budget.id]
+        )
+
+        assert spent == {
+            budget.id: Decimal("300.00"),
+            vacation_budget.id: Decimal("200.00"),
+        }
+
+    async def test_get_spent_by_budgets_ignores_transactions_outside_period(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("500.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 6, 30),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {}
+
+    async def test_get_spent_by_budgets_ignores_other_currency(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        usd_account: Account,
+        category: Category,
+        usd_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("500.00"),
+                currency_code=usd_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=usd_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {}
+
+    async def test_get_spent_by_budgets_ignores_income_and_non_regular_kinds(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 10),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.INCOME,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("5000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 11),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.ADJUSTMENT,
+                amount=Decimal("700.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.TRANSFER,
+                amount=Decimal("800.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                transfer_group_id=uuid.uuid4(),
+                date=date(2026, 7, 13),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("100.00")}
+
+    async def test_get_spent_by_budgets_skips_budgets_without_expenses(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        budget: Budget,
+    ):
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {}
+
+    async def test_get_spent_by_budgets_returns_only_own(
+        self,
+        account_repository: AccountRepository,
+        budget_repository: BudgetRepository,
+        category_repository: CategoryRepository,
+        transaction_repository: TransactionRepository,
+        user_repository: UserRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        other_user = await user_repository.add(
+            User(email="other3@test.com", username="other3", hashed_password="hashed")
+        )
+        other_category = await category_repository.add(
+            Category(name="Other food", user_id=other_user.id)
+        )
+        other_account = await account_repository.add(
+            Account(name="Other account", currency_code=uah_currency.code, user_id=other_user.id)
+        )
+        other_budget = await budget_repository.add(
+            Budget(
+                name="Other user budget",
+                amount=Decimal("5000.00"),
+                currency_code=uah_currency.code,
+                category_id=other_category.id,
+                user_id=other_user.id,
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 31),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("500.00"),
+                currency_code=uah_currency.code,
+                category_id=other_category.id,
+                user_id=other_user.id,
+                account_id=other_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(
+            user.id, [budget.id, other_budget.id]
+        )
+
+        assert spent == {budget.id: Decimal("100.00")}
+
+    async def test_get_spent_by_budgets_returns_empty_for_no_ids(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+    ):
+        assert await transaction_repository.get_spent_by_budgets(user.id, []) == {}
+
+    async def test_get_spent_by_budgets_keeps_budget_categories_apart(
+        self,
+        budget_repository: BudgetRepository,
+        category_repository: CategoryRepository,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        """Category is matched per budget, not filtered once for the whole query."""
+        household = await category_repository.add(Category(name="Household", user_id=user.id))
+
+        household_budget = await budget_repository.add(
+            Budget(
+                name="Household July",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=household.id,
+                user_id=user.id,
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 31),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("250.00"),
+                currency_code=uah_currency.code,
+                category_id=household.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(
+            user.id, [budget.id, household_budget.id]
+        )
+
+        assert spent == {budget.id: Decimal("100.00"), household_budget.id: Decimal("250.00")}
+
+    async def test_get_spent_by_budgets_keeps_budget_currencies_apart(
+        self,
+        budget_repository: BudgetRepository,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        usd_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        usd_currency: Currency,
+        budget: Budget,
+    ):
+        """Currency is matched per budget, not filtered once for the whole query."""
+        usd_budget = await budget_repository.add(
+            Budget(
+                name="Food July USD",
+                amount=Decimal("500.00"),
+                currency_code=usd_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 7, 31),
+            )
+        )
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("40.00"),
+                currency_code=usd_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=usd_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(
+            user.id, [budget.id, usd_budget.id]
+        )
+
+        assert spent == {budget.id: Decimal("100.00"), usd_budget.id: Decimal("40.00")}
+
+    async def test_get_spent_by_budgets_counts_repeated_split_category(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("200.00"),
+                    settled_amount=Decimal("200.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("500.00"),
+                    settled_amount=Decimal("500.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("500.00")}
+
+    async def test_get_spent_by_budgets_uses_settled_amount(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        usd_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("24.00"),
+                currency_code=usd_currency.code,
+                settled_currency_code=uah_currency.code,
+                settled_amount=Decimal("1000.00"),
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("1000.00")}
+
+    async def test_get_spent_by_budgets_splits_use_settled_amount(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        usd_currency: Currency,
+        budget: Budget,
+    ):
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("24.00"),
+                currency_code=usd_currency.code,
+                settled_currency_code=uah_currency.code,
+                settled_amount=Decimal("1000.00"),
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("2.00"),
+                    settled_amount=Decimal("83.33"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("22.00"),
+                    settled_amount=Decimal("916.67"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("83.33")}
+
+    async def test_get_spent_by_budgets_sums_plain_and_split_transactions(
+        self,
+        transaction_repository: TransactionRepository,
+        transaction_split_repository: TransactionSplitRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 10),
+            )
+        )
+
+        split_transaction = await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=None,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 12),
+            )
+        )
+
+        await transaction_split_repository.add_all(
+            [
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=category.id,
+                    amount=Decimal("300.00"),
+                    settled_amount=Decimal("300.00"),
+                ),
+                TransactionSplit(
+                    transaction_id=split_transaction.id,
+                    category_id=None,
+                    amount=Decimal("700.00"),
+                    settled_amount=Decimal("700.00"),
+                ),
+            ]
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("400.00")}
+
+    async def test_get_spent_by_budgets_counts_period_boundaries(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        category: Category,
+        uah_currency: Currency,
+        budget: Budget,
+    ):
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 1),
+            )
+        )
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("200.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                account_id=uah_account.id,
+                date=date(2026, 7, 31),
+            )
+        )
+
+        spent = await transaction_repository.get_spent_by_budgets(user.id, [budget.id])
+
+        assert spent == {budget.id: Decimal("300.00")}
 
 
 class TestGetBalance:
