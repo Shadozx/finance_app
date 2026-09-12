@@ -1,3 +1,4 @@
+import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -20,7 +21,13 @@ from app.models.user import User
 # Alembic Config
 config = context.config
 
-config.set_main_option("sqlalchemy.url", settings.database_url_str)
+# A live connection put here by the caller (tests do it) means migrations run inside that
+# connection and its transaction. Without it this is a plain `alembic upgrade head`, and the
+# database comes from settings as before.
+external_connection = config.attributes.get("connection")
+
+if external_connection is None:
+    config.set_main_option("sqlalchemy.url", settings.database_url_str)
 
 # Logging
 if config.config_file_name is not None:
@@ -77,7 +84,9 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    import asyncio
+    if external_connection is not None:
+        do_run_migrations(external_connection)
+        return
 
     asyncio.run(run_async_migrations())
 
