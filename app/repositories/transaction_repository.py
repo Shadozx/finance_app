@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -133,25 +132,6 @@ class TransactionRepository:
             for row in rows
         ]
 
-    async def get_spent(
-        self,
-        user_id: int,
-        category_id: int,
-        currency_code: str,
-        start_date: date,
-        end_date: date,
-    ) -> Decimal:
-        """Money spent in a category: plain transactions plus the matching parts of split ones."""
-        from_transactions = await self._spent_from_transactions(
-            user_id, category_id, currency_code, start_date, end_date
-        )
-
-        from_splits = await self._spent_from_splits(
-            user_id, category_id, currency_code, start_date, end_date
-        )
-
-        return from_transactions + from_splits
-
     async def get_spent_by_budgets(
         self,
         user_id: int,
@@ -201,58 +181,6 @@ class TransactionRepository:
         rows = (await self.session.execute(query)).all()
 
         return {budget_id: spent for budget_id, spent in rows}
-
-    async def _spent_from_transactions(
-        self,
-        user_id: int,
-        category_id: int,
-        currency_code: str,
-        start_date: date,
-        end_date: date,
-    ) -> Decimal:
-        """Transactions carrying the category themselves.
-
-        The NOT EXISTS guard is redundant while the schema holds — a transaction
-        with splits has no category of its own. It is kept because the invariant
-        lives in Pydantic, not in the database: a future import or migration that
-        writes both would otherwise be counted twice, silently.
-        """
-        query = (
-            select(func.coalesce(func.sum(Transaction.settled_amount), Decimal("0")))
-            .where(Transaction.user_id == user_id)
-            .where(Transaction.category_id == category_id)
-            .where(Transaction.settled_currency_code == currency_code)
-            .where(Transaction.type == TransactionType.EXPENSE)
-            .where(Transaction.date >= start_date)
-            .where(Transaction.date <= end_date)
-            .where(self._counts_in_totals())
-            .where(~self._has_splits())
-        )
-
-        return (await self.session.execute(query)).scalar_one()
-
-    async def _spent_from_splits(
-        self,
-        user_id: int,
-        category_id: int,
-        currency_code: str,
-        start_date: date,
-        end_date: date,
-    ) -> Decimal:
-        """The amount comes from the split; ownership, currency, type and dates from its parent."""
-        query = (
-            select(func.coalesce(func.sum(TransactionSplit.settled_amount), Decimal("0")))
-            .join(Transaction, Transaction.id == TransactionSplit.transaction_id)
-            .where(TransactionSplit.category_id == category_id)
-            .where(Transaction.user_id == user_id)
-            .where(Transaction.settled_currency_code == currency_code)
-            .where(Transaction.type == TransactionType.EXPENSE)
-            .where(Transaction.date >= start_date)
-            .where(Transaction.date <= end_date)
-            .where(self._counts_in_totals())
-        )
-
-        return (await self.session.execute(query)).scalar_one()
 
     def _has_splits(self) -> ColumnElement[bool]:
         """Whether this transaction has a breakdown of its own."""
