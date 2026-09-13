@@ -188,6 +188,29 @@ class TestUpdatePassword:
 
         assert old_login.status_code == status.HTTP_401_UNAUTHORIZED
 
+    async def test_update_password_invalidates_the_token_that_changed_it(
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser
+    ):
+        payload = {
+            "current_password": authenticated_user["user"]["password"],
+            "new_password": "New" + authenticated_user["user"]["password"],
+        }
+
+        response = await client.put(
+            API_USERS_ME_UPDATE_PASSWORD,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        me_response = await client.get(
+            API_USERS_ME,
+            headers=authenticated_user["headers"],
+        )
+
+        assert me_response.status_code == status.HTTP_401_UNAUTHORIZED
+
     async def test_update_password_wrong_current_password(
         self, client: AsyncClient, authenticated_user: AuthenticatedUser
     ):

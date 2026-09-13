@@ -1,3 +1,6 @@
+from datetime import UTC, datetime
+
+import structlog
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +150,8 @@ def get_transfer_service(
     )
 
 
+logger = structlog.get_logger()
+
 security = HTTPBearer(auto_error=False)
 
 
@@ -170,5 +175,14 @@ async def get_current_user(
 
     if not user:
         raise AuthenticationException("User no longer exists")
+
+    issued_at = payload.get("iat")
+
+    # A token with no iat predates this check and cannot be compared: rejected rather than
+    # trusted, so that there is no path through get_current_user that skips the comparison.
+    if issued_at is None or datetime.fromtimestamp(issued_at, UTC) < user.password_changed_at:
+        logger.warning("token_rejected_after_password_change", user_id=user.id)
+
+        raise AuthenticationException("Invalid or expired token")
 
     return user
