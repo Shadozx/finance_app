@@ -18,22 +18,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # transactions is empty: no backfill needed
-    op.add_column("transactions", sa.Column("created_at", sa.DateTime(timezone=True), nullable=False))
-    op.add_column("transactions", sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False))
-
     # created_at already exists here: seed updated_at from it
     for table in ("accounts", "categories", "transaction_templates"):
         op.add_column(table, sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
         op.execute(f"UPDATE {table} SET updated_at = created_at")
         op.alter_column(table, "updated_at", nullable=False)
 
-    # budgets: both columns are new, nothing to derive them from
-    op.add_column("budgets", sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("budgets", sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
-    op.execute("UPDATE budgets SET created_at = now(), updated_at = now()")
-    op.alter_column("budgets", "created_at", nullable=False)
-    op.alter_column("budgets", "updated_at", nullable=False)
+    # both columns are new here, and there is nothing in the row to derive them from:
+    # existing rows are stamped with the moment of the migration
+    for table in ("transactions", "budgets"):
+        op.add_column(table, sa.Column("created_at", sa.DateTime(timezone=True), nullable=True))
+        op.add_column(table, sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
+        op.execute(f"UPDATE {table} SET created_at = now(), updated_at = now()")
+        op.alter_column(table, "created_at", nullable=False)
+        op.alter_column(table, "updated_at", nullable=False)
 
 
 def downgrade() -> None:
