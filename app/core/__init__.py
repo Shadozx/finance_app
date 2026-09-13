@@ -1,3 +1,4 @@
+from .clock import utc_now
 from .config import settings
 from .database import Base, get_session
 from .security import create_access_token, hash_password, verify_password, verify_token
@@ -10,6 +11,7 @@ __all__ = [
     "get_session",
     "hash_password",
     "settings",
+    "utc_now",
     "verify_password",
     "verify_token",
 ]

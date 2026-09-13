@@ -4,8 +4,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
-from app.core import Base
-from app.models.mixins import utc_now
+from app.core import Base, utc_now
 
 
 class User(Base):

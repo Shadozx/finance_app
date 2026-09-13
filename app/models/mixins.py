@@ -1,11 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
-
-def utc_now() -> datetime:
-    return datetime.now(UTC)
+from app.core import utc_now
 
 
 class TimestampMixin:
