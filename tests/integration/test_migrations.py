@@ -1,4 +1,6 @@
 from collections.abc import AsyncIterator
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,20 @@ MIGRATIONS_DATABASE = "migrations_test"
 HEAD_REVISION = "head"
 BASE_REVISION = "base"
 VERSION_TABLE = "alembic_version"
+CURRENCY_CODE = "UAH"
+
+SEED_CURRENCIES_REVISION = "e916b5746c68"
+TRANSACTION_KIND_REVISION = "c75ba8ee8757"
+TRANSFER_KIND_REVISION = "1bb92b3f825f"
+SETTLED_AMOUNT_REVISION = "ec935c6ee93e"
+TIMESTAMPS_REVISION = "fb292ab1bb42"
+PASSWORD_CHANGED_AT_REVISION = "d9da74d03578"
+
+
+def before(revision: str) -> str:
+    """The revision right before the given one, in Alembic's relative syntax."""
+
+    return f"{revision}-1"
 
 
 def _upgrade(connection: Connection, config: Config, revision: str) -> None:
@@ -56,6 +72,22 @@ async def check(engine: AsyncEngine, config: Config) -> None:
 async def table_names(engine: AsyncEngine) -> set[str]:
     async with engine.connect() as connection:
         return await connection.run_sync(_table_names)
+
+
+async def insert(engine: AsyncEngine, statement: str, **parameters):
+    """Raw SQL: at an old revision the models no longer describe the schema."""
+
+    async with engine.begin() as connection:
+        result = await connection.execute(text(statement), parameters)
+
+        return result.scalar_one() if result.returns_rows else None
+
+
+async def fetch_row(engine: AsyncEngine, statement: str):
+    async with engine.connect() as connection:
+        result = await connection.execute(text(statement))
+
+        return result.one()
 
 
 @pytest.fixture
@@ -121,3 +153,226 @@ class TestMigrations:
         await upgrade(migrations_engine, alembic_config)
 
         assert set(Base.metadata.tables) <= await table_names(migrations_engine)
+
+
+class TestDataMigrations:
+    """Backfills run on rows that already exist, so an empty database proves nothing:
+    each test seeds the old shape, applies one step, and reads what the step wrote."""
+
+    async def insert_user(self, engine: AsyncEngine, email: str = "user@test.com") -> int:
+        return await insert(
+            engine,
+            "INSERT INTO users (username, email, hashed_password, created_at)"
+            " VALUES (:username, :email, :hashed_password, now()) RETURNING id",
+            username=email.split("@")[0],
+            email=email,
+            hashed_password="hashed_password",
+        )
+
+    async def insert_category(self, engine: AsyncEngine, user_id: int) -> int:
+        return await insert(
+            engine,
+            "INSERT INTO categories (name, user_id, archived_at, created_at)"
+            " VALUES (:name, :user_id, NULL, now()) RETURNING id",
+            name="General",
+            user_id=user_id,
+        )
+
+    async def insert_account(self, engine: AsyncEngine, user_id: int) -> int:
+        return await insert(
+            engine,
+            "INSERT INTO accounts (name, currency_code, user_id, archived_at, created_at)"
+            " VALUES (:name, :currency_code, :user_id, NULL, now()) RETURNING id",
+            name="Card",
+            currency_code=CURRENCY_CODE,
+            user_id=user_id,
+        )
+
+    async def test_seed_currencies_inserts_the_reference_currencies(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        expected_codes = ["EUR", "GBP", "PLN", "UAH", "USD"]
+
+        await upgrade(migrations_engine, alembic_config, before(SEED_CURRENCIES_REVISION))
+        await upgrade(migrations_engine, alembic_config, SEED_CURRENCIES_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT array_agg(code ORDER BY code) AS codes FROM currencies",
+        )
+
+        assert row.codes == expected_codes
+
+    async def test_transaction_kind_backfills_existing_rows_as_regular(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        expected_kind = "REGULAR"
+
+        await upgrade(migrations_engine, alembic_config, before(TRANSACTION_KIND_REVISION))
+
+        user_id = await self.insert_user(migrations_engine)
+        category_id = await self.insert_category(migrations_engine, user_id)
+
+        await insert(
+            migrations_engine,
+            "INSERT INTO transactions (type, amount, currency_code, user_id, category_id, date)"
+            " VALUES ('EXPENSE', :amount, :currency_code, :user_id, :category_id, :date)",
+            amount=Decimal("100.00"),
+            currency_code=CURRENCY_CODE,
+            user_id=user_id,
+            category_id=category_id,
+            date=date(2026, 1, 1),
+        )
+
+        await upgrade(migrations_engine, alembic_config, TRANSACTION_KIND_REVISION)
+
+        row = await fetch_row(migrations_engine, "SELECT kind::text AS kind FROM transactions")
+
+        assert row.kind == expected_kind
+
+    async def test_settled_amount_backfills_from_the_original_amount(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(SETTLED_AMOUNT_REVISION))
+
+        user_id = await self.insert_user(migrations_engine)
+        category_id = await self.insert_category(migrations_engine, user_id)
+        account_id = await self.insert_account(migrations_engine, user_id)
+
+        await insert(
+            migrations_engine,
+            "INSERT INTO transactions"
+            " (type, kind, amount, currency_code, user_id, category_id, account_id, date)"
+            " VALUES ('EXPENSE', 'REGULAR', :amount, :currency_code, :user_id, :category_id,"
+            " :account_id, :date)",
+            amount=Decimal("100.00"),
+            currency_code=CURRENCY_CODE,
+            user_id=user_id,
+            category_id=category_id,
+            account_id=account_id,
+            date=date(2026, 1, 1),
+        )
+
+        await upgrade(migrations_engine, alembic_config, SETTLED_AMOUNT_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT settled_amount = amount"
+            " AND settled_currency_code = currency_code AS copied FROM transactions",
+        )
+
+        assert row.copied is True
+
+    async def test_timestamps_backfill_updated_at_from_created_at(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(TIMESTAMPS_REVISION))
+
+        user_id = await self.insert_user(migrations_engine)
+
+        await self.insert_category(migrations_engine, user_id)
+
+        await upgrade(migrations_engine, alembic_config, TIMESTAMPS_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT updated_at = created_at AS derived FROM categories",
+        )
+
+        assert row.derived is True
+
+    async def test_timestamps_stamp_rows_that_have_nothing_to_derive_them_from(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(TIMESTAMPS_REVISION))
+
+        user_id = await self.insert_user(migrations_engine)
+        category_id = await self.insert_category(migrations_engine, user_id)
+        account_id = await self.insert_account(migrations_engine, user_id)
+
+        await insert(
+            migrations_engine,
+            "INSERT INTO transactions"
+            " (type, kind, amount, settled_amount, currency_code, settled_currency_code,"
+            " user_id, category_id, account_id, date)"
+            " VALUES ('EXPENSE', 'REGULAR', :amount, :amount, :currency_code, :currency_code,"
+            " :user_id, :category_id, :account_id, :date)",
+            amount=Decimal("100.00"),
+            currency_code=CURRENCY_CODE,
+            user_id=user_id,
+            category_id=category_id,
+            account_id=account_id,
+            date=date(2026, 1, 1),
+        )
+
+        await insert(
+            migrations_engine,
+            "INSERT INTO budgets"
+            " (name, amount, currency_code, user_id, category_id, start_date, end_date)"
+            " VALUES (:name, :amount, :currency_code, :user_id, :category_id, :start, :end)",
+            name="Food",
+            amount=Decimal("5000.00"),
+            currency_code=CURRENCY_CODE,
+            user_id=user_id,
+            category_id=category_id,
+            start=date(2026, 1, 1),
+            end=date(2026, 1, 31),
+        )
+
+        await upgrade(migrations_engine, alembic_config, TIMESTAMPS_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT (SELECT count(*) FROM transactions WHERE created_at IS NULL"
+            " OR updated_at IS NULL)"
+            " + (SELECT count(*) FROM budgets WHERE created_at IS NULL OR updated_at IS NULL)"
+            " AS unstamped",
+        )
+
+        assert row.unstamped == 0
+
+    async def test_transfer_revision_adds_the_transfer_kind_label(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        expected_labels = ["ADJUSTMENT", "REGULAR", "TRANSFER"]
+
+        await upgrade(migrations_engine, alembic_config, TRANSFER_KIND_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT array_agg(enumlabel::text ORDER BY enumlabel) AS labels"
+            " FROM pg_enum JOIN pg_type ON pg_type.oid = pg_enum.enumtypid"
+            " WHERE pg_type.typname = 'transactionkind'",
+        )
+
+        assert row.labels == expected_labels
+
+    async def test_password_changed_at_backfills_from_created_at(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(PASSWORD_CHANGED_AT_REVISION))
+
+        await self.insert_user(migrations_engine)
+
+        await upgrade(migrations_engine, alembic_config, PASSWORD_CHANGED_AT_REVISION)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT password_changed_at = created_at AS derived FROM users",
+        )
+
+        assert row.derived is True
