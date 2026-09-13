@@ -51,16 +51,6 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def include_object(object, name, type_, reflected, compare_to):
-    """
-    Should we include this object in autogenerate diff?
-    """
-    # Skip ENUM creation if already exists
-    if type_ == "type" and name == "transactiontype":
-        return False
-    return True
-
-
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
