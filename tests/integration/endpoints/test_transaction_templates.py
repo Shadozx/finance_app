@@ -662,7 +662,7 @@ class TestGetTransactionTemplates:
 
         assert response.status_code == status.HTTP_200_OK
 
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_templates_success(
         self,
@@ -677,15 +677,15 @@ class TestGetTransactionTemplates:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 1
+        assert len(items) == 1
 
-        assert body[0]["id"] == created_transaction_template["id"]
+        assert items[0]["id"] == created_transaction_template["id"]
 
-        assert body[0]["name"] == created_transaction_template["name"]
+        assert items[0]["name"] == created_transaction_template["name"]
 
-        assert body[0]["user_id"] == authenticated_user["user"]["id"]
+        assert items[0]["user_id"] == authenticated_user["user"]["id"]
 
     async def test_get_templates_marks_splits_without_returning_them(
         self,
@@ -727,17 +727,17 @@ class TestGetTransactionTemplates:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 2
+        assert len(items) == 2
 
-        by_id = {template["id"]: template for template in body}
+        by_id = {template["id"]: template for template in items}
 
         assert by_id[split_template["id"]]["has_splits"] is True
         assert by_id[plain_template["id"]]["has_splits"] is False
 
-        assert "splits" not in body[0]
-        assert "splits" not in body[1]
+        assert "splits" not in items[0]
+        assert "splits" not in items[1]
 
     async def test_get_templates_returns_only_own_templates(
         self,
@@ -762,15 +762,15 @@ class TestGetTransactionTemplates:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 1
+        assert len(items) == 1
 
-        assert body[0]["id"] == created_transaction_template["id"]
-        assert body[0]["name"] == created_transaction_template["name"]
-        assert body[0]["user_id"] == authenticated_user["user"]["id"]
+        assert items[0]["id"] == created_transaction_template["id"]
+        assert items[0]["name"] == created_transaction_template["name"]
+        assert items[0]["user_id"] == authenticated_user["user"]["id"]
 
-        ids = {template["id"] for template in body}
+        ids = {template["id"] for template in items}
 
         assert other_user_transaction_template["id"] not in ids
 
@@ -810,7 +810,7 @@ class TestGetTransactionTemplates:
 
         assert limited_response.status_code == status.HTTP_200_OK
 
-        limited_templates = limited_response.json()
+        limited_templates = limited_response.json()["items"]
 
         assert len(limited_templates) == limit
 
@@ -861,7 +861,7 @@ class TestGetTransactionTemplates:
 
         assert all_response.status_code == status.HTTP_200_OK
 
-        all_templates = all_response.json()
+        all_templates = all_response.json()["items"]
 
         assert len(all_templates) == 3
 
@@ -875,7 +875,7 @@ class TestGetTransactionTemplates:
 
         assert offset_response.status_code == status.HTTP_200_OK
 
-        offset_templates = offset_response.json()
+        offset_templates = offset_response.json()["items"]
 
         assert len(offset_templates) == len(all_templates) - offset
 
@@ -885,6 +885,58 @@ class TestGetTransactionTemplates:
         assert len(offset_ids) == 2
 
         assert offset_ids.issubset(all_ids)
+
+    async def test_get_templates_pagination_envelope(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+    ):
+        await create_transaction_template(
+            client,
+            transaction_template_payload(
+                name="Salary",
+                amount="800.00",
+                currency_code=created_transaction_template["currency_code"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        limit = 1
+        offset = 0
+        response = await client.get(
+            API_TRANSACTION_TEMPLATES,
+            params={"limit": limit, "offset": offset},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_templates_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.get(
+            API_TRANSACTION_TEMPLATES,
+            params={"offset": 100},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
     async def test_get_templates_without_token(
         self,

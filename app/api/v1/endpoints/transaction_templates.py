@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.dependencies import get_current_user, get_transaction_template_service
 from app.models import User
 from app.schemas import (
+    Page,
     TransactionTemplateCreate,
     TransactionTemplateListItem,
     TransactionTemplateResponse,
@@ -28,7 +29,7 @@ async def create_transaction_template(
     return await transaction_template_service.create_template(data, current_user.id)
 
 
-@router.get("", response_model=list[TransactionTemplateListItem])
+@router.get("", response_model=Page[TransactionTemplateListItem])
 async def get_user_transaction_templates(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),

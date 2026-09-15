@@ -17,6 +17,7 @@ from .budget import (
 )
 from .category import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate
 from .currency import CurrencyResponse
+from .pagination import Page
 from .statistics import (
     CategoryAmount,
     CategoryStatisticsFilters,
@@ -76,6 +77,7 @@ __all__ = [
     "CurrencyResponse",
     "CurrencySummary",
     "InitialBalanceKind",
+    "Page",
     "PasswordUpdate",
     "StatisticsFilters",
     "SummaryPeriod",

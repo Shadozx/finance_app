@@ -732,7 +732,7 @@ class TestDeleteTransfer:
 
         registry = await client.get(API_TRANSACTIONS, headers=headers)
 
-        assert registry.json() == []
+        assert registry.json()["items"] == []
 
     async def test_delete_transfer_hard_delete_success(
         self,

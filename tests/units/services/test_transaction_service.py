@@ -729,9 +729,11 @@ class TestGetUserTransactions:
             user_id=user_id, limit=limit, offset=offset, filters=filters
         )
 
-        assert result == [TransactionListItem.model_validate(t) for t in user_transactions]
+        assert result.items == [TransactionListItem.model_validate(t) for t in user_transactions]
 
-        transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
+        transaction_repo_mock.get_by_user.assert_called_once_with(
+            user_id, filters, limit + 1, offset
+        )
         transaction_split_repo_mock.get_transaction_ids_with_splits.assert_called_once()
 
     async def test_get_user_empty_transactions(
@@ -753,9 +755,136 @@ class TestGetUserTransactions:
             user_id=user_id, limit=limit, offset=offset, filters=filters
         )
 
-        assert result == [TransactionListItem.model_validate(t) for t in user_transactions]
+        assert result.items == [TransactionListItem.model_validate(t) for t in user_transactions]
 
-        transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
+        transaction_repo_mock.get_by_user.assert_called_once_with(
+            user_id, filters, limit + 1, offset
+        )
+
+    async def test_get_user_transactions_reports_more_when_extra_row_returned(
+        self,
+        transaction_service: TransactionService,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        existing_account: Account,
+    ):
+        user_id = 1
+        limit = 2
+        offset = 4
+        group_id = uuid.uuid4()
+
+        rows = [
+            make_transaction(
+                id=index,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code="UAH",
+                description=f"Transaction {index}",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            )
+            for index in range(1, limit + 1)
+        ]
+        rows.append(
+            make_transaction(
+                id=limit + 1,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.TRANSFER,
+                amount=Decimal("100.00"),
+                currency_code="UAH",
+                description="Extra transfer",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+                transfer_group_id=group_id,
+            )
+        )
+
+        transaction_repo_mock.get_by_user.return_value = rows
+        transaction_split_repo_mock.get_transaction_ids_with_splits.return_value = set()
+
+        result = await transaction_service.get_user_transactions(
+            user_id, TransactionFilters(), limit, offset
+        )
+
+        assert result.has_more is True
+        assert len(result.items) == limit
+
+        transaction_repo_mock.get_by_user.assert_called_once_with(
+            user_id, TransactionFilters(), limit + 1, offset
+        )
+        transaction_repo_mock.get_counterpart_account_ids.assert_not_called()
+        transaction_split_repo_mock.get_transaction_ids_with_splits.assert_called_once_with([1, 2])
+
+    async def test_get_user_transactions_reports_no_more_on_last_page(
+        self,
+        transaction_service: TransactionService,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        existing_account: Account,
+    ):
+        user_id = 1
+        limit = 3
+        rows = [
+            make_transaction(
+                id=index,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code="UAH",
+                description=f"Transaction {index}",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            )
+            for index in range(1, limit)
+        ]
+
+        transaction_repo_mock.get_by_user.return_value = rows
+        transaction_split_repo_mock.get_transaction_ids_with_splits.return_value = set()
+
+        result = await transaction_service.get_user_transactions(
+            user_id, TransactionFilters(), limit, 0
+        )
+
+        assert result.has_more is False
+        assert result.items == [TransactionListItem.model_validate(row) for row in rows]
+
+    async def test_get_user_transactions_reports_no_more_when_rows_match_limit(
+        self,
+        transaction_service: TransactionService,
+        transaction_repo_mock: TransactionRepository,
+        transaction_split_repo_mock: TransactionSplitRepository,
+        existing_account: Account,
+    ):
+        user_id = 1
+        limit = 2
+        rows = [
+            make_transaction(
+                id=index,
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                currency_code="UAH",
+                description=f"Transaction {index}",
+                user_id=user_id,
+                date=date(2026, 3, 1),
+                account_id=existing_account.id,
+            )
+            for index in range(1, limit + 1)
+        ]
+
+        transaction_repo_mock.get_by_user.return_value = rows
+        transaction_split_repo_mock.get_transaction_ids_with_splits.return_value = set()
+
+        result = await transaction_service.get_user_transactions(
+            user_id, TransactionFilters(), limit, 0
+        )
+
+        assert result.has_more is False
+        assert len(result.items) == limit
 
     async def test_get_user_transactions_maps_counterpart_only_to_transfers(
         self,
@@ -798,8 +927,8 @@ class TestGetUserTransactions:
             user_id=user_id, filters=TransactionFilters(), limit=20, offset=0
         )
 
-        assert result[0].counterpart_account_id is None
-        assert result[1].counterpart_account_id == 777
+        assert result.items[0].counterpart_account_id is None
+        assert result.items[1].counterpart_account_id == 777
 
         transaction_repo_mock.get_counterpart_account_ids.assert_called_once_with(
             [group_id], user_id
@@ -876,10 +1005,12 @@ class TestGetUserTransactions:
             user_id=user_id, limit=limit, offset=offset, filters=filters
         )
 
-        assert result[0].has_splits is False
-        assert result[1].has_splits is True
+        assert result.items[0].has_splits is False
+        assert result.items[1].has_splits is True
 
-        transaction_repo_mock.get_by_user.assert_called_once_with(user_id, filters, limit, offset)
+        transaction_repo_mock.get_by_user.assert_called_once_with(
+            user_id, filters, limit + 1, offset
+        )
         transaction_split_repo_mock.get_transaction_ids_with_splits.assert_called_once_with([1, 2])
 
 

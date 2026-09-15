@@ -10,6 +10,7 @@ from app.repositories import (
     TransactionTemplateSplitRepository,
 )
 from app.schemas import (
+    Page,
     TransactionTemplateCreate,
     TransactionTemplateListItem,
     TransactionTemplateResponse,
@@ -47,10 +48,11 @@ class TransactionTemplateService:
 
     async def get_user_templates(
         self, user_id: int, limit: int = 20, offset: int = 0
-    ) -> list[TransactionTemplateListItem]:
-        user_templates = await self.transaction_template_repository.get_by_user(
-            user_id, limit, offset
-        )
+    ) -> Page[TransactionTemplateListItem]:
+        rows = await self.transaction_template_repository.get_by_user(user_id, limit + 1, offset)
+
+        has_more = len(rows) > limit
+        user_templates = rows[:limit]
 
         template_ids = [template.id for template in user_templates]
 
@@ -63,10 +65,15 @@ class TransactionTemplateService:
                 )
             )
 
-        return [
-            self._to_list_item(template, template.id in ids_with_splits)
-            for template in user_templates
-        ]
+        return Page(
+            items=[
+                self._to_list_item(template, template.id in ids_with_splits)
+                for template in user_templates
+            ],
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
+        )
 
     async def create_template(
         self, data: TransactionTemplateCreate, user_id: int

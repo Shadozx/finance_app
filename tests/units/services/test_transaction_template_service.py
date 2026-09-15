@@ -1032,9 +1032,13 @@ class TestGetUserTemplates:
 
         result = await transaction_template_service.get_user_templates(user_id, limit, offset)
 
-        assert result == [TransactionTemplateListItem.model_validate(t) for t in user_templates]
+        assert result.items == [
+            TransactionTemplateListItem.model_validate(t) for t in user_templates
+        ]
 
-        transaction_template_repo_mock.get_by_user.assert_called_once_with(user_id, limit, offset)
+        transaction_template_repo_mock.get_by_user.assert_called_once_with(
+            user_id, limit + 1, offset
+        )
 
         transaction_template_split_repo_mock.get_template_ids_with_splits.assert_called_once_with(
             [1, 2]
@@ -1058,8 +1062,8 @@ class TestGetUserTemplates:
 
         result = await transaction_template_service.get_user_templates(user_id, limit, offset)
 
-        assert result[0].has_splits is True
-        assert result[1].has_splits is False
+        assert result.items[0].has_splits is True
+        assert result.items[1].has_splits is False
 
         transaction_template_split_repo_mock.get_template_ids_with_splits.assert_called_once_with(
             [1, 2]
@@ -1082,8 +1086,77 @@ class TestGetUserTemplates:
 
         result = await transaction_template_service.get_user_templates(user_id, limit, offset)
 
-        assert result == [TransactionTemplateListItem.model_validate(t) for t in user_templates]
+        assert result.items == [
+            TransactionTemplateListItem.model_validate(t) for t in user_templates
+        ]
 
-        transaction_template_repo_mock.get_by_user.assert_called_once_with(user_id, limit, offset)
+        transaction_template_repo_mock.get_by_user.assert_called_once_with(
+            user_id, limit + 1, offset
+        )
 
         transaction_template_split_repo_mock.get_template_ids_with_splits.assert_not_called()
+
+    async def test_get_user_templates_reports_more_when_extra_row_returned(
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        transaction_template_split_repo_mock: TransactionTemplateSplitRepository,
+    ):
+        user_id = 1
+        limit = 2
+        offset = 4
+        rows = [
+            make_transaction_template(id=index, name=f"Template {index}")
+            for index in range(1, limit + 2)
+        ]
+
+        transaction_template_repo_mock.get_by_user.return_value = rows
+        transaction_template_split_repo_mock.get_template_ids_with_splits.return_value = set()
+
+        result = await transaction_template_service.get_user_templates(user_id, limit, offset)
+
+        assert result.has_more is True
+        assert len(result.items) == limit
+
+        transaction_template_repo_mock.get_by_user.assert_called_once_with(
+            user_id, limit + 1, offset
+        )
+        transaction_template_split_repo_mock.get_template_ids_with_splits.assert_called_once_with(
+            [1, 2]
+        )
+
+    async def test_get_user_templates_reports_no_more_on_last_page(
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        transaction_template_split_repo_mock: TransactionTemplateSplitRepository,
+        user_templates: list[TransactionTemplate],
+    ):
+        limit = len(user_templates) + 1
+
+        transaction_template_repo_mock.get_by_user.return_value = user_templates
+        transaction_template_split_repo_mock.get_template_ids_with_splits.return_value = set()
+
+        result = await transaction_template_service.get_user_templates(1, limit, 0)
+
+        assert result.has_more is False
+        assert result.items == [
+            TransactionTemplateListItem.model_validate(template) for template in user_templates
+        ]
+
+    async def test_get_user_templates_reports_no_more_when_rows_match_limit(
+        self,
+        transaction_template_service: TransactionTemplateService,
+        transaction_template_repo_mock: TransactionTemplateRepository,
+        transaction_template_split_repo_mock: TransactionTemplateSplitRepository,
+        user_templates: list[TransactionTemplate],
+    ):
+        limit = len(user_templates)
+
+        transaction_template_repo_mock.get_by_user.return_value = user_templates
+        transaction_template_split_repo_mock.get_template_ids_with_splits.return_value = set()
+
+        result = await transaction_template_service.get_user_templates(1, limit, 0)
+
+        assert result.has_more is False
+        assert len(result.items) == limit

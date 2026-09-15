@@ -950,7 +950,7 @@ class TestGetTransactions:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_transactions_success(
         self,
@@ -966,16 +966,18 @@ class TestGetTransactions:
         assert response.status_code == status.HTTP_200_OK
 
         body = response.json()
+        items = body["items"]
 
-        assert len(body) == 1
-        assert body[0]["id"] == created_transaction["id"]
-        assert body[0]["date"] == created_transaction["date"]
-        assert body[0]["amount"] == created_transaction["amount"]
-        assert body[0]["type"] == created_transaction["type"]
-        assert body[0]["currency_code"] == created_transaction["currency_code"]
-        assert body[0]["category_id"] == created_transaction["category_id"]
-        assert body[0]["description"] == created_transaction["description"]
-        assert body[0]["user_id"] == authenticated_user["user"]["id"]
+        assert body["limit"] == 20
+        assert len(items) == 1
+        assert items[0]["id"] == created_transaction["id"]
+        assert items[0]["date"] == created_transaction["date"]
+        assert items[0]["amount"] == created_transaction["amount"]
+        assert items[0]["type"] == created_transaction["type"]
+        assert items[0]["currency_code"] == created_transaction["currency_code"]
+        assert items[0]["category_id"] == created_transaction["category_id"]
+        assert items[0]["description"] == created_transaction["description"]
+        assert items[0]["user_id"] == authenticated_user["user"]["id"]
 
     async def test_get_transactions_returns_only_own_transactions(
         self,
@@ -1008,11 +1010,11 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 1
+        assert len(items) == 1
 
-        ids = {transaction["id"] for transaction in body}
+        ids = {transaction["id"] for transaction in items}
 
         assert created_transaction["id"] in ids
         assert other_transaction["id"] not in ids
@@ -1056,16 +1058,16 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == limit
+        assert len(items) == limit
 
         all_ids = {
             created_transaction["id"],
             first_transaction["id"],
             second_transaction["id"],
         }
-        returned_ids = {transaction["id"] for transaction in body}
+        returned_ids = {transaction["id"] for transaction in items}
 
         assert len(returned_ids) == limit
         assert returned_ids.issubset(all_ids)
@@ -1106,7 +1108,7 @@ class TestGetTransactions:
 
         assert all_response.status_code == status.HTTP_200_OK
 
-        all_transactions = all_response.json()
+        all_transactions = all_response.json()["items"]
 
         assert len(all_transactions) == 3
 
@@ -1120,7 +1122,7 @@ class TestGetTransactions:
 
         assert offset_response.status_code == status.HTTP_200_OK
 
-        offset_transactions = offset_response.json()
+        offset_transactions = offset_response.json()["items"]
 
         assert len(offset_transactions) == len(all_transactions) - offset
 
@@ -1128,6 +1130,60 @@ class TestGetTransactions:
         offset_ids = {transaction["id"] for transaction in offset_transactions}
 
         assert offset_ids.issubset(all_ids)
+
+    async def test_get_transactions_pagination_envelope(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_transaction: TransactionData,
+        active_currency: CurrencyData,
+    ):
+        await create_transaction(
+            client,
+            transaction_payload(
+                amount="200.00",
+                currency_code=active_currency["code"],
+                description="Second transaction",
+                account_id=created_transaction["account_id"],
+            ),
+            authenticated_user["headers"],
+        )
+
+        limit = 1
+        offset = 0
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"limit": limit, "offset": offset},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_transactions_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"offset": 100},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
     async def test_get_transactions_transfer_sides_with_counterpart(
         self,
@@ -1144,11 +1200,11 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 2
+        assert len(items) == 2
 
-        sides = sides_by_account(body)
+        sides = sides_by_account(items)
 
         from_side = sides[created_account["id"]]
         to_side = sides[uah_account["id"]]
@@ -1183,11 +1239,11 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 1
-        assert body[0]["account_id"] == uah_account["id"]
-        assert body[0]["type"] == "INCOME"
+        assert len(items) == 1
+        assert items[0]["account_id"] == uah_account["id"]
+        assert items[0]["type"] == "INCOME"
 
     async def test_get_transactions_filter_by_account_id_excludes_others(
         self,
@@ -1230,8 +1286,8 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert target_transaction["id"] in ids
         assert other_transaction["id"] not in ids
@@ -1251,7 +1307,7 @@ class TestGetTransactions:
 
         assert response.status_code == status.HTTP_200_OK
 
-        rows = {row["id"]: row for row in response.json()}
+        rows = {row["id"]: row for row in response.json()["items"]}
 
         assert rows[created_split_transaction["id"]]["has_splits"] is True
         assert "splits" not in rows[created_split_transaction["id"]]
@@ -1309,12 +1365,12 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert income_transaction["id"] in ids
         assert expense_transaction["id"] not in ids
-        assert all(transaction["type"] == "INCOME" for transaction in body)
+        assert all(transaction["type"] == "INCOME" for transaction in items)
 
     async def test_get_transactions_filter_by_currency_code(
         self,
@@ -1341,11 +1397,11 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert usd_transaction["id"] in ids
-        assert all(transaction["currency_code"] == active_currency["code"] for transaction in body)
+        assert all(transaction["currency_code"] == active_currency["code"] for transaction in items)
 
     async def test_get_transactions_filter_currency_code_normalized(
         self,
@@ -1372,11 +1428,11 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert created_transaction["id"] in ids
-        assert all(transaction["currency_code"] == active_currency["code"] for transaction in body)
+        assert all(transaction["currency_code"] == active_currency["code"] for transaction in items)
 
     async def test_get_transactions_filter_by_category_id(
         self,
@@ -1416,12 +1472,58 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert categorized_transaction["id"] in ids
         assert uncategorized_transaction["id"] not in ids
-        assert all(transaction["category_id"] == created_category["id"] for transaction in body)
+        assert all(transaction["category_id"] == created_category["id"] for transaction in items)
+
+    async def test_get_transactions_filter_by_category_reports_no_more_for_filtered_set(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        for index in range(2):
+            await create_transaction(
+                client,
+                transaction_payload(
+                    amount=f"{(index + 1) * 100}.00",
+                    currency_code=active_currency["code"],
+                    category_id=created_category["id"],
+                    account_id=created_account["id"],
+                ),
+                authenticated_user["headers"],
+            )
+
+        for index in range(2):
+            await create_transaction(
+                client,
+                transaction_payload(
+                    amount=f"{(index + 3) * 100}.00",
+                    currency_code=active_currency["code"],
+                    category_id=None,
+                    account_id=created_account["id"],
+                ),
+                authenticated_user["headers"],
+            )
+
+        limit = 2
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"category_id": created_category["id"], "limit": limit},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert len(body["items"]) == limit
+        assert body["has_more"] is False
 
     async def test_get_transactions_filter_by_start_date(
         self,
@@ -1460,12 +1562,12 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert new_transaction["id"] in ids
         assert old_transaction["id"] not in ids
-        assert all(transaction["date"] >= "2026-02-01" for transaction in body)
+        assert all(transaction["date"] >= "2026-02-01" for transaction in items)
 
     async def test_get_transactions_filter_by_end_date(
         self,
@@ -1504,12 +1606,12 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert old_transaction["id"] in ids
         assert new_transaction["id"] not in ids
-        assert all(transaction["date"] <= "2026-01-31" for transaction in body)
+        assert all(transaction["date"] <= "2026-01-31" for transaction in items)
 
     async def test_get_transactions_filter_by_date_range(
         self,
@@ -1562,13 +1664,13 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert in_range_transaction["id"] in ids
         assert before_range_transaction["id"] not in ids
         assert after_range_transaction["id"] not in ids
-        assert all("2026-02-01" <= transaction["date"] <= "2026-02-28" for transaction in body)
+        assert all("2026-02-01" <= transaction["date"] <= "2026-02-28" for transaction in items)
 
     async def test_get_transactions_combined_filters(
         self,
@@ -1630,8 +1732,8 @@ class TestGetTransactionsFilters:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
-        ids = {transaction["id"] for transaction in body}
+        items = response.json()["items"]
+        ids = {transaction["id"] for transaction in items}
 
         assert matching_transaction["id"] in ids
         assert wrong_type_transaction["id"] not in ids
@@ -2483,7 +2585,7 @@ class TestUpdateTransaction:
         headers = authenticated_user["headers"]
 
         registry = await client.get(API_TRANSACTIONS, headers=headers)
-        side = sides_by_account(registry.json())[created_account["id"]]
+        side = sides_by_account(registry.json()["items"])[created_account["id"]]
 
         payload = transaction_payload(
             amount="9999.00",
@@ -2829,7 +2931,7 @@ class TestDeleteTransaction:
         headers = authenticated_user["headers"]
 
         registry = await client.get(API_TRANSACTIONS, headers=headers)
-        side = sides_by_account(registry.json())[created_account["id"]]
+        side = sides_by_account(registry.json()["items"])[created_account["id"]]
 
         response = await client.delete(
             f"{API_TRANSACTIONS}/{side['id']}",
@@ -2840,7 +2942,7 @@ class TestDeleteTransaction:
 
         registry = await client.get(API_TRANSACTIONS, headers=headers)
 
-        assert registry.json() == []
+        assert registry.json()["items"] == []
 
     async def test_delete_transaction_regular_removes_only_itself(
         self,
@@ -2871,7 +2973,7 @@ class TestDeleteTransaction:
 
         registry = await client.get(API_TRANSACTIONS, headers=headers)
 
-        assert len(registry.json()) == 2
+        assert len(registry.json()["items"]) == 2
 
     async def test_delete_transaction_with_splits_success(
         self,

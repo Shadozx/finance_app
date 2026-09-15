@@ -389,13 +389,13 @@ class TestCreateAccount:
             headers=authenticated_user["headers"],
         )
 
-        body = response.json()
+        items = response.json()["items"]
 
-        assert len(body) == 1
-        assert body[0]["kind"] == "ADJUSTMENT"
-        assert body[0]["type"] == "INCOME"
-        assert body[0]["amount"] == "5000.00"
-        assert body[0]["account_id"] == account_id
+        assert len(items) == 1
+        assert items[0]["kind"] == "ADJUSTMENT"
+        assert items[0]["type"] == "INCOME"
+        assert items[0]["amount"] == "5000.00"
+        assert items[0]["account_id"] == account_id
 
     async def test_create_account_without_token(
         self,
@@ -1163,14 +1163,14 @@ class TestReconcileAccount:
             headers=authenticated_user["headers"],
         )
 
-        body = transactions_response.json()
+        items = transactions_response.json()["items"]
 
-        assert len(body) == 1
-        assert body[0]["kind"] == "ADJUSTMENT"
-        assert body[0]["type"] == "INCOME"
-        assert body[0]["amount"] == "500.00"
-        assert body[0]["account_id"] == created_account["id"]
-        assert body[0]["currency_code"] == created_account["currency_code"]
+        assert len(items) == 1
+        assert items[0]["kind"] == "ADJUSTMENT"
+        assert items[0]["type"] == "INCOME"
+        assert items[0]["amount"] == "500.00"
+        assert items[0]["account_id"] == created_account["id"]
+        assert items[0]["currency_code"] == created_account["currency_code"]
 
     async def test_reconcile_account_excluded_from_statistics(
         self,
@@ -1229,7 +1229,7 @@ class TestReconcileAccount:
             headers=authenticated_user["headers"],
         )
 
-        assert len(transactions_response.json()) == 1
+        assert len(transactions_response.json()["items"]) == 1
 
     async def test_reconcile_account_to_zero(
         self,

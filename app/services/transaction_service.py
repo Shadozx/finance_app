@@ -11,6 +11,7 @@ from app.repositories import (
     TransactionSplitRepository,
 )
 from app.schemas import (
+    Page,
     TransactionCreate,
     TransactionFilters,
     TransactionListItem,
@@ -128,10 +129,11 @@ class TransactionService:
         filters: TransactionFilters,
         limit: int = 20,
         offset: int = 0,
-    ) -> list[TransactionListItem]:
-        transactions = await self.transaction_repository.get_by_user(
-            user_id, filters, limit, offset
-        )
+    ) -> Page[TransactionListItem]:
+        rows = await self.transaction_repository.get_by_user(user_id, filters, limit + 1, offset)
+
+        has_more = len(rows) > limit
+        transactions = rows[:limit]
 
         group_ids = [
             transaction.transfer_group_id
@@ -157,14 +159,19 @@ class TransactionService:
                 )
             )
 
-        return [
-            self._to_list_item(
-                transaction,
-                counterparts.get(transaction.id),
-                transaction.id in ids_with_splits,
-            )
-            for transaction in transactions
-        ]
+        return Page(
+            items=[
+                self._to_list_item(
+                    transaction,
+                    counterparts.get(transaction.id),
+                    transaction.id in ids_with_splits,
+                )
+                for transaction in transactions
+            ],
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
+        )
 
     async def update_transaction(
         self,
