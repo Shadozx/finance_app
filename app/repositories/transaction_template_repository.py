@@ -29,6 +29,7 @@ class TransactionTemplateRepository:
                 await self.session.execute(
                     select(TransactionTemplate)
                     .where(TransactionTemplate.user_id == user_id)
+                    .order_by(TransactionTemplate.name)
                     .offset(offset)
                     .limit(limit)
                 )

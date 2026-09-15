@@ -18,7 +18,11 @@ class CurrencyRepository:
     async def get_all_active(self) -> list[Currency]:
         return cast(
             list[Currency],
-            (await self.session.execute(select(Currency).where(Currency.is_active.is_(True))))
+            (
+                await self.session.execute(
+                    select(Currency).where(Currency.is_active.is_(True)).order_by(Currency.code)
+                )
+            )
             .scalars()
             .all(),
         )

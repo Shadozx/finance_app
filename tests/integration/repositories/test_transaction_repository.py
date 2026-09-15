@@ -345,6 +345,42 @@ async def transactions(
 
 
 class TestPagination:
+    async def test_pagination_is_deterministic_for_transactions_on_same_date(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+    ):
+        transaction_date = date(2026, 3, 15)
+        created = [
+            await transaction_repository.add(
+                make_transaction(
+                    type=TransactionType.EXPENSE,
+                    kind=TransactionKind.REGULAR,
+                    amount=Decimal("100.00"),
+                    description=f"Transaction {index}",
+                    currency_code=uah_currency.code,
+                    user_id=user.id,
+                    account_id=uah_account.id,
+                    date=transaction_date,
+                )
+            )
+            for index in range(5)
+        ]
+
+        first_page = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(), limit=2, offset=0
+        )
+        second_page = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(), limit=3, offset=2
+        )
+
+        returned_ids = [transaction.id for transaction in first_page + second_page]
+        expected_ids = sorted((transaction.id for transaction in created), reverse=True)
+
+        assert returned_ids == expected_ids
+
     async def test_pagination_limit(
         self, transaction_repository: TransactionRepository, user: User, transactions
     ):
@@ -406,6 +442,55 @@ class TestFilters:
         assert len(user_transactions) == 3
 
         assert all(t.category_id == category.id for t in user_transactions)
+
+    async def test_filter_by_category_keeps_order(
+        self,
+        transaction_repository: TransactionRepository,
+        user: User,
+        uah_account: Account,
+        uah_currency: Currency,
+        category: Category,
+    ):
+        transaction_date = date(2026, 3, 15)
+
+        created = [
+            await transaction_repository.add(
+                make_transaction(
+                    type=TransactionType.EXPENSE,
+                    kind=TransactionKind.REGULAR,
+                    amount=Decimal("100.00"),
+                    description=f"Transaction {index}",
+                    currency_code=uah_currency.code,
+                    user_id=user.id,
+                    account_id=uah_account.id,
+                    category_id=category.id,
+                    date=transaction_date,
+                )
+            )
+            for index in range(3)
+        ]
+
+        await transaction_repository.add(
+            make_transaction(
+                type=TransactionType.EXPENSE,
+                kind=TransactionKind.REGULAR,
+                amount=Decimal("100.00"),
+                description="Uncategorized",
+                currency_code=uah_currency.code,
+                user_id=user.id,
+                account_id=uah_account.id,
+                category_id=None,
+                date=transaction_date,
+            )
+        )
+
+        filtered = await transaction_repository.get_by_user(
+            user.id, TransactionFilters(category_id=category.id)
+        )
+
+        assert [transaction.id for transaction in filtered] == sorted(
+            (transaction.id for transaction in created), reverse=True
+        )
 
     async def test_filter_by_date_range(
         self, transaction_repository: TransactionRepository, user: User, transactions

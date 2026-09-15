@@ -10,6 +10,7 @@ from app.repositories import (
     AccountRepository,
     BudgetRepository,
     CategoryRepository,
+    CurrencyRepository,
     TransactionRepository,
     TransactionSplitRepository,
     TransactionTemplateRepository,
@@ -160,6 +161,11 @@ async def usd_account(
 @pytest.fixture
 def category_repository(test_session: AsyncSession):
     return CategoryRepository(test_session)
+
+
+@pytest.fixture
+def currency_repository(test_session: AsyncSession):
+    return CurrencyRepository(test_session)
 
 
 @pytest.fixture

@@ -154,6 +154,18 @@ class TestGetByUser:
 
         assert all(t.user_id == user.id for t in user_transaction_templates)
 
+    async def test_get_by_user_ordered_by_name(
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_templates,
+    ):
+        user_transaction_templates = await transaction_template_repository.get_by_user(user.id)
+
+        returned_names = [template.name for template in user_transaction_templates]
+
+        assert returned_names == sorted(template.name for template in transaction_templates)
+
     async def test_get_by_user_empty(
         self,
         test_session: AsyncSession,
@@ -226,6 +238,25 @@ class TestGetByUser:
         )
 
         assert len(user_transaction_templates) == limit
+
+    async def test_pagination_does_not_repeat_or_skip(
+        self,
+        transaction_template_repository: TransactionTemplateRepository,
+        user: User,
+        transaction_templates,
+    ):
+        page_size = 2
+
+        first_page = await transaction_template_repository.get_by_user(
+            user.id, limit=page_size, offset=0
+        )
+        second_page = await transaction_template_repository.get_by_user(
+            user.id, limit=page_size, offset=page_size
+        )
+
+        returned_names = [template.name for template in first_page + second_page]
+
+        assert returned_names == sorted(template.name for template in transaction_templates)
 
 
 class TestGetByUserAndName:

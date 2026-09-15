@@ -29,6 +29,8 @@ class AccountRepository:
         elif status == AccountStatus.ARCHIVED:
             query = query.where(Account.archived_at.is_not(None))
 
+        query = query.order_by(Account.name)
+
         result = await self.session.execute(query)
 
         return list(result.scalars().all())

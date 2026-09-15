@@ -40,6 +40,35 @@ async def archived_account(
     )
 
 
+@pytest.fixture
+async def accounts_for_ordering(
+    account_repository: AccountRepository,
+    user: User,
+    uah_currency: Currency,
+):
+    active_names = ("Savings", "Cash")
+    archived_names = ("Old Wallet", "Binance")
+
+    for name in active_names:
+        await account_repository.add(
+            Account(
+                name=name,
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
+
+    for name in archived_names:
+        account = await account_repository.add(
+            Account(
+                name=name,
+                currency_code=uah_currency.code,
+                user_id=user.id,
+            )
+        )
+        await account_repository.archive(account)
+
+
 class TestAdd:
     async def test_add(
         self,
@@ -150,6 +179,26 @@ class TestGetByUser:
         assert account.id in account_ids
         assert new_account.id in account_ids
         assert all(acc.archived_at is None for acc in accounts)
+
+    @pytest.mark.parametrize(
+        "status, expected_names",
+        [
+            (AccountStatus.ACTIVE, ["Cash", "Savings"]),
+            (AccountStatus.ARCHIVED, ["Binance", "Old Wallet"]),
+            (AccountStatus.ALL, ["Binance", "Cash", "Old Wallet", "Savings"]),
+        ],
+    )
+    async def test_get_by_user_ordered_by_name(
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        accounts_for_ordering,
+        status: AccountStatus,
+        expected_names: list[str],
+    ):
+        user_accounts = await account_repository.get_by_user(user.id, status=status)
+
+        assert [account.name for account in user_accounts] == expected_names
 
     async def test_get_by_user_default_excludes_archived_accounts(
         self,

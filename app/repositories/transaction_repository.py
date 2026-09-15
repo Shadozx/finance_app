@@ -47,7 +47,8 @@ class TransactionRepository:
         if filters.account_id is not None:
             query = query.where(Transaction.account_id == filters.account_id)
 
-        query = query.order_by(Transaction.date.desc()).offset(offset).limit(limit)
+        query = query.order_by(Transaction.date.desc(), Transaction.id.desc())
+        query = query.offset(offset).limit(limit)
 
         return list((await self.session.execute(query)).scalars().all())
 

@@ -19,6 +19,22 @@ async def archived_category(category_repository: CategoryRepository, user: User)
     return await category_repository.add(category)
 
 
+@pytest.fixture
+async def categories_for_ordering(
+    category_repository: CategoryRepository,
+    user: User,
+):
+    active_names = ("Transport", "Food")
+    archived_names = ("Salary", "Auto")
+
+    for name in active_names:
+        await category_repository.add(Category(name=name, user_id=user.id))
+
+    for name in archived_names:
+        category = await category_repository.add(Category(name=name, user_id=user.id))
+        await category_repository.archive(category)
+
+
 class TestAdd:
     async def test_add(
         self,
@@ -89,6 +105,26 @@ class TestGetByUser:
         assert category.id in category_ids
         assert new_category.id in category_ids
         assert all(cat.archived_at is None for cat in categories)
+
+    @pytest.mark.parametrize(
+        "status, expected_names",
+        [
+            (CategoryStatus.ACTIVE, ["Food", "Transport"]),
+            (CategoryStatus.ARCHIVED, ["Auto", "Salary"]),
+            (CategoryStatus.ALL, ["Auto", "Food", "Salary", "Transport"]),
+        ],
+    )
+    async def test_get_by_user_ordered_by_name(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_for_ordering,
+        status: CategoryStatus,
+        expected_names: list[str],
+    ):
+        user_categories = await category_repository.get_by_user(user.id, status=status)
+
+        assert [category.name for category in user_categories] == expected_names
 
     async def test_get_by_user_default_excludes_archived_categories(
         self,

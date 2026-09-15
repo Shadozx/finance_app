@@ -29,6 +29,8 @@ class CategoryRepository:
         elif status == CategoryStatus.ARCHIVED:
             query = query.where(Category.archived_at.is_not(None))
 
+        query = query.order_by(Category.name)
+
         result = await self.session.execute(query)
 
         return list(result.scalars().all())
