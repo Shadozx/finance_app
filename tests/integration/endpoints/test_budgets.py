@@ -256,6 +256,7 @@ class TestGetBudgets:
         )
         response = await client.get(API_BUDGETS, headers=authenticated_user["headers"])
         assert response.status_code == status.HTTP_200_OK
+        assert response.json()["limit"] == 20
 
     async def test_get_budgets_returns_only_own(
         self,
@@ -270,7 +271,7 @@ class TestGetBudgets:
             headers=authenticated_user["headers"],
         )
         assert response.status_code == status.HTTP_200_OK
-        ids = {b["budget"]["id"] for b in response.json()}
+        ids = {b["budget"]["id"] for b in response.json()["items"]}
         assert created_budget["id"] in ids
 
         other_response = await client.get(
@@ -278,7 +279,7 @@ class TestGetBudgets:
             params={"start_date": "2026-07-01", "end_date": "2026-07-31"},
             headers=other_authenticated_user["headers"],
         )
-        other_ids = {b["budget"]["id"] for b in other_response.json()}
+        other_ids = {b["budget"]["id"] for b in other_response.json()["items"]}
         assert created_budget["id"] not in other_ids
 
     async def test_get_budgets_filtered_by_currency(
@@ -321,7 +322,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert {b["budget"]["id"] for b in response.json()} == {second.json()["id"]}
+        assert {b["budget"]["id"] for b in response.json()["items"]} == {second.json()["id"]}
 
     async def test_get_budgets_filtered_by_category(
         self,
@@ -363,7 +364,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        assert {b["budget"]["id"] for b in response.json()} == {second.json()["id"]}
+        assert {b["budget"]["id"] for b in response.json()["items"]} == {second.json()["id"]}
 
     async def test_get_budgets_returns_spent_for_each_budget(
         self,
@@ -421,7 +422,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        body = {item["budget"]["id"]: item for item in response.json()}
+        body = {item["budget"]["id"]: item for item in response.json()["items"]}
 
         assert len(body) == 2
 
@@ -481,10 +482,80 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        body = {item["budget"]["id"]: item for item in response.json()}
+        body = {item["budget"]["id"]: item for item in response.json()["items"]}
 
         assert body[created_budget["id"]]["spent"] == "2000.00"
         assert body[household_budget.json()["id"]]["spent"] == "500.00"
+
+    async def test_get_budgets_pagination_envelope(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+
+        other_category = await create_category(client, category_payload(name="Transport"), headers)
+
+        second = await client.post(
+            API_BUDGETS,
+            json=budget_payload(
+                currency_code=active_currency["code"],
+                category_id=other_category["id"],
+            ),
+            headers=headers,
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+
+        limit = 1
+        offset = 0
+
+        response = await client.get(
+            API_BUDGETS,
+            params={
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "limit": limit,
+                "offset": offset,
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_budgets_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+    ):
+        offset = 100
+
+        response = await client.get(
+            API_BUDGETS,
+            params={
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+                "offset": offset,
+            },
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
     async def test_get_budgets_single_date_fails(
         self,

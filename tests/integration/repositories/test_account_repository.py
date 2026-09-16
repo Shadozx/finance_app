@@ -200,6 +200,54 @@ class TestGetByUser:
 
         assert [account.name for account in user_accounts] == expected_names
 
+    async def test_get_by_user_pagination_does_not_repeat_or_skip(
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        accounts_for_ordering,
+    ):
+        page_size = 2
+
+        first_page = await account_repository.get_by_user(
+            user.id, status=AccountStatus.ALL, limit=page_size, offset=0
+        )
+        second_page = await account_repository.get_by_user(
+            user.id, status=AccountStatus.ALL, limit=page_size, offset=page_size
+        )
+        all_accounts = await account_repository.get_by_user(user.id, status=AccountStatus.ALL)
+
+        returned_names = [account.name for account in first_page + second_page]
+
+        assert returned_names == [account.name for account in all_accounts]
+
+    async def test_get_by_user_pagination_limit(
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        accounts_for_ordering,
+    ):
+        limit = 2
+
+        user_accounts = await account_repository.get_by_user(
+            user.id, status=AccountStatus.ALL, limit=limit
+        )
+
+        assert len(user_accounts) == limit
+
+    async def test_get_by_user_pagination_offset(
+        self,
+        account_repository: AccountRepository,
+        user: User,
+        accounts_for_ordering,
+    ):
+        offset = 2
+
+        user_accounts = await account_repository.get_by_user(
+            user.id, status=AccountStatus.ALL, offset=offset
+        )
+
+        assert [account.name for account in user_accounts] == ["Old Wallet", "Savings"]
+
     async def test_get_by_user_default_excludes_archived_accounts(
         self,
         account_repository: AccountRepository,

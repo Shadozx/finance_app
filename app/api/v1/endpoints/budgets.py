@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_budget_service, get_current_user
 from app.models import User
@@ -8,6 +8,7 @@ from app.schemas import (
     BudgetResponse,
     BudgetStatusResponse,
     BudgetUpdate,
+    Page,
 )
 from app.services import BudgetService
 
@@ -23,13 +24,15 @@ async def create_budget(
     return await budget_service.create_budget(data, current_user.id)
 
 
-@router.get("", response_model=list[BudgetStatusResponse])
+@router.get("", response_model=Page[BudgetStatusResponse])
 async def get_user_budgets(
     filters: BudgetFilters = Depends(),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     budget_service: BudgetService = Depends(get_budget_service),
 ):
-    return await budget_service.get_user_budgets(current_user.id, filters)
+    return await budget_service.get_user_budgets(current_user.id, filters, limit, offset)
 
 
 @router.get("/{budget_id}", response_model=BudgetResponse)

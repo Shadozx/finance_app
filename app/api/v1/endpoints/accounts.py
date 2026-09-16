@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_account_service, get_current_user
 from app.models import User
@@ -9,6 +9,7 @@ from app.schemas import (
     AccountResponse,
     AccountStatus,
     AccountUpdate,
+    Page,
 )
 from app.services import AccountService
 
@@ -30,14 +31,16 @@ async def create_account(
 
 @router.get(
     "",
-    response_model=list[AccountResponse],
+    response_model=Page[AccountResponse],
 )
 async def get_accounts(
     account_status: AccountStatus = AccountStatus.ACTIVE,
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     account_service: AccountService = Depends(get_account_service),
 ):
-    return await account_service.get_user_accounts(current_user.id, account_status)
+    return await account_service.get_user_accounts(current_user.id, account_status, limit, offset)
 
 
 @router.get(

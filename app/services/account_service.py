@@ -15,6 +15,7 @@ from app.schemas import (
     AccountStatus,
     AccountUpdate,
     InitialBalanceKind,
+    Page,
 )
 from app.services import validators
 
@@ -92,18 +93,25 @@ class AccountService:
         self,
         user_id: int,
         status: AccountStatus = AccountStatus.ACTIVE,
-    ) -> list[AccountResponse]:
-        accounts = await self.account_repository.get_by_user(
-            user_id=user_id,
-            status=status,
-        )
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Page[AccountResponse]:
+        rows = await self.account_repository.get_by_user(user_id, status, limit + 1, offset)
+
+        has_more = len(rows) > limit
+        accounts = rows[:limit]
 
         balances = await self.transaction_repository.get_balances_by_account(user_id)
 
-        return [
-            self._to_response(account, balance=balances.get(account.id, Decimal("0")))
-            for account in accounts
-        ]
+        return Page(
+            items=[
+                self._to_response(account, balance=balances.get(account.id, Decimal("0")))
+                for account in accounts
+            ],
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
+        )
 
     async def update_account(
         self,

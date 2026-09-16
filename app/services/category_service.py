@@ -9,7 +9,7 @@ from app.core.exceptions import (
 )
 from app.models import Category
 from app.repositories import CategoryRepository
-from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate
+from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate, Page
 
 logger = structlog.get_logger()
 
@@ -44,13 +44,20 @@ class CategoryService:
         self,
         user_id: int,
         status: CategoryStatus = CategoryStatus.ACTIVE,
-    ) -> list[CategoryResponse]:
-        categories = await self.category_repository.get_by_user(
-            user_id=user_id,
-            status=status,
-        )
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Page[CategoryResponse]:
+        rows = await self.category_repository.get_by_user(user_id, status, limit + 1, offset)
 
-        return [CategoryResponse.model_validate(cat) for cat in categories]
+        has_more = len(rows) > limit
+        categories = rows[:limit]
+
+        return Page(
+            items=[CategoryResponse.model_validate(cat) for cat in categories],
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
+        )
 
     async def update_category(
         self,

@@ -393,6 +393,8 @@ class TestGetUserAccounts:
         existing_currency: Currency,
     ):
         user_id = 1
+        limit = 2
+        offset = 0
         balances = {1: Decimal("0"), 2: Decimal("150")}
         transaction_repo_mock.get_balances_by_account.return_value = balances
 
@@ -413,15 +415,17 @@ class TestGetUserAccounts:
 
         account_repo_mock.get_by_user.return_value = user_accounts
 
-        result = await account_service.get_user_accounts(user_id)
+        result = await account_service.get_user_accounts(user_id, limit=limit, offset=offset)
 
-        assert result == [
+        assert result.items == [
             to_response(a, balance=balances.get(a.id, Decimal("0"))) for a in user_accounts
         ]
 
         account_repo_mock.get_by_user.assert_called_once_with(
-            user_id=user_id,
-            status=AccountStatus.ACTIVE,
+            user_id,
+            AccountStatus.ACTIVE,
+            limit + 1,
+            offset,
         )
 
         transaction_repo_mock.get_balances_by_account.assert_called_once_with(user_id)
@@ -433,17 +437,21 @@ class TestGetUserAccounts:
         transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
+        limit = 2
+        offset = 0
 
         account_repo_mock.get_by_user.return_value = []
         transaction_repo_mock.get_balances_by_account.return_value = {}
 
-        result = await account_service.get_user_accounts(user_id)
+        result = await account_service.get_user_accounts(user_id, limit=limit, offset=offset)
 
-        assert result == []
+        assert result.items == []
 
         account_repo_mock.get_by_user.assert_called_once_with(
-            user_id=user_id,
-            status=AccountStatus.ACTIVE,
+            user_id,
+            AccountStatus.ACTIVE,
+            limit + 1,
+            offset,
         )
 
     async def test_get_user_accounts_passes_status(
@@ -453,16 +461,114 @@ class TestGetUserAccounts:
         transaction_repo_mock: TransactionRepository,
     ):
         user_id = 1
+        limit = 2
+        offset = 0
 
         account_repo_mock.get_by_user.return_value = []
         transaction_repo_mock.get_balances_by_account.return_value = {}
 
-        await account_service.get_user_accounts(user_id, AccountStatus.ALL)
+        await account_service.get_user_accounts(user_id, AccountStatus.ALL, limit, offset)
 
         account_repo_mock.get_by_user.assert_called_once_with(
-            user_id=user_id,
-            status=AccountStatus.ALL,
+            user_id,
+            AccountStatus.ALL,
+            limit + 1,
+            offset,
         )
+
+    async def test_get_user_accounts_reports_more_when_extra_row_returned(
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_currency: Currency,
+    ):
+        user_id = 1
+        limit = 2
+        offset = 4
+
+        rows = [
+            make_account(
+                id=index,
+                name=f"Account {index}",
+                currency_code=existing_currency.code,
+                user_id=user_id,
+            )
+            for index in range(1, limit + 2)
+        ]
+
+        account_repo_mock.get_by_user.return_value = rows
+        transaction_repo_mock.get_balances_by_account.return_value = {}
+
+        result = await account_service.get_user_accounts(
+            user_id, AccountStatus.ACTIVE, limit, offset
+        )
+
+        assert result.has_more is True
+        assert len(result.items) == limit
+
+        account_repo_mock.get_by_user.assert_called_once_with(
+            user_id,
+            AccountStatus.ACTIVE,
+            limit + 1,
+            offset,
+        )
+
+    async def test_get_user_accounts_reports_no_more_on_last_page(
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_currency: Currency,
+    ):
+        user_id = 1
+        limit = 3
+
+        rows = [
+            make_account(
+                id=index,
+                name=f"Account {index}",
+                currency_code=existing_currency.code,
+                user_id=user_id,
+            )
+            for index in range(1, limit)
+        ]
+
+        account_repo_mock.get_by_user.return_value = rows
+        transaction_repo_mock.get_balances_by_account.return_value = {}
+
+        result = await account_service.get_user_accounts(user_id, AccountStatus.ACTIVE, limit, 0)
+
+        assert result.has_more is False
+        assert result.items == [to_response(row, balance=Decimal("0")) for row in rows]
+
+    async def test_get_user_accounts_reports_no_more_when_rows_match_limit(
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_currency: Currency,
+    ):
+        user_id = 1
+        limit = 2
+
+        rows = [
+            make_account(
+                id=index,
+                name=f"Account {index}",
+                currency_code=existing_currency.code,
+                user_id=user_id,
+            )
+            for index in range(1, limit + 1)
+        ]
+
+        account_repo_mock.get_by_user.return_value = rows
+        transaction_repo_mock.get_balances_by_account.return_value = {}
+
+        result = await account_service.get_user_accounts(user_id, AccountStatus.ACTIVE, limit, 0)
+
+        assert result.has_more is False
+        assert len(result.items) == limit
 
 
 class TestUpdateAccount:

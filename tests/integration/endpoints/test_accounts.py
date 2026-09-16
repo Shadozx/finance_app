@@ -420,7 +420,7 @@ class TestGetAccounts:
         response = await client.get(API_ACCOUNTS, headers=authenticated_user["headers"])
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_accounts_default_returns_active(
         self,
@@ -434,10 +434,12 @@ class TestGetAccounts:
         assert response.status_code == status.HTTP_200_OK
 
         body = response.json()
+        items = body["items"]
 
-        assert len(body) == 1
-        assert body[0]["id"] == created_account["id"]
-        assert body[0]["archived_at"] is None
+        assert body["limit"] == 200
+        assert len(items) == 1
+        assert items[0]["id"] == created_account["id"]
+        assert items[0]["archived_at"] is None
 
     async def test_get_accounts_status_archived(
         self,
@@ -454,7 +456,7 @@ class TestGetAccounts:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        body = response.json()["items"]
 
         assert len(body) == 1
         assert body[0]["id"] == archived_account["id"]
@@ -475,7 +477,7 @@ class TestGetAccounts:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        body = response.json()["items"]
         ids = {account["id"] for account in body}
 
         assert len(body) == 2
@@ -500,7 +502,7 @@ class TestGetAccounts:
 
         assert response.status_code == status.HTTP_200_OK
 
-        body = response.json()
+        body = response.json()["items"]
         ids = {account["id"] for account in body}
 
         assert len(body) == 1
@@ -549,10 +551,63 @@ class TestGetAccounts:
 
         assert response.status_code == status.HTTP_200_OK
 
-        by_id = {account["id"]: account for account in response.json()}
+        by_id = {account["id"]: account for account in response.json()["items"]}
 
         assert by_id[created_account["id"]]["balance"] == "500.00"
         assert by_id[empty_account["id"]]["balance"] == "0.00"
+
+    async def test_get_accounts_pagination_envelope(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        await create_account(
+            client,
+            account_payload(name="Second Account", currency_code=active_currency["code"]),
+            authenticated_user["headers"],
+        )
+
+        limit = 1
+        offset = 0
+
+        response = await client.get(
+            API_ACCOUNTS,
+            headers=authenticated_user["headers"],
+            params={"limit": limit, "offset": offset},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_accounts_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+    ):
+        offset = 100
+
+        response = await client.get(
+            API_ACCOUNTS,
+            headers=authenticated_user["headers"],
+            params={"offset": offset},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
     async def test_get_accounts_without_token(
         self,
@@ -911,7 +966,7 @@ class TestArchiveAccount:
             headers=authenticated_user["headers"],
         )
 
-        assert active_response.json() == []
+        assert active_response.json()["items"] == []
 
         archived_response = await client.get(
             API_ACCOUNTS,
@@ -919,7 +974,7 @@ class TestArchiveAccount:
             params={"account_status": "archived"},
         )
 
-        archived_accounts = archived_response.json()
+        archived_accounts = archived_response.json()["items"]
 
         assert len(archived_accounts) == 1
         assert archived_accounts[0]["id"] == created_account["id"]
@@ -1015,7 +1070,7 @@ class TestRestoreAccount:
             headers=authenticated_user["headers"],
         )
 
-        active_accounts = active_response.json()
+        active_accounts = active_response.json()["items"]
 
         assert len(active_accounts) == 1
         assert active_accounts[0]["id"] == archived_account["id"]

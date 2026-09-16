@@ -20,6 +20,8 @@ class CategoryRepository:
         self,
         user_id: int,
         status: CategoryStatus = CategoryStatus.ACTIVE,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[Category]:
         query = select(Category).where(Category.user_id == user_id)
 
@@ -29,7 +31,7 @@ class CategoryRepository:
         elif status == CategoryStatus.ARCHIVED:
             query = query.where(Category.archived_at.is_not(None))
 
-        query = query.order_by(Category.name)
+        query = query.order_by(Category.name).offset(offset).limit(limit)
 
         result = await self.session.execute(query)
 

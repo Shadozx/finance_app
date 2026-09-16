@@ -18,6 +18,7 @@ from app.schemas import (
     BudgetResponse,
     BudgetStatusResponse,
     BudgetUpdate,
+    Page,
 )
 from app.services import validators
 
@@ -53,29 +54,41 @@ class BudgetService:
         self,
         user_id: int,
         filters: BudgetFilters,
-    ) -> list[BudgetStatusResponse]:
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Page[BudgetStatusResponse]:
         if filters.start_date is not None and filters.end_date is not None:
             start_date, end_date = filters.start_date, filters.end_date
         else:
             today = date.today()
             start_date, end_date = today, today
 
-        budgets = await self.budget_repository.get_by_period(
+        rows = await self.budget_repository.get_by_period(
             user_id,
             start_date,
             end_date,
             currency_code=filters.currency_code,
             category_id=filters.category_id,
+            limit=limit + 1,
+            offset=offset,
         )
+
+        has_more = len(rows) > limit
+        budgets = rows[:limit]
 
         spent_by_budget = await self.transaction_repository.get_spent_by_budgets(
             user_id, [budget.id for budget in budgets]
         )
 
-        return [
-            self._to_status(budget, spent_by_budget.get(budget.id, Decimal("0")))
-            for budget in budgets
-        ]
+        return Page(
+            items=[
+                self._to_status(budget, spent_by_budget.get(budget.id, Decimal("0")))
+                for budget in budgets
+            ],
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
+        )
 
     async def create_budget(
         self,

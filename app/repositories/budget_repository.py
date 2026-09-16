@@ -38,8 +38,11 @@ class BudgetRepository:
         user_id: int,
         start_date: date,
         end_date: date,
+        *,
         currency_code: str | None = None,
         category_id: int | None = None,
+        limit: int = 20,
+        offset: int = 0,
     ) -> list[Budget]:
         query = (
             select(Budget)
@@ -54,7 +57,7 @@ class BudgetRepository:
         if category_id is not None:
             query = query.where(Budget.category_id == category_id)
 
-        query = query.order_by(Budget.start_date, Budget.id)
+        query = query.order_by(Budget.start_date, Budget.id).offset(offset).limit(limit)
 
         return list((await self.session.execute(query)).scalars().all())
 

@@ -27,6 +27,29 @@ async def budget(
     )
 
 
+@pytest.fixture
+async def budgets_for_pagination(
+    budget_repository: BudgetRepository,
+    user: User,
+    category: Category,
+    uah_currency: Currency,
+):
+    start_days = (1, 2, 3, 4)
+
+    for day in start_days:
+        await budget_repository.add(
+            Budget(
+                name=f"July from day {day}",
+                amount=Decimal("1000.00"),
+                currency_code=uah_currency.code,
+                category_id=category.id,
+                user_id=user.id,
+                start_date=date(2026, 7, day),
+                end_date=date(2026, 7, 31),
+            )
+        )
+
+
 class TestAdd:
     async def test_add(
         self,
@@ -242,6 +265,59 @@ class TestGetByPeriod:
     ):
         result = await budget_repository.get_by_period(user.id, date(2026, 7, 1), date(2026, 7, 31))
         assert len(result) == 0
+
+    async def test_get_by_period_pagination_does_not_repeat_or_skip(
+        self,
+        budget_repository: BudgetRepository,
+        user: User,
+        budgets_for_pagination,
+    ):
+        page_size = 2
+
+        first_page = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31), limit=page_size, offset=0
+        )
+        second_page = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31), limit=page_size, offset=page_size
+        )
+        all_budgets = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31)
+        )
+
+        returned_ids = [budget.id for budget in first_page + second_page]
+
+        assert returned_ids == [budget.id for budget in all_budgets]
+
+    async def test_get_by_period_pagination_limit(
+        self,
+        budget_repository: BudgetRepository,
+        user: User,
+        budgets_for_pagination,
+    ):
+        limit = 2
+
+        result = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31), limit=limit
+        )
+
+        assert len(result) == limit
+
+    async def test_get_by_period_pagination_offset(
+        self,
+        budget_repository: BudgetRepository,
+        user: User,
+        budgets_for_pagination,
+    ):
+        offset = 2
+
+        result = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31), offset=offset
+        )
+        all_budgets = await budget_repository.get_by_period(
+            user.id, date(2026, 7, 1), date(2026, 7, 31)
+        )
+
+        assert [budget.id for budget in result] == [budget.id for budget in all_budgets[offset:]]
 
 
 class TestFindSameBudget:

@@ -15,7 +15,7 @@ class TestGetCurrencies:
 
         assert response.status_code == status.HTTP_200_OK
 
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_currencies_returns_only_active(
         self,
@@ -28,11 +28,53 @@ class TestGetCurrencies:
         assert response.status_code == status.HTTP_200_OK
 
         body = response.json()
-        codes = {currency["code"] for currency in body}
+        items = body["items"]
+        codes = {currency["code"] for currency in items}
 
+        assert body["limit"] == 200
         assert active_currency["code"] in codes
         assert inactive_currency["code"] not in codes
-        assert all(currency["is_active"] is True for currency in body)
+        assert all(currency["is_active"] is True for currency in items)
+
+    async def test_get_currencies_pagination_envelope(
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
+        second_currency: CurrencyData,
+    ):
+        limit = 1
+        offset = 0
+
+        response = await client.get(
+            API_GET_CURRENCIES,
+            params={"limit": limit, "offset": offset},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_currencies_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        active_currency: CurrencyData,
+    ):
+        offset = 100
+
+        response = await client.get(API_GET_CURRENCIES, params={"offset": offset})
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
 
 class TestGetCurrencyByCode:

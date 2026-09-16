@@ -606,14 +606,17 @@ class TestGetUserBudgets:
         filters = BudgetFilters()
         result = await budget_service.get_user_budgets(existing_budget.user_id, filters)
 
-        assert [item.budget for item in result] == [BudgetResponse.model_validate(existing_budget)]
-        assert result[0].spent == Decimal("1000.00")
+        assert [item.budget for item in result.items] == [
+            BudgetResponse.model_validate(existing_budget)
+        ]
+        assert result.items[0].spent == Decimal("1000.00")
 
         call_args = budget_repo_mock.get_by_period.call_args[0]
         assert call_args[1] == call_args[2]
 
         call_kwargs = budget_repo_mock.get_by_period.call_args[1]
-        assert call_kwargs == {"currency_code": None, "category_id": None}
+        assert call_kwargs["currency_code"] is None
+        assert call_kwargs["category_id"] is None
 
     async def test_get_user_budgets_with_period(
         self,
@@ -625,13 +628,20 @@ class TestGetUserBudgets:
         budget_repo_mock.get_by_period.return_value = [existing_budget]
         transaction_repo_mock.get_spent_by_budgets.return_value = {}
 
+        limit = 20
+        offset = 0
+
         filters = BudgetFilters(
             start_date=date(2026, 7, 1),
             end_date=date(2026, 7, 31),
         )
-        result = await budget_service.get_user_budgets(existing_budget.user_id, filters)
+        result = await budget_service.get_user_budgets(
+            existing_budget.user_id, filters, limit, offset
+        )
 
-        assert [item.budget for item in result] == [BudgetResponse.model_validate(existing_budget)]
+        assert [item.budget for item in result.items] == [
+            BudgetResponse.model_validate(existing_budget)
+        ]
 
         budget_repo_mock.get_by_period.assert_called_once_with(
             existing_budget.user_id,
@@ -639,6 +649,8 @@ class TestGetUserBudgets:
             date(2026, 7, 31),
             currency_code=None,
             category_id=None,
+            limit=limit + 1,
+            offset=offset,
         )
 
     async def test_get_user_budgets_without_spending(
@@ -653,9 +665,9 @@ class TestGetUserBudgets:
 
         result = await budget_service.get_user_budgets(existing_budget.user_id, BudgetFilters())
 
-        assert result[0].spent == Decimal("0")
-        assert result[0].remaining == existing_budget.amount
-        assert result[0].is_exceeded is False
+        assert result.items[0].spent == Decimal("0")
+        assert result.items[0].remaining == existing_budget.amount
+        assert result.items[0].is_exceeded is False
 
         transaction_repo_mock.get_spent_by_budgets.assert_awaited_once_with(
             existing_budget.user_id, [existing_budget.id]
@@ -673,7 +685,7 @@ class TestGetUserBudgets:
 
         result = await budget_service.get_user_budgets(existing_user.id, BudgetFilters())
 
-        assert result == []
+        assert result.items == []
 
         transaction_repo_mock.get_spent_by_budgets.assert_awaited_once_with(existing_user.id, [])
 
@@ -693,8 +705,8 @@ class TestGetUserBudgets:
 
         result = await budget_service.get_user_budgets(existing_budget.user_id, BudgetFilters())
 
-        assert [item.budget.id for item in result] == [existing_budget.id, zero_budget.id]
-        assert [item.spent for item in result] == [Decimal("100.00"), Decimal("50.00")]
+        assert [item.budget.id for item in result.items] == [existing_budget.id, zero_budget.id]
+        assert [item.spent for item in result.items] == [Decimal("100.00"), Decimal("50.00")]
 
     async def test_get_user_budgets_passes_filters(
         self,
@@ -706,13 +718,16 @@ class TestGetUserBudgets:
         budget_repo_mock.get_by_period.return_value = [existing_budget]
         transaction_repo_mock.get_spent_by_budgets.return_value = {}
 
+        limit = 20
+        offset = 0
+
         filters = BudgetFilters(
             start_date=date(2026, 7, 1),
             end_date=date(2026, 7, 31),
             currency_code=existing_budget.currency_code,
             category_id=existing_budget.category_id,
         )
-        await budget_service.get_user_budgets(existing_budget.user_id, filters)
+        await budget_service.get_user_budgets(existing_budget.user_id, filters, limit, offset)
 
         budget_repo_mock.get_by_period.assert_called_once_with(
             existing_budget.user_id,
@@ -720,7 +735,84 @@ class TestGetUserBudgets:
             date(2026, 7, 31),
             currency_code=existing_budget.currency_code,
             category_id=existing_budget.category_id,
+            limit=limit + 1,
+            offset=offset,
         )
+
+    async def test_get_user_budgets_reports_more_when_extra_row_returned(
+        self,
+        budget_service: BudgetService,
+        budget_repo_mock: BudgetRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_budget: Budget,
+        zero_budget: Budget,
+    ):
+        limit = 2
+        offset = 4
+
+        extra_budget = make_budget(
+            id=zero_budget.id + 1,
+            name="Extra budget",
+            amount=Decimal("300.00"),
+            currency_code=existing_budget.currency_code,
+            category_id=existing_budget.category_id,
+            start_date=existing_budget.start_date,
+            end_date=existing_budget.end_date,
+            user_id=existing_budget.user_id,
+        )
+
+        budget_repo_mock.get_by_period.return_value = [existing_budget, zero_budget, extra_budget]
+        transaction_repo_mock.get_spent_by_budgets.return_value = {}
+
+        result = await budget_service.get_user_budgets(
+            existing_budget.user_id, BudgetFilters(), limit, offset
+        )
+
+        assert result.has_more is True
+        assert len(result.items) == limit
+
+        transaction_repo_mock.get_spent_by_budgets.assert_awaited_once_with(
+            existing_budget.user_id, [existing_budget.id, zero_budget.id]
+        )
+
+    async def test_get_user_budgets_reports_no_more_on_last_page(
+        self,
+        budget_service: BudgetService,
+        budget_repo_mock: BudgetRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_budget: Budget,
+    ):
+        limit = 2
+
+        budget_repo_mock.get_by_period.return_value = [existing_budget]
+        transaction_repo_mock.get_spent_by_budgets.return_value = {}
+
+        result = await budget_service.get_user_budgets(
+            existing_budget.user_id, BudgetFilters(), limit, 0
+        )
+
+        assert result.has_more is False
+        assert [item.budget.id for item in result.items] == [existing_budget.id]
+
+    async def test_get_user_budgets_reports_no_more_when_rows_match_limit(
+        self,
+        budget_service: BudgetService,
+        budget_repo_mock: BudgetRepository,
+        transaction_repo_mock: TransactionRepository,
+        existing_budget: Budget,
+        zero_budget: Budget,
+    ):
+        limit = 2
+
+        budget_repo_mock.get_by_period.return_value = [existing_budget, zero_budget]
+        transaction_repo_mock.get_spent_by_budgets.return_value = {}
+
+        result = await budget_service.get_user_budgets(
+            existing_budget.user_id, BudgetFilters(), limit, 0
+        )
+
+        assert result.has_more is False
+        assert len(result.items) == limit
 
 
 class TestGetBudgetStatus:

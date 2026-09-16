@@ -192,6 +192,8 @@ class TestGetUserCategories:
         category_service: CategoryService,
     ):
         user_id = 1
+        limit = 2
+        offset = 0
 
         user_categories = [
             make_category(
@@ -208,13 +210,15 @@ class TestGetUserCategories:
 
         category_repo_mock.get_by_user.return_value = user_categories
 
-        result = await category_service.get_user_categories(user_id)
+        result = await category_service.get_user_categories(user_id, limit=limit, offset=offset)
 
-        assert result == [CategoryResponse.model_validate(c) for c in user_categories]
+        assert result.items == [CategoryResponse.model_validate(c) for c in user_categories]
 
         category_repo_mock.get_by_user.assert_called_once_with(
-            user_id=user_id,
-            status=CategoryStatus.ACTIVE,
+            user_id,
+            CategoryStatus.ACTIVE,
+            limit + 1,
+            offset,
         )
 
     async def test_get_user_empty_categories(
@@ -223,19 +227,97 @@ class TestGetUserCategories:
         category_service: CategoryService,
     ):
         user_id = 1
+        limit = 2
+        offset = 0
 
         user_categories = []
 
         category_repo_mock.get_by_user.return_value = user_categories
 
-        result = await category_service.get_user_categories(user_id)
+        result = await category_service.get_user_categories(user_id, limit=limit, offset=offset)
 
-        assert result == [CategoryResponse.model_validate(c) for c in user_categories]
+        assert result.items == [CategoryResponse.model_validate(c) for c in user_categories]
 
         category_repo_mock.get_by_user.assert_called_once_with(
-            user_id=user_id,
-            status=CategoryStatus.ACTIVE,
+            user_id,
+            CategoryStatus.ACTIVE,
+            limit + 1,
+            offset,
         )
+
+    async def test_get_user_categories_reports_more_when_extra_row_returned(
+        self,
+        category_repo_mock: CategoryRepository,
+        category_service: CategoryService,
+    ):
+        user_id = 1
+        limit = 2
+        offset = 4
+
+        rows = [
+            make_category(id=index, name=f"Category {index}", user_id=user_id)
+            for index in range(1, limit + 2)
+        ]
+
+        category_repo_mock.get_by_user.return_value = rows
+
+        result = await category_service.get_user_categories(
+            user_id, CategoryStatus.ACTIVE, limit, offset
+        )
+
+        assert result.has_more is True
+        assert len(result.items) == limit
+
+        category_repo_mock.get_by_user.assert_called_once_with(
+            user_id,
+            CategoryStatus.ACTIVE,
+            limit + 1,
+            offset,
+        )
+
+    async def test_get_user_categories_reports_no_more_on_last_page(
+        self,
+        category_repo_mock: CategoryRepository,
+        category_service: CategoryService,
+    ):
+        user_id = 1
+        limit = 3
+
+        rows = [
+            make_category(id=index, name=f"Category {index}", user_id=user_id)
+            for index in range(1, limit)
+        ]
+
+        category_repo_mock.get_by_user.return_value = rows
+
+        result = await category_service.get_user_categories(
+            user_id, CategoryStatus.ACTIVE, limit, 0
+        )
+
+        assert result.has_more is False
+        assert result.items == [CategoryResponse.model_validate(row) for row in rows]
+
+    async def test_get_user_categories_reports_no_more_when_rows_match_limit(
+        self,
+        category_repo_mock: CategoryRepository,
+        category_service: CategoryService,
+    ):
+        user_id = 1
+        limit = 2
+
+        rows = [
+            make_category(id=index, name=f"Category {index}", user_id=user_id)
+            for index in range(1, limit + 1)
+        ]
+
+        category_repo_mock.get_by_user.return_value = rows
+
+        result = await category_service.get_user_categories(
+            user_id, CategoryStatus.ACTIVE, limit, 0
+        )
+
+        assert result.has_more is False
+        assert len(result.items) == limit
 
 
 class TestArchiveCategory:

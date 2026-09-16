@@ -126,6 +126,54 @@ class TestGetByUser:
 
         assert [category.name for category in user_categories] == expected_names
 
+    async def test_get_by_user_pagination_does_not_repeat_or_skip(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_for_ordering,
+    ):
+        page_size = 2
+
+        first_page = await category_repository.get_by_user(
+            user.id, status=CategoryStatus.ALL, limit=page_size, offset=0
+        )
+        second_page = await category_repository.get_by_user(
+            user.id, status=CategoryStatus.ALL, limit=page_size, offset=page_size
+        )
+        all_categories = await category_repository.get_by_user(user.id, status=CategoryStatus.ALL)
+
+        returned_names = [category.name for category in first_page + second_page]
+
+        assert returned_names == [category.name for category in all_categories]
+
+    async def test_get_by_user_pagination_limit(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_for_ordering,
+    ):
+        limit = 2
+
+        user_categories = await category_repository.get_by_user(
+            user.id, status=CategoryStatus.ALL, limit=limit
+        )
+
+        assert len(user_categories) == limit
+
+    async def test_get_by_user_pagination_offset(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_for_ordering,
+    ):
+        offset = 2
+
+        user_categories = await category_repository.get_by_user(
+            user.id, status=CategoryStatus.ALL, offset=offset
+        )
+
+        assert [category.name for category in user_categories] == ["Salary", "Transport"]
+
     async def test_get_by_user_default_excludes_archived_categories(
         self,
         category_repository: CategoryRepository,

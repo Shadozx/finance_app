@@ -171,7 +171,7 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_categories_default_returns_active_categories(
         self,
@@ -190,10 +190,13 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        user_categories = response.json()
+        body = response.json()
+
+        user_categories = body["items"]
 
         category_names = {cat["name"] for cat in user_categories}
 
+        assert body["limit"] == 200
         assert len(category_names) == 2
 
         assert first_payload["name"] in category_names
@@ -216,7 +219,7 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        user_categories = response.json()
+        user_categories = response.json()["items"]
 
         assert len(user_categories) == 1
 
@@ -242,7 +245,7 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        user_categories = response.json()
+        user_categories = response.json()["items"]
 
         assert len(user_categories) == 1
         assert user_categories[0]["name"] == payload["name"]
@@ -272,7 +275,7 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        user_categories = response.json()
+        user_categories = response.json()["items"]
 
         user_categories_names = {cat["name"] for cat in user_categories}
 
@@ -283,6 +286,55 @@ class TestGetCategories:
 
         assert any(cat["archived_at"] is None for cat in user_categories)
         assert any(cat["archived_at"] is not None for cat in user_categories)
+
+    async def test_get_categories_pagination_envelope(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        await create_category(client, category_payload("Food"), authenticated_user["headers"])
+
+        await create_category(client, category_payload("Salary"), authenticated_user["headers"])
+
+        limit = 1
+        offset = 0
+
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"limit": limit, "offset": offset},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert set(body) == {"items", "limit", "offset", "has_more"}
+        assert body["limit"] == limit
+        assert body["offset"] == offset
+        assert body["has_more"] is True
+        assert len(body["items"]) == limit
+
+    async def test_get_categories_offset_beyond_range_returns_empty_page(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+    ):
+        offset = 100
+
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"offset": offset},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["items"] == []
+        assert body["has_more"] is False
 
     async def test_get_categories_invalid_category_status(
         self,
@@ -490,7 +542,7 @@ class TestArchiveCategory:
 
         assert user_categories_response.status_code == status.HTTP_200_OK
 
-        assert user_categories_response.json() == []
+        assert user_categories_response.json()["items"] == []
 
         archived_response = await client.get(
             API_CATEGORIES,
@@ -500,7 +552,7 @@ class TestArchiveCategory:
 
         assert archived_response.status_code == status.HTTP_200_OK
 
-        archived_categories = archived_response.json()
+        archived_categories = archived_response.json()["items"]
 
         assert len(archived_categories) == 1
         assert archived_categories[0]["id"] == created_category["id"]
@@ -598,7 +650,7 @@ class TestRestoreCategory:
 
         assert archived_response.status_code == status.HTTP_200_OK
 
-        assert archived_response.json() == []
+        assert archived_response.json()["items"] == []
 
         user_categories_response = await client.get(
             API_CATEGORIES,
@@ -607,7 +659,7 @@ class TestRestoreCategory:
 
         assert user_categories_response.status_code == status.HTTP_200_OK
 
-        active_categories = user_categories_response.json()
+        active_categories = user_categories_response.json()["items"]
 
         assert len(active_categories) == 1
         assert active_categories[0]["id"] == archived_category["id"]

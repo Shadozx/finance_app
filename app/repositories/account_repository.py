@@ -20,6 +20,8 @@ class AccountRepository:
         self,
         user_id: int,
         status: AccountStatus = AccountStatus.ACTIVE,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[Account]:
         query = select(Account).where(Account.user_id == user_id)
 
@@ -29,7 +31,7 @@ class AccountRepository:
         elif status == AccountStatus.ARCHIVED:
             query = query.where(Account.archived_at.is_not(None))
 
-        query = query.order_by(Account.name)
+        query = query.order_by(Account.name).offset(offset).limit(limit)
 
         result = await self.session.execute(query)
 
