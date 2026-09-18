@@ -32,7 +32,6 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
         "ValueExistsException": 409,
         "NotAllowedActionException": 409,
         "AuthenticationException": 401,
-        "PermissionException": 403,
         "ValidationException": 400,
     }
     status_code = status_map.get(type(exc).__name__, 500)

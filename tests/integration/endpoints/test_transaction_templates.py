@@ -211,7 +211,7 @@ class TestCreateTransactionTemplate:
 
         assert other_user_response.json()["user_id"] == other_authenticated_user["user"]["id"]
 
-    async def test_create_template_with_other_user_category_forbidden(
+    async def test_create_template_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -230,7 +230,7 @@ class TestCreateTransactionTemplate:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 
@@ -423,7 +423,7 @@ class TestCreateTransactionTemplate:
 
         assert any("more than 2 decimal places" in error["msg"] for error in detail)
 
-    async def test_create_template_split_with_other_user_category_forbidden(
+    async def test_create_template_split_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -448,7 +448,7 @@ class TestCreateTransactionTemplate:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 
@@ -1058,7 +1058,7 @@ class TestGetTransactionTemplateById:
 
         assert "detail" in response.json()
 
-    async def test_get_template_by_id_other_user_forbidden(
+    async def test_get_template_by_id_other_user_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1070,9 +1070,26 @@ class TestGetTransactionTemplateById:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
+
+    async def test_get_template_of_other_user_answers_like_missing(
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction_template: TransactionTemplateData,
+    ):
+        headers = other_authenticated_user["headers"]
+
+        foreign = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created_transaction_template['id']}", headers=headers
+        )
+        missing = await client.get(f"{API_TRANSACTION_TEMPLATES}/999", headers=headers)
+
+        assert foreign.status_code == status.HTTP_404_NOT_FOUND
+        assert foreign.status_code == missing.status_code
+        assert foreign.json() == missing.json()
 
     async def test_get_template_by_id_without_token(
         self,
@@ -1226,7 +1243,7 @@ class TestUpdateTransactionTemplate:
 
         assert "detail" in response.json()
 
-    async def test_update_template_other_user_forbidden(
+    async def test_update_template_other_user_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1246,7 +1263,7 @@ class TestUpdateTransactionTemplate:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 
@@ -1309,7 +1326,7 @@ class TestUpdateTransactionTemplate:
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["created_at"] is not None
 
-    async def test_update_template_with_other_user_category_forbidden(
+    async def test_update_template_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1336,7 +1353,7 @@ class TestUpdateTransactionTemplate:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 
@@ -1812,7 +1829,7 @@ class TestDeleteTransactionTemplate:
 
         assert "detail" in response.json()
 
-    async def test_delete_template_other_user_forbidden(
+    async def test_delete_template_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1823,7 +1840,7 @@ class TestDeleteTransactionTemplate:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 

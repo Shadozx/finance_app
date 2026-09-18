@@ -693,7 +693,7 @@ class TestGetAccountById:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_get_account_by_id_other_user_forbidden(
+    async def test_get_account_by_id_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -704,8 +704,23 @@ class TestGetAccountById:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
+
+    async def test_get_account_of_other_user_answers_like_missing(
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+    ):
+        headers = other_authenticated_user["headers"]
+
+        foreign = await client.get(f"{API_ACCOUNTS}/{created_account['id']}", headers=headers)
+        missing = await client.get(f"{API_ACCOUNTS}/999", headers=headers)
+
+        assert foreign.status_code == status.HTTP_404_NOT_FOUND
+        assert foreign.status_code == missing.status_code
+        assert foreign.json() == missing.json()
 
     async def test_get_account_by_id_invalid_id(
         self,
@@ -876,7 +891,7 @@ class TestUpdateAccount:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_update_account_other_user_forbidden(
+    async def test_update_account_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -888,7 +903,7 @@ class TestUpdateAccount:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     @pytest.mark.parametrize(
@@ -1007,7 +1022,7 @@ class TestArchiveAccount:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_archive_account_other_user_forbidden(
+    async def test_archive_account_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1018,7 +1033,7 @@ class TestArchiveAccount:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_archive_account_invalid_id(
@@ -1102,7 +1117,7 @@ class TestRestoreAccount:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_restore_account_other_user_forbidden(
+    async def test_restore_account_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1113,7 +1128,7 @@ class TestRestoreAccount:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_restore_account_without_token(
@@ -1333,7 +1348,7 @@ class TestReconcileAccount:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
 
-    async def test_reconcile_account_other_user_forbidden(
+    async def test_reconcile_account_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1345,7 +1360,7 @@ class TestReconcileAccount:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_reconcile_account_not_found(

@@ -2,8 +2,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from structlog.testing import capture_logs
 
-from app.core.exceptions import NotAllowedActionException, NotFoundException, PermissionException
+from app.core.exceptions import NotAllowedActionException, NotFoundException
 from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate
 from app.repositories import (
     BudgetRepository,
@@ -94,17 +95,58 @@ class TestValidateCategory:
         """
         GIVEN: Category exists but owned by different user
         WHEN: validate_category called with wrong user_id
-        THEN: PermissionException raised
+        THEN: NotFoundException raised — same answer as for a missing category,
+            so the response cannot be used to probe which ids exist
         """
 
         category_repo_mock.get_by_id.return_value = existing_category
 
         wrong_user_id = existing_category.user_id + 1
 
-        with pytest.raises(PermissionException, match="You don't have permission to this category"):
+        with pytest.raises(NotFoundException, match="Category not found"):
             await validate_category(category_repo_mock, wrong_user_id, existing_category.id)
 
         category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+
+    async def test_validate_category_wrong_owner_logs_permission_denied(
+        self, category_repo_mock: CategoryRepository, existing_category: Category
+    ):
+        """
+        GIVEN: Category exists but owned by different user
+        WHEN: validate_category called with wrong user_id
+        THEN: category_permission_denied written to the log — the log is the only
+            place where "foreign" stays distinguishable from "missing"
+        """
+
+        category_repo_mock.get_by_id.return_value = existing_category
+
+        wrong_user_id = existing_category.user_id + 1
+
+        with capture_logs() as logs:
+            with pytest.raises(NotFoundException):
+                await validate_category(category_repo_mock, wrong_user_id, existing_category.id)
+
+        assert [log["event"] for log in logs] == ["category_permission_denied"]
+
+    async def test_validate_category_not_found_logs_nothing(
+        self,
+        category_repo_mock: CategoryRepository,
+    ):
+        """
+        GIVEN: Category doesn't exist
+        WHEN: validate_category called
+        THEN: Nothing written to the log — the event marks a foreign resource,
+            not every failed lookup
+        """
+
+        wrong_category_id = 999
+        category_repo_mock.get_by_id.return_value = None
+
+        with capture_logs() as logs:
+            with pytest.raises(NotFoundException):
+                await validate_category(category_repo_mock, 1, wrong_category_id)
+
+        assert logs == []
 
     async def test_validate_category_archived_category(
         self, category_repo_mock: CategoryRepository, existing_category: Category
@@ -243,16 +285,15 @@ class TestValidateTransaction:
         """
         GIVEN: Transaction exists but owned by different user
         WHEN: validate_transaction called with wrong user_id
-        THEN: PermissionException raised
+        THEN: NotFoundException raised — same answer as for a missing transaction,
+            so the response cannot be used to probe which ids exist
         """
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
 
         wrong_user_id = existing_transaction.user_id + 1
 
-        with pytest.raises(
-            PermissionException, match="You don't have permission to this transaction"
-        ):
+        with pytest.raises(NotFoundException, match="Transaction not found"):
             await validate_transaction(
                 transaction_repo_mock, wrong_user_id, existing_transaction.id
             )
@@ -319,16 +360,15 @@ class TestValidateTemplate:
         """
         GIVEN: Transaction template exists but owned by different user
         WHEN: validate_template called with wrong user_id
-        THEN: PermissionException raised
+        THEN: NotFoundException raised — same answer as for a missing template,
+            so the response cannot be used to probe which ids exist
         """
 
         transaction_template_repo_mock.get_by_id.return_value = existing_template
 
         wrong_user_id = existing_template.user_id + 1
 
-        with pytest.raises(
-            PermissionException, match="You don't have permission to this transaction template"
-        ):
+        with pytest.raises(NotFoundException, match="Transaction template not found"):
             await validate_template(
                 transaction_template_repo_mock, wrong_user_id, existing_template.id
             )
@@ -391,14 +431,15 @@ class TestValidateBudget:
         """
         GIVEN: Budget exists but owned by different user
         WHEN: validate_budget called with wrong user_id
-        THEN: PermissionException raised
+        THEN: NotFoundException raised — same answer as for a missing budget,
+            so the response cannot be used to probe which ids exist
         """
 
         budget_repo_mock.get_by_id.return_value = existing_budget
 
         wrong_user_id = existing_budget.user_id + 1
 
-        with pytest.raises(PermissionException, match="You don't have permission to this budget"):
+        with pytest.raises(NotFoundException, match="Budget not found"):
             await validate_budget(budget_repo_mock, wrong_user_id, existing_budget.id)
 
         budget_repo_mock.get_by_id.assert_called_once_with(existing_budget.id)

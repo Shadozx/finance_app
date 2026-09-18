@@ -8,7 +8,6 @@ from app.core import UnitOfWork
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
-    PermissionException,
     ValueExistsException,
 )
 from app.models import Budget, Category, Currency, User
@@ -70,7 +69,7 @@ class TestGetBudget:
         budget_repo_mock.get_by_id.return_value = existing_budget
         wrong_user_id = existing_budget.user_id + 1
 
-        with pytest.raises(PermissionException, match="You don't have permission to this budget"):
+        with pytest.raises(NotFoundException, match="Budget not found"):
             await budget_service.get_budget(existing_budget.id, wrong_user_id)
 
 

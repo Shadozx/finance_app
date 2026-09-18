@@ -473,7 +473,7 @@ class TestUpdateCategory:
 
         assert "detail" in response.json()
 
-    async def test_update_category_of_other_user_forbidden(
+    async def test_update_category_of_other_user_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -488,9 +488,27 @@ class TestUpdateCategory:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
+
+    async def test_update_category_of_other_user_answers_like_missing(
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+    ):
+        payload = category_payload("Salary")
+        headers = other_authenticated_user["headers"]
+
+        foreign = await client.put(
+            f"{API_CATEGORIES}/{created_category['id']}", json=payload, headers=headers
+        )
+        missing = await client.put(f"{API_CATEGORIES}/999", json=payload, headers=headers)
+
+        assert foreign.status_code == status.HTTP_404_NOT_FOUND
+        assert foreign.status_code == missing.status_code
+        assert foreign.json() == missing.json()
 
     async def test_update_category_not_found(
         self,
@@ -571,7 +589,7 @@ class TestArchiveCategory:
 
         assert "detail" in response.json()
 
-    async def test_archive_category_of_other_user_forbidden(
+    async def test_archive_category_of_other_user_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -583,7 +601,7 @@ class TestArchiveCategory:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 
@@ -679,7 +697,7 @@ class TestRestoreCategory:
 
         assert "detail" in response.json()
 
-    async def test_restore_category_of_other_user_forbidden(
+    async def test_restore_category_of_other_user_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -691,7 +709,7 @@ class TestRestoreCategory:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
         assert "detail" in response.json()
 

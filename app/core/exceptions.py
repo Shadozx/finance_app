@@ -24,11 +24,6 @@ class AuthenticationException(AppException):
         super().__init__(message)
 
 
-class PermissionException(AppException):
-    def __init__(self, message: str = "Permission denied"):
-        super().__init__(message)
-
-
 class ValidationException(AppException):
     def __init__(self, message: str):
         super().__init__(message)

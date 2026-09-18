@@ -4,7 +4,6 @@ from app.core import UnitOfWork
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
-    PermissionException,
     ValueExistsException,
 )
 from app.models import Category
@@ -75,7 +74,7 @@ class CategoryService:
                 "category_permission_denied", user_id=user_id, category_id=existing_category.id
             )
 
-            raise PermissionException("You don't have permission to update this category")
+            raise NotFoundException("Category not found")
 
         duplicate = await self.category_repository.get_by_user_and_name(user_id, data.name)
 
@@ -103,7 +102,7 @@ class CategoryService:
                 "category_permission_denied", user_id=user_id, category_id=existing_category.id
             )
 
-            raise PermissionException("You don't have permission to archive this category")
+            raise NotFoundException("Category not found")
 
         if existing_category.archived_at:
             raise NotAllowedActionException("Category is archived")
@@ -125,7 +124,7 @@ class CategoryService:
                 "category_permission_denied", user_id=user_id, category_id=existing_category.id
             )
 
-            raise PermissionException("You don't have permission to restore this category")
+            raise NotFoundException("Category not found")
 
         if not existing_category.archived_at:
             raise NotAllowedActionException("Category is not archived")

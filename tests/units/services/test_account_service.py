@@ -8,7 +8,6 @@ from app.core import UnitOfWork
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
-    PermissionException,
     ValueExistsException,
 )
 from app.models import Account, Currency, TransactionKind, TransactionType
@@ -360,7 +359,7 @@ class TestGetAccount:
 
         account_repo_mock.get_by_id.return_value = existing_account
 
-        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+        with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.get_account(existing_account.id, wrong_user_id)
 
     async def test_get_account_archived_allowed(
@@ -702,7 +701,7 @@ class TestUpdateAccount:
 
         account_repo_mock.get_by_id.return_value = existing_account
 
-        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+        with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.update_account(
                 existing_account.id,
                 data,
@@ -808,7 +807,7 @@ class TestArchiveAccount:
 
         account_repo_mock.get_by_id.return_value = existing_account
 
-        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+        with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.archive_account(existing_account.id, wrong_user_id)
 
         account_repo_mock.archive.assert_not_called()
@@ -895,7 +894,7 @@ class TestRestoreAccount:
 
         account_repo_mock.get_by_id.return_value = existing_account
 
-        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+        with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.restore_account(existing_account.id, wrong_user_id)
 
         account_repo_mock.restore.assert_not_called()
@@ -1120,7 +1119,7 @@ class TestReconcileAccount:
 
         data = AccountReconcile(actual_balance=Decimal("5000.00"))
 
-        with pytest.raises(PermissionException, match="You don't have permission to this account"):
+        with pytest.raises(NotFoundException, match="Account not found"):
             await account_service.reconcile_account(
                 existing_account.id,
                 data,

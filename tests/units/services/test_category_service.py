@@ -6,7 +6,6 @@ from app.core import UnitOfWork
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
-    PermissionException,
     ValueExistsException,
 )
 from app.models import Category
@@ -147,9 +146,7 @@ class TestUpdateCategory:
 
         category_repo_mock.get_by_id.return_value = existing_category
 
-        with pytest.raises(
-            PermissionException, match="You don't have permission to update this category"
-        ):
+        with pytest.raises(NotFoundException, match="Category not found"):
             await category_service.update_category(existing_category.id, data, wrong_user_id)
 
         category_repo_mock.update.assert_not_called()
@@ -367,9 +364,7 @@ class TestArchiveCategory:
 
         category_repo_mock.get_by_id.return_value = existing_category
 
-        with pytest.raises(
-            PermissionException, match="You don't have permission to archive this category"
-        ):
+        with pytest.raises(NotFoundException, match="Category not found"):
             await category_service.archive_category(existing_category.id, wrong_user)
 
         category_repo_mock.archive.assert_not_called()
@@ -453,9 +448,7 @@ class TestRestoreCategory:
 
         category_repo_mock.get_by_id.return_value = existing_category
 
-        with pytest.raises(
-            PermissionException, match="You don't have permission to restore this category"
-        ):
+        with pytest.raises(NotFoundException, match="Category not found"):
             await category_service.restore_category(existing_category.id, wrong_user_id)
 
         category_repo_mock.restore.assert_not_called()

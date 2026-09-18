@@ -1,10 +1,11 @@
 from decimal import ROUND_HALF_UP, Decimal
 
+import structlog
+
 from app.core.exceptions import (
     AuthenticationException,
     NotAllowedActionException,
     NotFoundException,
-    PermissionException,
 )
 from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate, User
 from app.repositories import (
@@ -17,6 +18,8 @@ from app.repositories import (
     UserRepository,
 )
 from app.schemas import TransactionSplitCreate
+
+logger = structlog.get_logger()
 
 
 async def validate_category(
@@ -41,8 +44,9 @@ async def validate_category(
         Validated Category instance, or None if category_id is None
 
     Raises:
-        NotFoundException: Category doesn't exist
-        PermissionException: Category not owned by user
+        NotFoundException: Category doesn't exist, or belongs to another user.
+            Both cases answer the same way on purpose — the status code must
+            not reveal which ids exist. The real reason goes to the log.
         NotAllowedActionException: Category is archived
     """
 
@@ -55,7 +59,9 @@ async def validate_category(
         raise NotFoundException("Category not found")
 
     if existing_category.user_id != user_id:
-        raise PermissionException("You don't have permission to this category")
+        logger.warning("category_permission_denied", user_id=user_id, category_id=category_id)
+
+        raise NotFoundException("Category not found")
 
     if not allow_archived and existing_category.archived_at:
         raise NotAllowedActionException("Archived category is not allowed to use")
@@ -113,8 +119,9 @@ async def validate_transaction(
         Validated Transaction instance
 
     Raises:
-        NotFoundException: Transaction doesn't exist
-        PermissionException: Transaction not owned by user
+        NotFoundException: Transaction doesn't exist, or belongs to another user.
+            Both cases answer the same way on purpose — the status code must
+            not reveal which ids exist. The real reason goes to the log.
     """
 
     existing_transaction = await transaction_repository.get_by_id(transaction_id)
@@ -123,7 +130,11 @@ async def validate_transaction(
         raise NotFoundException("Transaction not found")
 
     if existing_transaction.user_id != user_id:
-        raise PermissionException("You don't have permission to this transaction")
+        logger.warning(
+            "transaction_permission_denied", user_id=user_id, transaction_id=transaction_id
+        )
+
+        raise NotFoundException("Transaction not found")
 
     return existing_transaction
 
@@ -145,8 +156,9 @@ async def validate_template(
         Validated TransactionTemplate instance
 
     Raises:
-        NotFoundException: Template doesn't exist
-        PermissionException: Template not owned by user
+        NotFoundException: Template doesn't exist, or belongs to another user.
+            Both cases answer the same way on purpose — the status code must
+            not reveal which ids exist. The real reason goes to the log.
     """
 
     existing_transaction_template = await transaction_template_repository.get_by_id(
@@ -157,7 +169,13 @@ async def validate_template(
         raise NotFoundException("Transaction template not found")
 
     if existing_transaction_template.user_id != user_id:
-        raise PermissionException("You don't have permission to this transaction template")
+        logger.warning(
+            "transaction_template_permission_denied",
+            user_id=user_id,
+            transaction_template_id=transaction_template_id,
+        )
+
+        raise NotFoundException("Transaction template not found")
 
     return existing_transaction_template
 
@@ -177,8 +195,9 @@ async def validate_budget(
         Validated Budget instance
 
     Raises:
-        NotFoundException: Budget doesn't exist
-        PermissionException: Budget not owned by user
+        NotFoundException: Budget doesn't exist, or belongs to another user.
+            Both cases answer the same way on purpose — the status code must
+            not reveal which ids exist. The real reason goes to the log.
     """
 
     existing_budget = await budget_repository.get_by_id(budget_id)
@@ -187,7 +206,9 @@ async def validate_budget(
         raise NotFoundException("Budget not found")
 
     if existing_budget.user_id != user_id:
-        raise PermissionException("You don't have permission to this budget")
+        logger.warning("budget_permission_denied", user_id=user_id, budget_id=budget_id)
+
+        raise NotFoundException("Budget not found")
 
     return existing_budget
 
@@ -239,8 +260,9 @@ async def validate_account(
         Validated Account instance
 
     Raises:
-        NotFoundException: Account doesn't exist
-        PermissionException: Account not owned by user
+        NotFoundException: Account doesn't exist, or belongs to another user.
+            Both cases answer the same way on purpose — the status code must
+            not reveal which ids exist. The real reason goes to the log.
         NotAllowedActionException: Account is archived and allow_archived is False
     """
     existing_account = await account_repository.get_by_id(account_id)
@@ -249,7 +271,9 @@ async def validate_account(
         raise NotFoundException("Account not found")
 
     if existing_account.user_id != user_id:
-        raise PermissionException("You don't have permission to this account")
+        logger.warning("account_permission_denied", user_id=user_id, account_id=account_id)
+
+        raise NotFoundException("Account not found")
 
     if not allow_archived and existing_account.archived_at:
         raise NotAllowedActionException("Archived account is not allowed to use")

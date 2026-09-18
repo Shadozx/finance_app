@@ -143,7 +143,7 @@ class TestCreateBudget:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
 
-    async def test_create_budget_other_user_category_forbidden(
+    async def test_create_budget_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -162,7 +162,7 @@ class TestCreateBudget:
         response = await client.post(
             API_BUDGETS, json=payload, headers=authenticated_user["headers"]
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_create_budget_archived_category_fails(
         self,
@@ -596,7 +596,7 @@ class TestGetBudgetById:
         response = await client.get(f"{API_BUDGETS}/999", headers=authenticated_user["headers"])
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_get_budget_other_user_forbidden(
+    async def test_get_budget_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -606,7 +606,22 @@ class TestGetBudgetById:
             f"{API_BUDGETS}/{created_budget['id']}",
             headers=other_authenticated_user["headers"],
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_get_budget_of_other_user_answers_like_missing(
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+    ):
+        headers = other_authenticated_user["headers"]
+
+        foreign = await client.get(f"{API_BUDGETS}/{created_budget['id']}", headers=headers)
+        missing = await client.get(f"{API_BUDGETS}/999", headers=headers)
+
+        assert foreign.status_code == status.HTTP_404_NOT_FOUND
+        assert foreign.status_code == missing.status_code
+        assert foreign.json() == missing.json()
 
     async def test_get_budget_without_token(
         self,
@@ -649,7 +664,7 @@ class TestGetBudgetStatus:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_budget_status_other_user_forbidden(
+    async def test_budget_status_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -659,7 +674,7 @@ class TestGetBudgetStatus:
             f"{API_BUDGETS}/{created_budget['id']}/status",
             headers=other_authenticated_user["headers"],
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_budget_status_without_token(
         self,
@@ -713,7 +728,7 @@ class TestUpdateBudget:
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_update_budget_other_user_forbidden(
+    async def test_update_budget_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -726,7 +741,7 @@ class TestUpdateBudget:
             json=payload,
             headers=other_authenticated_user["headers"],
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_update_budget_keeps_archived_category_allowed(
         self,
@@ -806,7 +821,7 @@ class TestDeleteBudget:
         response = await client.delete(f"{API_BUDGETS}/999", headers=authenticated_user["headers"])
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_delete_budget_other_user_forbidden(
+    async def test_delete_budget_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -816,7 +831,7 @@ class TestDeleteBudget:
             f"{API_BUDGETS}/{created_budget['id']}",
             headers=other_authenticated_user["headers"],
         )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_delete_budget_without_token(
         self,

@@ -217,7 +217,7 @@ class TestCreateTransfer:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
 
-    async def test_create_transfer_with_other_user_account_forbidden(
+    async def test_create_transfer_with_other_user_account_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -242,7 +242,7 @@ class TestCreateTransfer:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_create_transfer_with_unknown_account_fails(

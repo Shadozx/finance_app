@@ -261,7 +261,7 @@ class TestCreateTransaction:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "detail" in response.json()
 
-    async def test_create_transaction_with_other_user_category_forbidden(
+    async def test_create_transaction_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -289,7 +289,7 @@ class TestCreateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_create_transaction_with_archived_category_fails(
@@ -396,7 +396,7 @@ class TestCreateTransaction:
         assert body["currency_code"] == active_currency["code"]
         assert body["user_id"] == authenticated_user["user"]["id"]
 
-    async def test_create_transaction_with_other_user_account_forbidden(
+    async def test_create_transaction_with_other_user_account_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -420,7 +420,7 @@ class TestCreateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_create_transaction_with_unknown_account_fails(
@@ -831,7 +831,7 @@ class TestCreateTransaction:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
-    async def test_create_transaction_splits_with_other_user_category_forbidden(
+    async def test_create_transaction_splits_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -862,7 +862,7 @@ class TestCreateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_create_transaction_splits_with_archived_category_fails(
@@ -1892,7 +1892,7 @@ class TestGetTransactionById:
         assert body["transfer_group_id"] is None
         assert body["counterpart_account_id"] is None
 
-    async def test_get_transaction_other_user_forbidden(
+    async def test_get_transaction_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1903,8 +1903,25 @@ class TestGetTransactionById:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
+
+    async def test_get_transaction_of_other_user_answers_like_missing(
+        self,
+        client: AsyncClient,
+        other_authenticated_user: AuthenticatedUser,
+        created_transaction: TransactionData,
+    ):
+        headers = other_authenticated_user["headers"]
+
+        foreign = await client.get(
+            f"{API_TRANSACTIONS}/{created_transaction['id']}", headers=headers
+        )
+        missing = await client.get(f"{API_TRANSACTIONS}/999", headers=headers)
+
+        assert foreign.status_code == status.HTTP_404_NOT_FOUND
+        assert foreign.status_code == missing.status_code
+        assert foreign.json() == missing.json()
 
     async def test_get_transaction_invalid_id(
         self,
@@ -1969,7 +1986,7 @@ class TestGetTransactionById:
         assert body["has_splits"] is False
         assert body["splits"] is None
 
-    async def test_get_transaction_with_splits_other_user_forbidden(
+    async def test_get_transaction_with_splits_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -1981,7 +1998,7 @@ class TestGetTransactionById:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_get_transaction_without_token(
@@ -2172,7 +2189,7 @@ class TestUpdateTransaction:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_update_transaction_other_user_forbidden(
+    async def test_update_transaction_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -2190,10 +2207,10 @@ class TestUpdateTransaction:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_update_transaction_with_other_user_category_forbidden(
+    async def test_update_transaction_with_other_user_category_not_found(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -2221,7 +2238,7 @@ class TestUpdateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_update_transaction_with_archived_category_fails(
@@ -2894,7 +2911,7 @@ class TestDeleteTransaction:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
-    async def test_delete_transaction_other_user_forbidden(
+    async def test_delete_transaction_other_user_not_found(
         self,
         client: AsyncClient,
         other_authenticated_user: AuthenticatedUser,
@@ -2905,7 +2922,7 @@ class TestDeleteTransaction:
             headers=other_authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "detail" in response.json()
 
     async def test_delete_transaction_invalid_id(
