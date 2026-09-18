@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -381,7 +381,7 @@ class TestArchiveCategory:
         category_id = existing_category.id
         user_id = existing_category.user_id
 
-        existing_category.archived_at = datetime(2026, 5, 1)
+        existing_category.archived_at = datetime(2026, 5, 1, tzinfo=UTC)
 
         category_repo_mock.get_by_id.return_value = existing_category
 
@@ -406,7 +406,7 @@ class TestRestoreCategory:
             name=existing_category.name,
             user_id=existing_category.user_id,
             created_at=existing_category.created_at,
-            archived_at=datetime(2026, 5, 1),
+            archived_at=datetime(2026, 5, 1, tzinfo=UTC),
         )
 
         category_repo_mock.get_by_id.return_value = archived_category
@@ -487,7 +487,7 @@ class TestRestoreCategory:
             id=existing_category.id + 1,
             name=existing_category.name,
             user_id=existing_category.user_id,
-            archived_at=datetime(2026, 2, 10),
+            archived_at=datetime(2026, 2, 10, tzinfo=UTC),
         )
 
         category_repo_mock.get_by_id.return_value = archived_category

@@ -219,7 +219,7 @@ def existing_category(
         id=1,
         name="Foods",
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10),
+        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.UTC),
         archived_at=None,
     )
 
@@ -308,7 +308,7 @@ def existing_account(
         name="Monobank",
         currency_code=existing_currency.code,
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10),
+        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.UTC),
     )
 
 
@@ -322,5 +322,5 @@ def existing_usd_account(
         name="Dollars",
         currency_code=existing_usd_currency.code,
         user_id=existing_user.id,
-        created_at=datetime.datetime(2026, 2, 10),
+        created_at=datetime.datetime(2026, 2, 10, tzinfo=datetime.UTC),
     )

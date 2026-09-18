@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +14,7 @@ async def archived_category(category_repository: CategoryRepository, user: User)
     category = Category(
         name="Archived Category",
         user_id=user.id,
-        archived_at=datetime(2020, 1, 1),
+        archived_at=datetime(2020, 1, 1, tzinfo=UTC),
     )
     return await category_repository.add(category)
 
@@ -280,7 +280,7 @@ class TestGetByUser:
         other_archived_category = Category(
             name="Other Archived Category",
             user_id=other_user.id,
-            archived_at=datetime(2020, 1, 1),
+            archived_at=datetime(2020, 1, 1, tzinfo=UTC),
         )
         await category_repository.add(other_archived_category)
 

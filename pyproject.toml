@@ -4,7 +4,7 @@ target-version = "py311"
 extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "DTZ"]
 ignore = [
     "E501",   # line length is handled by the formatter
     "UP042",  # str+Enum -> StrEnum changes __str__ (logs, f-strings) — deferred, see backlog
