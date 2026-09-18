@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
@@ -67,6 +67,10 @@ class BudgetResponse(BaseModel):
     start_date: date
 
     end_date: date
+
+    created_at: datetime
+
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

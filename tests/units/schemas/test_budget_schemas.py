@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import BudgetCreate, BudgetFilters, BudgetResponse, BudgetStatusResponse
+from tests.units.services.helpers import make_budget
 
 
 class TestBudgetCreate:
@@ -221,14 +222,12 @@ class TestBudgetFilters:
 
 class TestBudgetStatusResponse:
     def _budget(self) -> BudgetResponse:
-        return BudgetResponse(
-            id=1,
-            name="Food",
-            amount=Decimal("5000.00"),
-            currency_code="USD",
-            category_id=1,
-            start_date=date(2026, 7, 1),
-            end_date=date(2026, 7, 31),
+        return BudgetResponse.model_validate(
+            make_budget(
+                name="Food",
+                amount=Decimal("5000.00"),
+                currency_code="USD",
+            )
         )
 
     def test_money_fields_quantized_to_two_decimals(self):

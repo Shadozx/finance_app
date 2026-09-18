@@ -37,6 +37,7 @@ class TestCreateAccount:
         assert body["currency_code"] == payload["currency_code"]
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["created_at"] is not None
+        assert "updated_at" in body
         assert body["archived_at"] is None
         assert body["balance"] == "0.00"
 

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -110,6 +110,10 @@ class TransactionListItem(BaseModel):
     date: date
 
     user_id: int
+
+    created_at: datetime
+
+    updated_at: datetime
 
     account_id: int
 

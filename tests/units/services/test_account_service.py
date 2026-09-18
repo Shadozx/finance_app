@@ -32,6 +32,7 @@ def to_response(account: Account, balance: Decimal) -> AccountResponse:
         balance=balance,
         archived_at=account.archived_at,
         created_at=account.created_at,
+        updated_at=account.updated_at,
         user_id=account.user_id,
     )
 

@@ -45,6 +45,9 @@ def as_persisted(obj: T, obj_id: int = 1) -> T:
     if hasattr(obj, "created_at") and obj.created_at is None:
         obj.created_at = datetime.now(UTC)
 
+    if hasattr(obj, "updated_at") and obj.updated_at is None:
+        obj.updated_at = datetime.now(UTC)
+
     return obj
 
 
@@ -63,6 +66,8 @@ def make_transaction(**kwargs) -> Transaction:
     """
     kwargs.setdefault("settled_amount", kwargs["amount"])
     kwargs.setdefault("settled_currency_code", kwargs["currency_code"])
+    kwargs.setdefault("created_at", datetime.now(UTC))
+    kwargs.setdefault("updated_at", datetime.now(UTC))
     return Transaction(**kwargs)
 
 
@@ -73,6 +78,7 @@ def make_account(**kwargs) -> Account:
     kwargs.setdefault("currency_code", "UAH")
     kwargs.setdefault("user_id", 1)
     kwargs.setdefault("created_at", datetime.now(UTC))
+    kwargs.setdefault("updated_at", datetime.now(UTC))
     kwargs.setdefault("archived_at", None)
     return Account(**kwargs)
 
@@ -83,6 +89,7 @@ def make_category(**kwargs) -> Category:
     kwargs.setdefault("name", "Foods")
     kwargs.setdefault("user_id", 1)
     kwargs.setdefault("created_at", datetime.now(UTC))
+    kwargs.setdefault("updated_at", datetime.now(UTC))
     kwargs.setdefault("archived_at", None)
 
     return Category(**kwargs)
@@ -99,6 +106,8 @@ def make_budget(**kwargs) -> Budget:
     kwargs.setdefault("start_date", date(2026, 7, 1))
     kwargs.setdefault("end_date", date(2026, 7, 31))
     kwargs.setdefault("user_id", 1)
+    kwargs.setdefault("created_at", datetime.now(UTC))
+    kwargs.setdefault("updated_at", datetime.now(UTC))
 
     return Budget(**kwargs)
 
@@ -112,6 +121,7 @@ def make_transaction_template(**kwargs) -> TransactionTemplate:
     kwargs.setdefault("user_id", 1)
     kwargs.setdefault("type", TransactionType.EXPENSE)
     kwargs.setdefault("created_at", datetime.now(UTC))
+    kwargs.setdefault("updated_at", datetime.now(UTC))
 
     return TransactionTemplate(**kwargs)
 

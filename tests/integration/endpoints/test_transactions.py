@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi import status
 from httpx import AsyncClient
@@ -176,6 +178,35 @@ class TestCreateTransaction:
         assert body["id"] is not None
         assert body["amount"] == payload["amount"]
         assert body["user_id"] == authenticated_user["user"]["id"]
+
+    async def test_create_transaction_created_at_is_not_the_operation_date(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        """created_at says when the record was entered, date says when it happened."""
+        past_date = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+
+        payload = transaction_payload(
+            date=past_date,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+        body = response.json()
+
+        assert body["date"] == past_date
+        assert body["date"] != body["created_at"][:10]
 
     async def test_create_transaction_description_at_max_length_success(
         self,
@@ -978,6 +1009,8 @@ class TestGetTransactions:
         assert items[0]["category_id"] == created_transaction["category_id"]
         assert items[0]["description"] == created_transaction["description"]
         assert items[0]["user_id"] == authenticated_user["user"]["id"]
+        assert items[0]["created_at"] is not None
+        assert "updated_at" in items[0]
 
     async def test_get_transactions_returns_only_own_transactions(
         self,

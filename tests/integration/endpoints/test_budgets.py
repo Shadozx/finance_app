@@ -89,6 +89,8 @@ class TestCreateBudget:
         assert body["start_date"] == payload["start_date"]
         assert body["end_date"] == payload["end_date"]
         assert body["name"] == payload["name"]
+        assert body["created_at"] is not None
+        assert "updated_at" in body
 
     async def test_create_budget_without_name_success(
         self,

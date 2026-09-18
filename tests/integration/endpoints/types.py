@@ -18,6 +18,7 @@ class CategoryData(TypedDict):
     name: str
     user_id: int
     created_at: str
+    updated_at: str
     archived_at: str | None
 
 
@@ -38,6 +39,7 @@ class TransactionTemplateData(TypedDict):
     description: str | None
     user_id: int
     created_at: str
+    updated_at: str
 
 
 class TransactionData(TypedDict):
@@ -52,6 +54,8 @@ class TransactionData(TypedDict):
     category_id: int | None
     description: str | None
     user_id: int
+    created_at: str
+    updated_at: str
     account_id: int
 
     transfer_group_id: str | None
@@ -66,6 +70,8 @@ class BudgetData(TypedDict):
     category_id: int
     start_date: str
     end_date: str
+    created_at: str
+    updated_at: str
 
 
 class AccountData(TypedDict):
@@ -74,6 +80,7 @@ class AccountData(TypedDict):
     user_id: int
     currency_code: str
     created_at: str
+    updated_at: str
     archived_at: str | None
 
     balance: str

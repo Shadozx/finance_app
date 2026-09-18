@@ -77,6 +77,8 @@ class TestCreateTransactionTemplate:
 
         assert body["created_at"] is not None
 
+        assert "updated_at" in body
+
     async def test_create_template_without_category_success(
         self,
         client: AsyncClient,

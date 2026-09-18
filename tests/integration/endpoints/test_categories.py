@@ -411,6 +411,27 @@ class TestUpdateCategory:
         assert response.status_code == status.HTTP_200_OK, reason
         assert response.json()["name"] == name
 
+    async def test_update_category_moves_updated_at_only(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+    ):
+        new_name = "Renamed category"
+
+        response = await client.put(
+            f"{API_CATEGORIES}/{created_category['id']}",
+            json=category_payload(new_name),
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert body["created_at"] == created_category["created_at"]
+        assert body["updated_at"] > created_category["updated_at"]
+
     async def test_update_category_same_name_allowed(
         self,
         client: AsyncClient,

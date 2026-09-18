@@ -109,6 +109,8 @@ class TransactionTemplateListItem(BaseModel):
 
     created_at: datetime
 
+    updated_at: datetime
+
     has_splits: bool = False
 
     model_config = ConfigDict(from_attributes=True)
