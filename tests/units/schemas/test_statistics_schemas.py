@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
+from app.core import today
 from app.models import TransactionType
 from app.schemas import CategoryStatisticsFilters, StatisticsFilters
 
@@ -11,10 +12,10 @@ from app.schemas import CategoryStatisticsFilters, StatisticsFilters
 class TestStatisticsFilters:
     def test_defaults_to_current_month(self):
         f = StatisticsFilters()
-        today = date.today()
-        last_day = calendar.monthrange(today.year, today.month)[1]
-        assert f.start_date == today.replace(day=1)
-        assert f.end_date == date(today.year, today.month, last_day)
+        current_day = today()
+        last_day = calendar.monthrange(current_day.year, current_day.month)[1]
+        assert f.start_date == current_day.replace(day=1)
+        assert f.end_date == date(current_day.year, current_day.month, last_day)
 
     def test_only_one_date_raises(self):
         with pytest.raises(ValidationError):
@@ -53,11 +54,11 @@ class TestCategoryStatisticsFilters:
         # with type present but no dates, it must default to the current month.
         f = CategoryStatisticsFilters(type=TransactionType.EXPENSE)
 
-        today = date.today()
-        last_day = calendar.monthrange(today.year, today.month)[1]
+        current_day = today()
+        last_day = calendar.monthrange(current_day.year, current_day.month)[1]
 
-        assert f.start_date == today.replace(day=1)
-        assert f.end_date == date(today.year, today.month, last_day)
+        assert f.start_date == current_day.replace(day=1)
+        assert f.end_date == date(current_day.year, current_day.month, last_day)
 
     def test_inherited_range_over_one_year_fails(self):
         # The 1-year ceiling is inherited too.

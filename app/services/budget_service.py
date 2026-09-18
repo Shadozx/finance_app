@@ -1,9 +1,8 @@
-from datetime import date
 from decimal import Decimal
 
 import structlog
 
-from app.core import UnitOfWork
+from app.core import UnitOfWork, today
 from app.core.exceptions import ValueExistsException
 from app.models import Budget
 from app.repositories import (
@@ -60,8 +59,8 @@ class BudgetService:
         if filters.start_date is not None and filters.end_date is not None:
             start_date, end_date = filters.start_date, filters.end_date
         else:
-            today = date.today()
-            start_date, end_date = today, today
+            current_day = today()
+            start_date, end_date = current_day, current_day
 
         rows = await self.budget_repository.get_by_period(
             user_id,

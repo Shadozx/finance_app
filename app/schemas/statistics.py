@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, field_serializer, field_validator, model_validator
 
+from app.core import today
 from app.models.transaction import TransactionType
 from app.schemas.validators import currency_code_validator, validate_date_range
 
@@ -25,10 +26,10 @@ class StatisticsFilters(BaseModel):
     @model_validator(mode="after")
     def validate_dates(self) -> "StatisticsFilters":
         if self.start_date is None and self.end_date is None:
-            today = date.today()
-            self.start_date = today.replace(day=1)
-            last_day = calendar.monthrange(today.year, today.month)[1]
-            self.end_date = date(today.year, today.month, last_day)
+            current_day = today()
+            self.start_date = current_day.replace(day=1)
+            last_day = calendar.monthrange(current_day.year, current_day.month)[1]
+            self.end_date = date(current_day.year, current_day.month, last_day)
 
         if self.start_date is None or self.end_date is None:
             raise ValueError("Both dates must be provided, or neither")

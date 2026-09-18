@@ -1,9 +1,8 @@
-from datetime import date
 from decimal import Decimal
 
 import structlog
 
-from app.core import UnitOfWork
+from app.core import UnitOfWork, today
 from app.core.exceptions import NotAllowedActionException, ValueExistsException
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
@@ -67,7 +66,7 @@ class AccountService:
                 settled_currency_code=data.currency_code,
                 currency_code=data.currency_code,
                 user_id=user_id,
-                date=date.today(),
+                date=today(),
             )
             await self.transaction_repository.add(adjustment)
 
@@ -183,7 +182,7 @@ class AccountService:
             user_id=user_id,
             category_id=None,
             account_id=account_id,
-            date=date.today(),
+            date=today(),
         )
 
         await self.transaction_repository.add(adjustment)

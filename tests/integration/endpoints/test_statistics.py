@@ -6,6 +6,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core import today
 from tests.integration.endpoints.helpers import (
     account_payload,
     category_payload,
@@ -336,10 +337,10 @@ class TestGetSummary:
 
         body = response.json()
 
-        today = date.today()
-        last_day = calendar.monthrange(today.year, today.month)[1]
-        expected_start = today.replace(day=1).isoformat()
-        expected_end = date(today.year, today.month, last_day).isoformat()
+        current_day = today()
+        last_day = calendar.monthrange(current_day.year, current_day.month)[1]
+        expected_start = current_day.replace(day=1).isoformat()
+        expected_end = date(current_day.year, current_day.month, last_day).isoformat()
 
         assert body["period"]["start_date"] == expected_start
         assert body["period"]["end_date"] == expected_end
