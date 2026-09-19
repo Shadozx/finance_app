@@ -44,6 +44,13 @@ class CategoryRepository:
             )
         ).scalar_one_or_none()
 
+    async def add_all(self, categories: list[Category]) -> list[Category]:
+        self.session.add_all(categories)
+
+        await self.session.flush()
+
+        return categories
+
     async def add(self, category: Category) -> Category:
         self.session.add(category)
         await self.session.flush()

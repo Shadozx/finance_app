@@ -524,7 +524,7 @@ class TestGetCategories:
     ):
         category = await create_category(
             client,
-            category_payload(name="Food"),
+            category_payload(name="Groceries"),
             authenticated_user["headers"],
         )
 
@@ -588,8 +588,8 @@ class TestGetCategories:
         by_name = {c["category_name"]: c for c in cats}
 
         # Amounts come back as strings (Decimal serialization)
-        assert by_name["Food"]["total"] == "350.00"
-        assert by_name["Food"]["category_id"] == category["id"]
+        assert by_name["Groceries"]["total"] == "350.00"
+        assert by_name["Groceries"]["category_id"] == category["id"]
 
         # Uncategorized group present with null id/name
         assert None in by_name
@@ -873,7 +873,7 @@ class TestGetCategories:
         """A split receipt lands in its categories, not in the uncategorized group."""
         food = await create_category(
             client,
-            category_payload(name="Food"),
+            category_payload(name="Groceries"),
             authenticated_user["headers"],
         )
 
@@ -916,7 +916,7 @@ class TestGetCategories:
         cats = categories_of(body, active_currency["code"])
         by_name = {c["category_name"]: c for c in cats}
 
-        assert by_name["Food"]["total"] == "800.00"
+        assert by_name["Groceries"]["total"] == "800.00"
         assert by_name["Household"]["total"] == "200.00"
 
         assert None not in by_name
@@ -931,7 +931,7 @@ class TestGetCategories:
         """An unsorted part of a receipt is uncategorized money, and the report says so."""
         food = await create_category(
             client,
-            category_payload(name="Food"),
+            category_payload(name="Groceries"),
             authenticated_user["headers"],
         )
 
@@ -966,7 +966,7 @@ class TestGetCategories:
         cats = categories_of(body, active_currency["code"])
         by_name = {c["category_name"]: c for c in cats}
 
-        assert by_name["Food"]["total"] == "700.00"
+        assert by_name["Groceries"]["total"] == "700.00"
 
         assert by_name[None]["total"] == "300.00"
         assert by_name[None]["category_id"] is None
@@ -981,7 +981,7 @@ class TestGetCategories:
         """Both sources land in the same row, and neither is counted twice."""
         food = await create_category(
             client,
-            category_payload(name="Food"),
+            category_payload(name="Groceries"),
             authenticated_user["headers"],
         )
 
@@ -1029,7 +1029,7 @@ class TestGetCategories:
         cats = categories_of(body, active_currency["code"])
         by_name = {c["category_name"]: c for c in cats}
 
-        assert by_name["Food"]["total"] == "1100.00"
+        assert by_name["Groceries"]["total"] == "1100.00"
         assert by_name[None]["total"] == "200.00"
 
     async def test_get_categories_total_matches_summary(
@@ -1042,7 +1042,7 @@ class TestGetCategories:
         """Two endpoints, two queries: every unit of money is counted exactly once."""
         food = await create_category(
             client,
-            category_payload(name="Food"),
+            category_payload(name="Groceries"),
             authenticated_user["headers"],
         )
 

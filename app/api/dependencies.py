@@ -37,8 +37,13 @@ def get_user_service(
 ) -> UserService:
     user_repository = UserRepository(session)
     unit_of_work = UnitOfWork(session)
+    category_repository = CategoryRepository(session)
 
-    return UserService(user_repository=user_repository, unit_of_work=unit_of_work)
+    return UserService(
+        user_repository=user_repository,
+        unit_of_work=unit_of_work,
+        category_repository=category_repository,
+    )
 
 
 def get_category_service(

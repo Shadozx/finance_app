@@ -2,11 +2,14 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import register_payload
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
 API_AUTH_LOGIN_URL = "/api/v1/auth/login"
+
+API_CATEGORIES_URL = "/api/v1/categories"
 
 
 class TestRegister:
@@ -26,6 +29,41 @@ class TestRegister:
         assert "id" in body
         assert "hashed_password" not in body
         assert "password" not in body
+
+    async def test_register_creates_default_categories(self, client: AsyncClient):
+        payload = register_payload()
+        expected_categories = {
+            (name, category_type.value) for name, category_type in DEFAULT_CATEGORIES
+        }
+
+        register_response = await client.post(API_AUTH_REGISTER_URL, json=payload)
+
+        assert register_response.status_code == status.HTTP_201_CREATED
+
+        user_id = register_response.json()["id"]
+
+        login_response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={"email": payload["email"], "password": payload["password"]},
+        )
+
+        assert login_response.status_code == status.HTTP_200_OK
+
+        response = await client.get(
+            API_CATEGORIES_URL,
+            headers={"Authorization": f"Bearer {login_response.json()['access_token']}"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        categories = response.json()["items"]
+
+        assert len(categories) == len(expected_categories)
+        assert {
+            (category["name"], category["type"]) for category in categories
+        } == expected_categories
+        assert all(category["user_id"] == user_id for category in categories)
+        assert all(category["archived_at"] is None for category in categories)
 
     @pytest.mark.parametrize(
         "payload, duplicate, reason",

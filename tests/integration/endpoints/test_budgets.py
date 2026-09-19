@@ -369,7 +369,9 @@ class TestGetBudgets:
         created_category: CategoryData,
     ):
         headers = authenticated_user["headers"]
-        other_category = await create_category(client, category_payload(name="Transport"), headers)
+        other_category = await create_category(
+            client, category_payload(name="Other budget category"), headers
+        )
 
         first = await client.post(
             API_BUDGETS,
@@ -533,7 +535,9 @@ class TestGetBudgets:
     ):
         headers = authenticated_user["headers"]
 
-        other_category = await create_category(client, category_payload(name="Transport"), headers)
+        other_category = await create_category(
+            client, category_payload(name="Other budget category"), headers
+        )
 
         second = await client.post(
             API_BUDGETS,

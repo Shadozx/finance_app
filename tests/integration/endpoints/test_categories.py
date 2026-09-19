@@ -3,6 +3,7 @@ from fastapi import status
 from httpx import AsyncClient
 
 from app.models import CategoryType
+from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
 from tests.integration.endpoints.types import AuthenticatedUser, CategoryData
 
@@ -169,7 +170,7 @@ class TestCreateCategory:
 
 
 class TestGetCategories:
-    async def test_get_categories_empty(
+    async def test_get_categories_returns_default_categories(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -178,16 +179,22 @@ class TestGetCategories:
 
         assert response.status_code == status.HTTP_200_OK
 
-        assert response.json()["items"] == []
+        categories = response.json()["items"]
+
+        assert len(categories) == len(DEFAULT_CATEGORIES)
+        assert all(
+            category["user_id"] == authenticated_user["user"]["id"] for category in categories
+        )
+        assert all(category["archived_at"] is None for category in categories)
 
     async def test_get_categories_default_returns_active_categories(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
     ):
-        first_payload = category_payload("Food")
+        first_payload = category_payload("First additional category")
 
-        second_payload = category_payload("Salary")
+        second_payload = category_payload("Second additional category")
 
         await create_category(client, first_payload, authenticated_user["headers"])
 
@@ -204,7 +211,7 @@ class TestGetCategories:
         category_names = {cat["name"] for cat in user_categories}
 
         assert body["limit"] == 200
-        assert len(category_names) == 2
+        assert len(category_names) == len(DEFAULT_CATEGORIES) + 2
 
         assert first_payload["name"] in category_names
         assert second_payload["name"] in category_names
@@ -228,10 +235,12 @@ class TestGetCategories:
 
         user_categories = response.json()["items"]
 
-        assert len(user_categories) == 1
+        assert len(user_categories) == len(DEFAULT_CATEGORIES) + 1
 
-        assert user_categories[0]["name"] == payload["name"]
-        assert user_categories[0]["user_id"] == authenticated_user["user"]["id"]
+        assert any(category["name"] == payload["name"] for category in user_categories)
+        assert all(
+            category["user_id"] == authenticated_user["user"]["id"] for category in user_categories
+        )
 
     async def test_get_categories_category_status_archived_returns_archived_categories(
         self,
@@ -268,7 +277,7 @@ class TestGetCategories:
 
         await create_category(client, active_category_payload, authenticated_user["headers"])
 
-        archived_category_payload = category_payload("Salary")
+        archived_category_payload = category_payload("Archived additional category")
 
         category = await create_category(
             client, archived_category_payload, authenticated_user["headers"]
@@ -286,7 +295,7 @@ class TestGetCategories:
 
         user_categories_names = {cat["name"] for cat in user_categories}
 
-        assert len(user_categories_names) == 2
+        assert len(user_categories_names) == len(DEFAULT_CATEGORIES) + 2
 
         assert active_category_payload["name"] in user_categories_names
         assert archived_category_payload["name"] in user_categories_names
@@ -299,9 +308,13 @@ class TestGetCategories:
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
     ):
-        await create_category(client, category_payload("Food"), authenticated_user["headers"])
+        await create_category(
+            client, category_payload("First pagination category"), authenticated_user["headers"]
+        )
 
-        await create_category(client, category_payload("Salary"), authenticated_user["headers"])
+        await create_category(
+            client, category_payload("Second pagination category"), authenticated_user["headers"]
+        )
 
         limit = 1
         offset = 0
@@ -378,7 +391,7 @@ class TestUpdateCategory:
         created_category: CategoryData,
         category_type: CategoryType,
     ):
-        payload = category_payload("Salary", category_type=category_type)
+        payload = category_payload("Updated category", category_type=category_type)
 
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
@@ -504,7 +517,7 @@ class TestUpdateCategory:
         authenticated_user: AuthenticatedUser,
         created_category: CategoryData,
     ):
-        payload = category_payload("Salary")
+        payload = category_payload("Duplicate category")
 
         await create_category(client, payload, authenticated_user["headers"])
 
@@ -605,7 +618,11 @@ class TestArchiveCategory:
 
         assert user_categories_response.status_code == status.HTTP_200_OK
 
-        assert user_categories_response.json()["items"] == []
+        active_categories = user_categories_response.json()["items"]
+
+        assert len(active_categories) == len(DEFAULT_CATEGORIES)
+        assert all(category["id"] != created_category["id"] for category in active_categories)
+        assert all(category["archived_at"] is None for category in active_categories)
 
         archived_response = await client.get(
             API_CATEGORIES,
@@ -724,10 +741,13 @@ class TestRestoreCategory:
 
         active_categories = user_categories_response.json()["items"]
 
-        assert len(active_categories) == 1
-        assert active_categories[0]["id"] == archived_category["id"]
-        assert active_categories[0]["name"] == archived_category["name"]
-        assert active_categories[0]["archived_at"] is None
+        assert len(active_categories) == len(DEFAULT_CATEGORIES) + 1
+
+        restored_category = next(
+            category for category in active_categories if category["id"] == archived_category["id"]
+        )
+        assert restored_category["name"] == archived_category["name"]
+        assert restored_category["archived_at"] is None
 
     async def test_restore_category_not_found(
         self,

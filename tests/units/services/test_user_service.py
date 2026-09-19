@@ -5,10 +5,16 @@ from app.core import UnitOfWork
 from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
 from app.core.security import DUMMY_PASSWORD_HASH
 from app.models import User
-from app.repositories import UserRepository
+from app.repositories import CategoryRepository, UserRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
-from tests.units.services.helpers import as_persisted, assert_model_fields, make_user
+from app.services.default_categories import DEFAULT_CATEGORIES
+from tests.units.services.helpers import (
+    as_persisted,
+    as_persisted_all,
+    assert_model_fields,
+    make_user,
+)
 
 
 class TestRegister:
@@ -29,6 +35,7 @@ class TestRegister:
         mocker: MockerFixture,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
         data: UserCreate,
     ):
@@ -42,16 +49,23 @@ class TestRegister:
         user_repo_mock.get_by_username.return_value = None
 
         user_repo_mock.add.side_effect = as_persisted
+        category_repo_mock.add_all.side_effect = as_persisted_all
 
         result = await user_service.register_user(data)
 
-        call_args = user_repo_mock.add.call_args[0][0]
+        created_user = user_repo_mock.add.call_args[0][0]
+        created_categories = category_repo_mock.add_all.call_args[0][0]
 
-        assert result == UserResponse.model_validate(call_args)
+        assert result == UserResponse.model_validate(created_user)
 
         assert_model_fields(
-            call_args, email=data.email, username=data.username, hashed_password=hashed_password
+            created_user, email=data.email, username=data.username, hashed_password=hashed_password
         )
+
+        assert [(category.name, category.type) for category in created_categories] == list(
+            DEFAULT_CATEGORIES
+        )
+        assert all(category.user_id == created_user.id for category in created_categories)
 
         user_repo_mock.get_by_email.assert_called_once_with(data.email)
 
@@ -61,12 +75,15 @@ class TestRegister:
 
         user_repo_mock.add.assert_called_once()
 
+        category_repo_mock.add_all.assert_awaited_once()
+
         unit_of_work_mock.commit.assert_awaited_once()
 
     async def test_register_existing_email(
         self,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserCreate,
@@ -80,12 +97,15 @@ class TestRegister:
 
         user_repo_mock.add.assert_not_called()
 
+        category_repo_mock.add_all.assert_not_awaited()
+
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_register_existing_username(
         self,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserCreate,
@@ -99,6 +119,8 @@ class TestRegister:
         user_repo_mock.get_by_username.assert_called_once_with(data.username)
 
         user_repo_mock.add.assert_not_called()
+
+        category_repo_mock.add_all.assert_not_awaited()
 
         unit_of_work_mock.commit.assert_not_awaited()
 

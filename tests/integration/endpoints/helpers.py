@@ -24,7 +24,7 @@ def register_payload(
 
 
 def category_payload(
-    name: str = "Food", category_type: CategoryType = CategoryType.ANY
+    name: str = "Test category", category_type: CategoryType = CategoryType.ANY
 ) -> dict[str, str]:
     return {"name": name, "type": category_type.value}
 

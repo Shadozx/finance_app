@@ -71,6 +71,32 @@ class TestAdd:
             await category_repository.add(duplicate_category)
 
 
+class TestAddAll:
+    async def test_add_all(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+    ):
+        expected_categories = [
+            Category(type=CategoryType.EXPENSE, name="Food", user_id=user.id),
+            Category(type=CategoryType.INCOME, name="Salary", user_id=user.id),
+        ]
+
+        created_categories = await category_repository.add_all(expected_categories)
+
+        assert created_categories == expected_categories
+        assert all(category.id is not None for category in created_categories)
+
+        found_categories = await category_repository.get_by_user(user.id)
+
+        assert {
+            (category.name, category.type, category.user_id) for category in found_categories
+        } == {
+            ("Food", CategoryType.EXPENSE, user.id),
+            ("Salary", CategoryType.INCOME, user.id),
+        }
+
+
 class TestGetById:
     async def test_get_by_id(
         self,

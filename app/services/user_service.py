@@ -8,18 +8,25 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import User
-from app.repositories import UserRepository
+from app.models import Category, User
+from app.repositories import CategoryRepository, UserRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import validators
+from app.services.default_categories import DEFAULT_CATEGORIES
 
 logger = structlog.get_logger()
 
 
 class UserService:
-    def __init__(self, user_repository: UserRepository, unit_of_work: UnitOfWork):
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        unit_of_work: UnitOfWork,
+        category_repository: CategoryRepository,
+    ):
         self.user_repository = user_repository
         self.unit_of_work = unit_of_work
+        self.category_repository = category_repository
 
     async def register_user(self, user: UserCreate) -> UserResponse:
         if await self.user_repository.get_by_email(user.email):
@@ -33,6 +40,12 @@ class UserService:
         )
 
         created_user = await self.user_repository.add(new_user)
+
+        default_categories = [
+            Category(name=name, type=category_type, user_id=created_user.id)
+            for name, category_type in DEFAULT_CATEGORIES
+        ]
+        await self.category_repository.add_all(default_categories)
 
         await self.unit_of_work.commit()
 

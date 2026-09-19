@@ -141,8 +141,16 @@ def currency_service(currency_repo_mock: CurrencyRepository):
 
 
 @pytest.fixture
-def user_service(user_repo_mock: UserRepository, unit_of_work_mock: UnitOfWork):
-    return UserService(user_repository=user_repo_mock, unit_of_work=unit_of_work_mock)
+def user_service(
+    user_repo_mock: UserRepository,
+    unit_of_work_mock: UnitOfWork,
+    category_repo_mock: CategoryRepository,
+):
+    return UserService(
+        user_repository=user_repo_mock,
+        unit_of_work=unit_of_work_mock,
+        category_repository=category_repo_mock,
+    )
 
 
 @pytest.fixture
