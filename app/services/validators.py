@@ -7,7 +7,17 @@ from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
 )
-from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate, User
+from app.models import (
+    Account,
+    Budget,
+    Category,
+    CategoryType,
+    Currency,
+    Transaction,
+    TransactionTemplate,
+    TransactionType,
+    User,
+)
 from app.repositories import (
     AccountRepository,
     BudgetRepository,
@@ -27,9 +37,11 @@ async def validate_category(
     user_id: int,
     category_id: int | None,
     allow_archived: bool = False,
+    *,
+    expected_type: TransactionType | None = None,
 ) -> Category | None:
     """
-    Validate category exists, is owned by user, and not archived.
+    Validate category exists, is owned by user, and satisfies the requested checks.
 
     Args:
         category_repository: Repository to fetch category
@@ -39,6 +51,8 @@ async def validate_category(
             transaction must stay possible even if its category was
             archived later; only attaching a transaction TO an archived
             category is forbidden.
+        expected_type: Required transaction direction. ANY categories are allowed;
+            None skips only the type check for an unchanged historical assignment.
 
     Returns:
         Validated Category instance, or None if category_id is None
@@ -47,7 +61,7 @@ async def validate_category(
         NotFoundException: Category doesn't exist, or belongs to another user.
             Both cases answer the same way on purpose — the status code must
             not reveal which ids exist. The real reason goes to the log.
-        NotAllowedActionException: Category is archived
+        NotAllowedActionException: Category is archived or has the opposite type
     """
 
     if category_id is None:
@@ -65,6 +79,13 @@ async def validate_category(
 
     if not allow_archived and existing_category.archived_at:
         raise NotAllowedActionException("Archived category is not allowed to use")
+
+    if (
+        expected_type is not None
+        and existing_category.type != CategoryType.ANY
+        and existing_category.type.value != expected_type.value
+    ):
+        raise NotAllowedActionException("Category type is not compatible with this operation")
 
     return existing_category
 

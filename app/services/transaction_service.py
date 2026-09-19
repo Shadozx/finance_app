@@ -44,7 +44,9 @@ class TransactionService:
     async def create_transaction(
         self, data: TransactionCreate, user_id: int
     ) -> TransactionResponse:
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
+        await validators.validate_category(
+            self.category_repository, user_id, data.category_id, expected_type=data.type
+        )
 
         if data.splits is not None:
             split_category_ids = {
@@ -52,7 +54,9 @@ class TransactionService:
             }
 
             for category_id in split_category_ids:
-                await validators.validate_category(self.category_repository, user_id, category_id)
+                await validators.validate_category(
+                    self.category_repository, user_id, category_id, expected_type=data.type
+                )
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
@@ -186,6 +190,7 @@ class TransactionService:
         if existing_transaction.kind == TransactionKind.TRANSFER:
             raise NotAllowedActionException("Transfer cannot be edited one side at a time")
 
+        type_changed = data.type != existing_transaction.type
         category_changed = data.category_id != existing_transaction.category_id
         currency_changed = data.currency_code != existing_transaction.currency_code
         account_changed = data.account_id != existing_transaction.account_id
@@ -195,6 +200,7 @@ class TransactionService:
             user_id,
             data.category_id,
             allow_archived=not category_changed,
+            expected_type=data.type if category_changed or type_changed else None,
         )
 
         old_splits = await self.transaction_split_repository.get_by_transaction(transaction_id)
@@ -215,6 +221,9 @@ class TransactionService:
                     user_id,
                     category_id,
                     allow_archived=category_id in old_category_ids,
+                    expected_type=(
+                        data.type if category_id not in old_category_ids or type_changed else None
+                    ),
                 )
 
         await validators.validate_currency(

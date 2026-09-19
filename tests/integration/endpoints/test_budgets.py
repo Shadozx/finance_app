@@ -2,6 +2,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     archive_category,
     category_payload,
@@ -63,6 +64,40 @@ async def created_budget(
 
 
 class TestCreateBudget:
+    async def test_create_budget_expense_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        payload = budget_payload(currency_code=active_currency["code"], category_id=category["id"])
+
+        response = await client.post(API_BUDGETS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["category_id"] == category["id"]
+
+    async def test_create_budget_income_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.INCOME), headers
+        )
+        payload = budget_payload(currency_code=active_currency["code"], category_id=category["id"])
+
+        response = await client.post(API_BUDGETS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
     async def test_create_budget_success(
         self,
         client: AsyncClient,
@@ -690,6 +725,60 @@ class TestGetBudgetStatus:
 
 
 class TestUpdateBudget:
+    async def test_update_budget_keeps_incompatible_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category_response = await client.put(
+            f"/api/v1/categories/{created_category['id']}",
+            json=category_payload(created_category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+        new_amount = "999.00"
+        payload = budget_payload(
+            amount=new_amount,
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+        )
+
+        response = await client.put(
+            f"{API_BUDGETS}/{created_budget['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["amount"] == new_amount
+        assert response.json()["category_id"] == created_category["id"]
+
+    async def test_update_budget_attaching_income_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_budget: BudgetData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.INCOME), headers
+        )
+        payload = budget_payload(currency_code=active_currency["code"], category_id=category["id"])
+
+        response = await client.put(
+            f"{API_BUDGETS}/{created_budget['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(f"{API_BUDGETS}/{created_budget['id']}", headers=headers)
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created_budget
+
     async def test_update_budget_success(
         self,
         client: AsyncClient,

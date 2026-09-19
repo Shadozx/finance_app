@@ -82,7 +82,9 @@ class TransactionTemplateService:
         if await self.transaction_template_repository.get_by_user_and_name(data.name, user_id):
             raise ValueExistsException("Transaction template with this name already exists")
 
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
+        await validators.validate_category(
+            self.category_repository, user_id, data.category_id, expected_type=data.type
+        )
 
         if data.splits is not None:
             split_category_ids = {
@@ -90,7 +92,9 @@ class TransactionTemplateService:
             }
 
             for category_id in split_category_ids:
-                await validators.validate_category(self.category_repository, user_id, category_id)
+                await validators.validate_category(
+                    self.category_repository, user_id, category_id, expected_type=data.type
+                )
 
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
@@ -146,12 +150,13 @@ class TransactionTemplateService:
         currency_changed = data.currency_code != existing_template.currency_code
 
         # Unlike transactions, a template describes the future: an archived
-        # category here would produce a transaction that cannot be created.
+        # or incompatible category here would produce a transaction that cannot be created.
         await validators.validate_category(
             self.category_repository,
             user_id,
             data.category_id,
             allow_archived=False,
+            expected_type=data.type,
         )
 
         if data.splits is not None:
@@ -165,6 +170,7 @@ class TransactionTemplateService:
                     user_id,
                     category_id,
                     allow_archived=False,
+                    expected_type=data.type,
                 )
 
         await validators.validate_currency(

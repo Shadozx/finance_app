@@ -275,7 +275,10 @@ class TestCreateTransaction:
         )
 
         validate_category_spy.assert_called_once_with(
-            transaction_service.category_repository, user_id, existing_category.id
+            transaction_service.category_repository,
+            user_id,
+            existing_category.id,
+            expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
             transaction_service.currency_repository, existing_currency.code
@@ -1094,6 +1097,7 @@ class TestUpdateTransaction:
             user_id,
             existing_category.id,
             allow_archived=False,
+            expected_type=data.type,
         )
 
         validate_currency_spy.assert_called_once_with(
@@ -1423,6 +1427,9 @@ class TestUpdateTransaction:
         data: TransactionUpdate,
     ):
         existing_category.archived_at = datetime.now(UTC)
+        existing_transaction.category_id = existing_category.id
+        data.category_id = existing_category.id
+        data.type = existing_transaction.type
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         category_repo_mock.get_by_id.return_value = existing_category
@@ -1444,6 +1451,7 @@ class TestUpdateTransaction:
             existing_transaction.user_id,
             data.category_id,
             allow_archived=True,
+            expected_type=None,
         )
 
         transaction_repo_mock.update.assert_called_once()

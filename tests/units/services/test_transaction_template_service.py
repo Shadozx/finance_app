@@ -85,7 +85,10 @@ class TestCreateTemplate:
         )
 
         validate_category_spy.assert_called_once_with(
-            transaction_template_service.category_repository, user_id, existing_category.id
+            transaction_template_service.category_repository,
+            user_id,
+            existing_category.id,
+            expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
             transaction_template_service.currency_repository, existing_currency.code
@@ -452,6 +455,7 @@ class TestUpdateTemplate:
             user_id,
             existing_category.id,
             allow_archived=False,
+            expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
             transaction_template_service.currency_repository,
@@ -667,6 +671,7 @@ class TestUpdateTemplate:
             user_id,
             data.category_id,
             allow_archived=False,
+            expected_type=data.type,
         )
 
         category_repo_mock.get_by_id.assert_called_once_with(data.category_id)

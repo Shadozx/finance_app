@@ -5,7 +5,16 @@ import pytest
 from structlog.testing import capture_logs
 
 from app.core.exceptions import NotAllowedActionException, NotFoundException
-from app.models import Account, Budget, Category, Currency, Transaction, TransactionTemplate
+from app.models import (
+    Account,
+    Budget,
+    Category,
+    CategoryType,
+    Currency,
+    Transaction,
+    TransactionTemplate,
+    TransactionType,
+)
 from app.repositories import (
     BudgetRepository,
     CategoryRepository,
@@ -27,6 +36,78 @@ from tests.units.services.helpers import assert_model_fields
 
 
 class TestValidateCategory:
+    @pytest.mark.parametrize(
+        "category_type, expected_type",
+        [
+            (CategoryType.EXPENSE, TransactionType.EXPENSE),
+            (CategoryType.INCOME, TransactionType.INCOME),
+            (CategoryType.ANY, TransactionType.EXPENSE),
+            (CategoryType.ANY, TransactionType.INCOME),
+            (CategoryType.EXPENSE, None),
+            (CategoryType.INCOME, None),
+            (CategoryType.ANY, None),
+        ],
+    )
+    async def test_validate_category_compatible_type_allowed(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        category_type: CategoryType,
+        expected_type: TransactionType | None,
+    ):
+        """
+        GIVEN: Category is compatible, or the type check is disabled
+        WHEN: validate_category called with expected_type
+        THEN: Returns the same category instance
+        """
+        existing_category.type = category_type
+        category_repo_mock.get_by_id.return_value = existing_category
+
+        result = await validate_category(
+            category_repo_mock,
+            existing_category.user_id,
+            existing_category.id,
+            expected_type=expected_type,
+        )
+
+        assert result is existing_category
+        category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+
+    @pytest.mark.parametrize(
+        "category_type, expected_type",
+        [
+            (CategoryType.EXPENSE, TransactionType.INCOME),
+            (CategoryType.INCOME, TransactionType.EXPENSE),
+        ],
+    )
+    async def test_validate_category_opposite_type_not_allowed(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        category_type: CategoryType,
+        expected_type: TransactionType,
+    ):
+        """
+        GIVEN: Category has the opposite direction to the requested transaction
+        WHEN: validate_category called with expected_type
+        THEN: NotAllowedActionException raised
+        """
+        existing_category.type = category_type
+        category_repo_mock.get_by_id.return_value = existing_category
+
+        with pytest.raises(
+            NotAllowedActionException,
+            match="Category type is not compatible with this operation",
+        ):
+            await validate_category(
+                category_repo_mock,
+                existing_category.user_id,
+                existing_category.id,
+                expected_type=expected_type,
+            )
+
+        category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+
     async def test_validate_category_success(
         self, category_repo_mock: CategoryRepository, existing_category: Category
     ):

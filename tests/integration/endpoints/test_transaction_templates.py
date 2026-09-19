@@ -4,6 +4,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     archive_category,
     category_payload,
@@ -36,6 +37,66 @@ async def created_transaction_template(
 
 
 class TestCreateTransactionTemplate:
+    async def test_create_template_opposite_category_type_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            category_id=category["id"],
+        )
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.post(API_TRANSACTION_TEMPLATES, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+    async def test_create_template_splits_opposite_category_type_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.post(API_TRANSACTION_TEMPLATES, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
     async def test_create_template_success(
         self,
         client: AsyncClient,
@@ -1122,6 +1183,148 @@ class TestGetTransactionTemplateById:
 
 
 class TestUpdateTransactionTemplate:
+    async def test_update_template_compatible_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            template_type=category["type"],
+            currency_code=active_currency["code"],
+            category_id=category["id"],
+        )
+        created = await create_transaction_template(client, payload, headers)
+        new_name = "Renamed template"
+        payload["name"] = new_name
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["name"] == new_name
+        assert response.json()["type"] == created["type"]
+
+    async def test_update_template_splits_compatible_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            template_type=category["type"],
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        created = await create_transaction_template(client, payload, headers)
+        new_name = "Renamed template"
+        payload["name"] = new_name
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["name"] == new_name
+        assert response.json()["type"] == created["type"]
+
+    async def test_update_template_keeps_incompatible_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            category_id=category["id"],
+        )
+        created = await create_transaction_template(client, payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+        payload["name"] = "Renamed template"
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", headers=headers
+        )
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
+    async def test_update_template_splits_keeps_incompatible_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_template_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        created = await create_transaction_template(client, payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+        payload["name"] = "Renamed template"
+
+        response = await client.put(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(
+            f"{API_TRANSACTION_TEMPLATES}/{created['id']}", headers=headers
+        )
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
     async def test_update_template_success(
         self,
         client: AsyncClient,

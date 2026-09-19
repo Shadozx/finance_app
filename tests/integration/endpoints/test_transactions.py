@@ -4,6 +4,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     account_payload,
     archive_category,
@@ -87,6 +88,133 @@ def sides_by_account(body: list[dict]) -> dict[int, dict]:
 
 
 class TestCreateTransaction:
+    @pytest.mark.parametrize("transaction_type", ["EXPENSE", "INCOME"])
+    async def test_create_transaction_matching_category_type_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        transaction_type: str,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType(transaction_type)), headers
+        )
+        amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            transaction_type=transaction_type,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=category["id"],
+        )
+
+        response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["type"] == transaction_type
+        assert body["category_id"] == category["id"]
+
+    @pytest.mark.parametrize("transaction_type", ["EXPENSE", "INCOME"])
+    async def test_create_transaction_splits_matching_category_type_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        transaction_type: str,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType(transaction_type)), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_payload(
+            amount=amount,
+            transaction_type=transaction_type,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+
+        response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["type"] == transaction_type
+        assert body["category_id"] is None
+        assert {split["category_id"] for split in body["splits"]} == {category["id"], None}
+
+    async def test_create_transaction_opposite_category_type_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=category["id"],
+        )
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+    async def test_create_transaction_splits_opposite_category_type_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
     async def test_create_transaction_success(
         self,
         client: AsyncClient,
@@ -2048,6 +2176,234 @@ class TestGetTransactionById:
 
 
 class TestUpdateTransaction:
+    async def test_update_transaction_keeps_incompatible_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=category["id"],
+        )
+        created = await create_transaction(client, payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+        new_description = "Corrected description"
+        payload["description"] = new_description
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["description"] == new_description
+        assert response.json()["type"] == created["type"]
+
+    async def test_update_transaction_splits_keeps_incompatible_category_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        created = await create_transaction(client, payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+        new_description = "Corrected description"
+        payload["description"] = new_description
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["description"] == new_description
+        assert response.json()["type"] == created["type"]
+
+    async def test_update_transaction_changing_type_with_opposite_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=category["id"],
+        )
+        created = await create_transaction(client, payload, headers)
+        payload["type"] = "INCOME"
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
+    async def test_update_transaction_splits_changing_type_with_opposite_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        created = await create_transaction(client, payload, headers)
+        payload["type"] = "INCOME"
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
+    async def test_update_transaction_attaching_opposite_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=category["id"],
+        )
+        original_payload = transaction_payload(
+            currency_code=active_currency["code"], account_id=created_account["id"]
+        )
+        created = await create_transaction(client, original_payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
+    async def test_update_transaction_splits_attaching_opposite_category_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        category = await create_category(
+            client, category_payload(category_type=CategoryType.EXPENSE), headers
+        )
+        amount = "100.00"
+        split_amount = "50.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            category_id=None,
+            splits=[
+                split_payload(category["id"], split_amount), split_payload(None, split_amount)
+            ],
+        )
+        original_payload = transaction_payload(
+            currency_code=active_currency["code"], account_id=created_account["id"]
+        )
+        created = await create_transaction(client, original_payload, headers)
+        category_response = await client.put(
+            f"/api/v1/categories/{category['id']}",
+            json=category_payload(category["name"], category_type=CategoryType.INCOME),
+            headers=headers,
+        )
+        assert category_response.status_code == status.HTTP_200_OK
+
+        response = await client.put(
+            f"{API_TRANSACTIONS}/{created['id']}", json=payload, headers=headers
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
+        assert unchanged.status_code == status.HTTP_200_OK
+        assert unchanged.json() == created
+
     async def test_update_transaction_success(
         self,
         client: AsyncClient,

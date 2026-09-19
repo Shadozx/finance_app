@@ -4,7 +4,7 @@ import structlog
 
 from app.core import UnitOfWork, today
 from app.core.exceptions import ValueExistsException
-from app.models import Budget
+from app.models import Budget, TransactionType
 from app.repositories import (
     BudgetRepository,
     CategoryRepository,
@@ -101,7 +101,12 @@ class BudgetService:
                 "Budget for this category, currency and period already exists"
             )
 
-        await validators.validate_category(self.category_repository, user_id, data.category_id)
+        await validators.validate_category(
+            self.category_repository,
+            user_id,
+            data.category_id,
+            expected_type=TransactionType.EXPENSE,
+        )
         await validators.validate_currency(self.currency_repository, data.currency_code)
 
         new_budget = Budget(
@@ -148,6 +153,7 @@ class BudgetService:
             user_id,
             data.category_id,
             allow_archived=not category_changed,
+            expected_type=TransactionType.EXPENSE if category_changed else None,
         )
 
         await validators.validate_currency(

@@ -10,7 +10,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
 )
-from app.models import Budget, Category, Currency, User
+from app.models import Budget, Category, Currency, TransactionType, User
 from app.repositories import (
     BudgetRepository,
     CategoryRepository,
@@ -132,6 +132,7 @@ class TestCreateBudget:
             budget_service.category_repository,
             user_id,
             existing_category.id,
+            expected_type=TransactionType.EXPENSE,
         )
         validate_currency_spy.assert_called_once_with(
             budget_service.currency_repository,
@@ -294,6 +295,7 @@ class TestUpdateBudget:
             user_id,
             existing_category.id,
             allow_archived=True,
+            expected_type=None,
         )
         validate_currency_spy.assert_called_once_with(
             budget_service.currency_repository,
@@ -436,6 +438,7 @@ class TestUpdateBudget:
             existing_budget.user_id,
             data.category_id,
             allow_archived=True,
+            expected_type=None,
         )
 
         budget_repo_mock.update.assert_called_once()
