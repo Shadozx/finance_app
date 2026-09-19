@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from testcontainers.postgres import PostgresContainer
 
 from app.core import Base
-from app.models import Account, Category, Currency, User
+from app.models import Account, Category, CategoryType, Currency, User
 from app.repositories import (
     AccountRepository,
     BudgetRepository,
@@ -83,7 +83,7 @@ async def user(test_session: AsyncSession):
 
 @pytest.fixture
 async def category(test_session: AsyncSession, user: User):
-    category = Category(name="General", user_id=user.id, archived_at=None)
+    category = Category(type=CategoryType.ANY, name="General", user_id=user.id, archived_at=None)
 
     test_session.add(category)
 

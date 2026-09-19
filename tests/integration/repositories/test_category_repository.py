@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category, User
+from app.models import Category, CategoryType, User
 from app.repositories import CategoryRepository, UserRepository
 from app.schemas import CategoryStatus
 
@@ -12,6 +12,7 @@ from app.schemas import CategoryStatus
 @pytest.fixture
 async def archived_category(category_repository: CategoryRepository, user: User):
     category = Category(
+        type=CategoryType.ANY,
         name="Archived Category",
         user_id=user.id,
         archived_at=datetime(2020, 1, 1, tzinfo=UTC),
@@ -28,10 +29,12 @@ async def categories_for_ordering(
     archived_names = ("Salary", "Auto")
 
     for name in active_names:
-        await category_repository.add(Category(name=name, user_id=user.id))
+        await category_repository.add(Category(type=CategoryType.ANY, name=name, user_id=user.id))
 
     for name in archived_names:
-        category = await category_repository.add(Category(name=name, user_id=user.id))
+        category = await category_repository.add(
+            Category(type=CategoryType.ANY, name=name, user_id=user.id)
+        )
         await category_repository.archive(category)
 
 
@@ -42,6 +45,7 @@ class TestAdd:
         user: User,
     ):
         new_category = Category(
+            type=CategoryType.ANY,
             name="Salary",
             user_id=user.id,
         )
@@ -58,6 +62,7 @@ class TestAdd:
         category: Category,
     ):
         duplicate_category = Category(
+            type=CategoryType.ANY,
             name=category.name,
             user_id=category.user_id,
         )
@@ -90,6 +95,7 @@ class TestGetByUser:
         category: Category,
     ):
         new_category = Category(
+            type=CategoryType.ANY,
             name="Lunch",
             user_id=category.user_id,
         )
@@ -211,6 +217,7 @@ class TestGetByUser:
         )
 
         other_category = Category(
+            type=CategoryType.ANY,
             name="Other User Category",
             user_id=other_user.id,
         )
@@ -272,12 +279,14 @@ class TestGetByUser:
         )
 
         other_active_category = Category(
+            type=CategoryType.ANY,
             name="Other Active Category",
             user_id=other_user.id,
         )
         await category_repository.add(other_active_category)
 
         other_archived_category = Category(
+            type=CategoryType.ANY,
             name="Other Archived Category",
             user_id=other_user.id,
             archived_at=datetime(2020, 1, 1, tzinfo=UTC),

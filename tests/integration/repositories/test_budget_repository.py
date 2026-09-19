@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import Budget, Category, Currency, User
+from app.models import Budget, Category, CategoryType, Currency, User
 from app.repositories import BudgetRepository, UserRepository
 
 
@@ -539,7 +539,9 @@ class TestFindSameBudgetKeyFields:
         user: User,
         uah_currency: Currency,
     ):
-        other_category = await category_repository.add(Category(name="Transport", user_id=user.id))
+        other_category = await category_repository.add(
+            Category(type=CategoryType.ANY, name="Transport", user_id=user.id)
+        )
 
         candidate = Budget(
             amount=Decimal("5000.00"),

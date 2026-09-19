@@ -28,6 +28,7 @@ class CategoryService:
 
         new_category = Category(
             name=data.name,
+            type=data.type,
             user_id=user_id,
         )
 
@@ -82,6 +83,7 @@ class CategoryService:
             raise ValueExistsException("Category with this name exists")
 
         existing_category.name = data.name
+        existing_category.type = data.type
 
         updated_category = await self.category_repository.update(existing_category)
 

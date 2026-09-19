@@ -1,6 +1,7 @@
 from fastapi import status
 from httpx import AsyncClient
 
+from app.models import CategoryType
 from tests.integration.endpoints.types import (
     AccountData,
     CategoryData,
@@ -22,8 +23,10 @@ def register_payload(
     }
 
 
-def category_payload(name: str = "Food") -> dict[str, str]:
-    return {"name": name}
+def category_payload(
+    name: str = "Food", category_type: CategoryType = CategoryType.ANY
+) -> dict[str, str]:
+    return {"name": name, "type": category_type.value}
 
 
 async def create_category(

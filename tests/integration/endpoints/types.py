@@ -16,6 +16,7 @@ class AuthenticatedUser(TypedDict):
 class CategoryData(TypedDict):
     id: int
     name: str
+    type: str
     user_id: int
     created_at: str
     updated_at: str

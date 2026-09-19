@@ -8,7 +8,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
 )
-from app.models import Category
+from app.models import Category, CategoryType
 from app.repositories import CategoryRepository
 from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate
 from app.services import CategoryService
@@ -20,6 +20,7 @@ class TestCreateCategory:
     def data(self):
         return CategoryCreate(
             name="Salary",
+            type=CategoryType.INCOME,
         )
 
     async def test_create_category_success(
@@ -44,6 +45,7 @@ class TestCreateCategory:
         assert_model_fields(
             call_args,
             name=data.name,
+            type=data.type,
             user_id=user_id,
         )
 
@@ -77,7 +79,7 @@ class TestCreateCategory:
 class TestUpdateCategory:
     @pytest.fixture
     def data(self):
-        return CategoryUpdate(name="Salary")
+        return CategoryUpdate(name="Salary", type=CategoryType.INCOME)
 
     async def test_update_category_success(
         self,
@@ -104,6 +106,7 @@ class TestUpdateCategory:
         assert_model_fields(
             call_args,
             name=data.name,
+            type=data.type,
             user_id=user_id,
         )
 

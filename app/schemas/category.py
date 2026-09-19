@@ -3,11 +3,13 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.models.category import CategoryType
 from app.schemas.validators import name_validator
 
 
 class CategoryCreate(BaseModel):
     name: str
+    type: CategoryType
 
     @field_validator("name")
     @classmethod
@@ -28,6 +30,7 @@ class CategoryStatus(str, Enum):
 class CategoryResponse(BaseModel):
     id: int
     name: str
+    type: CategoryType
     user_id: int
     created_at: datetime
     updated_at: datetime

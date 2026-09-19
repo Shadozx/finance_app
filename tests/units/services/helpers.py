@@ -6,6 +6,7 @@ from app.models import (
     Account,
     Budget,
     Category,
+    CategoryType,
     Transaction,
     TransactionTemplate,
     TransactionTemplateSplit,
@@ -86,6 +87,7 @@ def make_account(**kwargs) -> Account:
 def make_category(**kwargs) -> Category:
     """Category with all required fields defaulted: tests pass only what they assert on."""
     kwargs.setdefault("id", 1)
+    kwargs.setdefault("type", CategoryType.ANY)
     kwargs.setdefault("name", "Foods")
     kwargs.setdefault("user_id", 1)
     kwargs.setdefault("created_at", datetime.now(UTC))

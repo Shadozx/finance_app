@@ -1,6 +1,6 @@
 from .account import Account
 from .budget import Budget
-from .category import Category
+from .category import Category, CategoryType
 from .currency import Currency
 from .transaction import Transaction, TransactionKind, TransactionType
 from .transaction_split import TransactionSplit
@@ -12,6 +12,7 @@ __all__ = [
     "Account",
     "Budget",
     "Category",
+    "CategoryType",
     "Currency",
     "Transaction",
     "TransactionKind",

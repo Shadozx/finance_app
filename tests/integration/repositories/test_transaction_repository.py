@@ -9,6 +9,7 @@ from app.models import (
     Account,
     Budget,
     Category,
+    CategoryType,
     Currency,
     Transaction,
     TransactionKind,
@@ -1271,7 +1272,9 @@ class TestGetByCategory:
         category: Category,
     ):
         """The filter narrows to one category — categories created later must stay out."""
-        later_category = await category_repository.add(Category(name="Household", user_id=user.id))
+        later_category = await category_repository.add(
+            Category(type=CategoryType.ANY, name="Household", user_id=user.id)
+        )
 
         await transaction_repository.add(
             make_transaction(
@@ -1679,7 +1682,9 @@ class TestGetByCategory:
         category: Category,
     ):
         """A split receipt lands in its categories, not in the uncategorised bucket."""
-        household = await category_repository.add(Category(name="Household", user_id=user.id))
+        household = await category_repository.add(
+            Category(type=CategoryType.ANY, name="Household", user_id=user.id)
+        )
 
         split_transaction = await transaction_repository.add(
             make_transaction(
@@ -2009,7 +2014,9 @@ class TestGetByCategory:
         category: Category,
     ):
         """Two independent queries must agree: every hryvnia is counted exactly once."""
-        household = await category_repository.add(Category(name="Household", user_id=user.id))
+        household = await category_repository.add(
+            Category(type=CategoryType.ANY, name="Household", user_id=user.id)
+        )
 
         await transaction_repository.add(
             make_transaction(
@@ -2403,7 +2410,7 @@ class TestGetSpentByBudgets:
             User(email="other3@test.com", username="other3", hashed_password="hashed")
         )
         other_category = await category_repository.add(
-            Category(name="Other food", user_id=other_user.id)
+            Category(type=CategoryType.ANY, name="Other food", user_id=other_user.id)
         )
         other_account = await account_repository.add(
             Account(name="Other account", currency_code=uah_currency.code, user_id=other_user.id)
@@ -2470,7 +2477,9 @@ class TestGetSpentByBudgets:
         budget: Budget,
     ):
         """Category is matched per budget, not filtered once for the whole query."""
-        household = await category_repository.add(Category(name="Household", user_id=user.id))
+        household = await category_repository.add(
+            Category(type=CategoryType.ANY, name="Household", user_id=user.id)
+        )
 
         household_budget = await budget_repository.add(
             Budget(

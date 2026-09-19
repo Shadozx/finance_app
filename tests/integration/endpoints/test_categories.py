@@ -2,6 +2,7 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.models import CategoryType
 from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
 from tests.integration.endpoints.types import AuthenticatedUser, CategoryData
 
@@ -11,12 +12,14 @@ API_AUTH_LOGIN = "/api/v1/auth/login"
 
 
 class TestCreateCategory:
+    @pytest.mark.parametrize("category_type", list(CategoryType))
     async def test_create_category_success(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
+        category_type: CategoryType,
     ):
-        payload = category_payload()
+        payload = category_payload(category_type=category_type)
 
         response = await client.post(
             API_CATEGORIES,
@@ -29,6 +32,7 @@ class TestCreateCategory:
         body = response.json()
 
         assert body["name"] == payload["name"]
+        assert body["type"] == payload["type"]
         assert body["archived_at"] is None
         assert body["created_at"] is not None
         assert body["user_id"] == authenticated_user["user"]["id"]
@@ -132,14 +136,17 @@ class TestCreateCategory:
             (category_payload(""), "empty_name"),
             (category_payload(" "), "blank_after_trim"),
             (category_payload("a" * 101), "too_long"),
-            ({}, "missing_name"),
+            ({"type": CategoryType.ANY.value}, "missing_name"),
+            ({"name": "Food"}, "missing_type"),
+            ({**category_payload(), "type": None}, "null_type"),
+            ({**category_payload(), "type": "UNKNOWN"}, "invalid_type"),
         ],
     )
     async def test_create_category_validation_fails(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
-        payload: dict[str, str],
+        payload: dict[str, object],
         reason: str,
     ):
         response = await client.post(
@@ -363,13 +370,15 @@ class TestGetCategories:
 
 
 class TestUpdateCategory:
+    @pytest.mark.parametrize("category_type", list(CategoryType))
     async def test_update_category_success(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
         created_category: CategoryData,
+        category_type: CategoryType,
     ):
-        payload = category_payload("Salary")
+        payload = category_payload("Salary", category_type=category_type)
 
         response = await client.put(
             f"{API_CATEGORIES}/{created_category['id']}",
@@ -382,8 +391,20 @@ class TestUpdateCategory:
         body = response.json()
         assert body["id"] == created_category["id"]
         assert body["name"] == payload["name"]
+        assert body["type"] == payload["type"]
         assert body["user_id"] == authenticated_user["user"]["id"]
         assert body["archived_at"] is None
+
+        categories_response = await client.get(
+            API_CATEGORIES, headers=authenticated_user["headers"]
+        )
+        assert categories_response.status_code == status.HTTP_200_OK
+        persisted_category = next(
+            category
+            for category in categories_response.json()["items"]
+            if category["id"] == created_category["id"]
+        )
+        assert persisted_category["type"] == payload["type"]
 
     @pytest.mark.parametrize(
         "name, reason",
@@ -454,7 +475,10 @@ class TestUpdateCategory:
             (category_payload(""), "empty_name"),
             (category_payload(" "), "blank_after_trim"),
             (category_payload("a" * 101), "too_long"),
-            ({}, "missing_name"),
+            ({"type": CategoryType.ANY.value}, "missing_name"),
+            ({"name": "Food"}, "missing_type"),
+            ({**category_payload(), "type": None}, "null_type"),
+            ({**category_payload(), "type": "UNKNOWN"}, "invalid_type"),
         ],
     )
     async def test_update_category_validation_fails(
@@ -462,7 +486,7 @@ class TestUpdateCategory:
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
         created_category: CategoryData,
-        payload: dict[str, str],
+        payload: dict[str, object],
         reason: str,
     ):
         response = await client.put(
