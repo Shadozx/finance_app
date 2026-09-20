@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.transaction import TransactionKind, TransactionType
+from app.models.enums import TransactionKind, TransactionType
 from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator, currency_code_validator
 
 

@@ -303,6 +303,82 @@ class TestGetCategories:
         assert any(cat["archived_at"] is None for cat in user_categories)
         assert any(cat["archived_at"] is not None for cat in user_categories)
 
+    @pytest.mark.parametrize(
+        "usable_for, excluded_type",
+        [
+            ("EXPENSE", CategoryType.INCOME),
+            ("INCOME", CategoryType.EXPENSE),
+        ],
+    )
+    async def test_get_categories_usable_for_keeps_any_and_drops_the_opposite(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        usable_for: str,
+        excluded_type: CategoryType,
+    ):
+        expected_names = {
+            name for name, category_type in DEFAULT_CATEGORIES if category_type is not excluded_type
+        }
+
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"usable_for": usable_for},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        categories = response.json()["items"]
+
+        assert {category["name"] for category in categories} == expected_names
+        assert all(category["type"] != excluded_type.value for category in categories)
+
+    async def test_get_categories_usable_for_applies_before_the_page_is_cut(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        usable_names = {
+            name
+            for name, category_type in DEFAULT_CATEGORIES
+            if category_type is not CategoryType.EXPENSE
+        }
+        limit = len(usable_names) + 1
+
+        # The whole set must not fit into the page: only the filter can make it fit.
+        assert limit < len(DEFAULT_CATEGORIES)
+
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"usable_for": "INCOME", "limit": limit},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        body = response.json()
+
+        assert {category["name"] for category in body["items"]} == usable_names
+        assert body["has_more"] is False
+
+    @pytest.mark.parametrize("usable_for", ["ANY", "wrong_type"])
+    async def test_get_categories_invalid_usable_for(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        usable_for: str,
+    ):
+        response = await client.get(
+            API_CATEGORIES,
+            headers=authenticated_user["headers"],
+            params={"usable_for": usable_for},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        assert "detail" in response.json()
+
     async def test_get_categories_pagination_envelope(
         self,
         client: AsyncClient,

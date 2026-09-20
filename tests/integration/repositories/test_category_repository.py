@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category, CategoryType, User
+from app.models import Category, CategoryType, TransactionType, User
 from app.repositories import CategoryRepository, UserRepository
 from app.schemas import CategoryStatus
 
@@ -36,6 +36,21 @@ async def categories_for_ordering(
             Category(type=CategoryType.ANY, name=name, user_id=user.id)
         )
         await category_repository.archive(category)
+
+
+@pytest.fixture
+async def categories_by_type(
+    category_repository: CategoryRepository,
+    user: User,
+):
+    typed_names = (
+        ("Food", CategoryType.EXPENSE),
+        ("Salary", CategoryType.INCOME),
+        ("Gifts", CategoryType.ANY),
+    )
+
+    for name, category_type in typed_names:
+        await category_repository.add(Category(type=category_type, name=name, user_id=user.id))
 
 
 class TestAdd:
@@ -158,6 +173,47 @@ class TestGetByUser:
 
         assert [category.name for category in user_categories] == expected_names
 
+    @pytest.mark.parametrize(
+        "usable_for, expected_names",
+        [
+            (TransactionType.EXPENSE, ["Food", "Gifts"]),
+            (TransactionType.INCOME, ["Gifts", "Salary"]),
+        ],
+    )
+    async def test_get_by_user_usable_for_keeps_any_and_drops_the_opposite(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_by_type,
+        usable_for: TransactionType,
+        expected_names: list[str],
+    ):
+        user_categories = await category_repository.get_by_user(user.id, usable_for=usable_for)
+
+        assert [category.name for category in user_categories] == expected_names
+
+    async def test_get_by_user_usable_for_applies_within_archived(
+        self,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_by_type,
+    ):
+        archived_expense = await category_repository.add(
+            Category(type=CategoryType.EXPENSE, name="Rent", user_id=user.id)
+        )
+        archived_income = await category_repository.add(
+            Category(type=CategoryType.INCOME, name="Bonus", user_id=user.id)
+        )
+
+        await category_repository.archive(archived_expense)
+        await category_repository.archive(archived_income)
+
+        user_categories = await category_repository.get_by_user(
+            user.id, status=CategoryStatus.ARCHIVED, usable_for=TransactionType.EXPENSE
+        )
+
+        assert [category.name for category in user_categories] == [archived_expense.name]
+
     async def test_get_by_user_pagination_does_not_repeat_or_skip(
         self,
         category_repository: CategoryRepository,
@@ -254,6 +310,33 @@ class TestGetByUser:
         assert len(categories) == 1
         assert categories[0].id == category.id
         assert categories[0].user_id == category.user_id
+
+    async def test_get_by_user_usable_for_returns_only_own_categories(
+        self,
+        test_session: AsyncSession,
+        category_repository: CategoryRepository,
+        user: User,
+        categories_by_type,
+    ):
+        other_user_repository = UserRepository(test_session)
+        other_user = await other_user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password="hashed",
+            )
+        )
+
+        await category_repository.add(
+            Category(type=CategoryType.EXPENSE, name="Other User Food", user_id=other_user.id)
+        )
+
+        user_categories = await category_repository.get_by_user(
+            user.id, usable_for=TransactionType.EXPENSE
+        )
+
+        assert [category.name for category in user_categories] == ["Food", "Gifts"]
+        assert all(category.user_id == user.id for category in user_categories)
 
     async def test_get_by_user_status_archived_returns_only_archived_categories(
         self,

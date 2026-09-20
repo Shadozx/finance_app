@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Category
+from app.models import USABLE_CATEGORY_TYPES, Category, TransactionType
 from app.schemas import CategoryStatus
 
 
@@ -22,6 +22,8 @@ class CategoryRepository:
         status: CategoryStatus = CategoryStatus.ACTIVE,
         limit: int = 200,
         offset: int = 0,
+        *,
+        usable_for: TransactionType | None = None,
     ) -> list[Category]:
         query = select(Category).where(Category.user_id == user_id)
 
@@ -30,6 +32,9 @@ class CategoryRepository:
 
         elif status == CategoryStatus.ARCHIVED:
             query = query.where(Category.archived_at.is_not(None))
+
+        if usable_for is not None:
+            query = query.where(Category.type.in_(USABLE_CATEGORY_TYPES[usable_for]))
 
         query = query.order_by(Category.name).offset(offset).limit(limit)
 

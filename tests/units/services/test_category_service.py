@@ -8,7 +8,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
 )
-from app.models import Category, CategoryType
+from app.models import Category, CategoryType, TransactionType
 from app.repositories import CategoryRepository
 from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate
 from app.services import CategoryService
@@ -219,6 +219,7 @@ class TestGetUserCategories:
             CategoryStatus.ACTIVE,
             limit + 1,
             offset,
+            usable_for=None,
         )
 
     async def test_get_user_empty_categories(
@@ -243,6 +244,31 @@ class TestGetUserCategories:
             CategoryStatus.ACTIVE,
             limit + 1,
             offset,
+            usable_for=None,
+        )
+
+    async def test_get_user_categories_passes_usable_for_to_repository(
+        self,
+        category_repo_mock: CategoryRepository,
+        category_service: CategoryService,
+    ):
+        user_id = 1
+        limit = 2
+        offset = 0
+        usable_for = TransactionType.EXPENSE
+
+        category_repo_mock.get_by_user.return_value = []
+
+        await category_service.get_user_categories(
+            user_id, limit=limit, offset=offset, usable_for=usable_for
+        )
+
+        category_repo_mock.get_by_user.assert_called_once_with(
+            user_id,
+            CategoryStatus.ACTIVE,
+            limit + 1,
+            offset,
+            usable_for=usable_for,
         )
 
     async def test_get_user_categories_reports_more_when_extra_row_returned(
@@ -273,6 +299,7 @@ class TestGetUserCategories:
             CategoryStatus.ACTIVE,
             limit + 1,
             offset,
+            usable_for=None,
         )
 
     async def test_get_user_categories_reports_no_more_on_last_page(

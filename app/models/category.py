@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -6,16 +5,11 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, UniqueConstrai
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core import Base
+from app.models.enums import CategoryType
 from app.models.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.models import User
-
-
-class CategoryType(str, enum.Enum):
-    EXPENSE = "EXPENSE"
-    INCOME = "INCOME"
-    ANY = "ANY"
 
 
 class Category(Base, TimestampMixin):

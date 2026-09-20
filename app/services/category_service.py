@@ -6,7 +6,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValueExistsException,
 )
-from app.models import Category
+from app.models import Category, TransactionType
 from app.repositories import CategoryRepository
 from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate, Page
 
@@ -46,8 +46,12 @@ class CategoryService:
         status: CategoryStatus = CategoryStatus.ACTIVE,
         limit: int = 200,
         offset: int = 0,
+        *,
+        usable_for: TransactionType | None = None,
     ) -> Page[CategoryResponse]:
-        rows = await self.category_repository.get_by_user(user_id, status, limit + 1, offset)
+        rows = await self.category_repository.get_by_user(
+            user_id, status, limit + 1, offset, usable_for=usable_for
+        )
 
         has_more = len(rows) > limit
         categories = rows[:limit]

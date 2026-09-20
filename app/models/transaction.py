@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -16,18 +15,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base
+from app.models.enums import TransactionKind, TransactionType
 from app.models.mixins import TimestampMixin
-
-
-class TransactionType(str, enum.Enum):
-    INCOME = "INCOME"
-    EXPENSE = "EXPENSE"
-
-
-class TransactionKind(str, enum.Enum):
-    REGULAR = "REGULAR"
-    ADJUSTMENT = "ADJUSTMENT"
-    TRANSFER = "TRANSFER"
 
 
 class Transaction(Base, TimestampMixin):

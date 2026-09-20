@@ -8,10 +8,10 @@ from app.core.exceptions import (
     NotFoundException,
 )
 from app.models import (
+    USABLE_CATEGORY_TYPES,
     Account,
     Budget,
     Category,
-    CategoryType,
     Currency,
     Transaction,
     TransactionTemplate,
@@ -82,8 +82,7 @@ async def validate_category(
 
     if (
         expected_type is not None
-        and existing_category.type != CategoryType.ANY
-        and existing_category.type.value != expected_type.value
+        and existing_category.type not in USABLE_CATEGORY_TYPES[expected_type]
     ):
         raise NotAllowedActionException("Category type is not compatible with this operation")
 

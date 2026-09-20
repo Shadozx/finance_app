@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.transaction import TransactionType
+from app.models.enums import TransactionType
 from app.schemas.validators import (
     MAX_DESCRIPTION_LENGTH,
     amount_validator,

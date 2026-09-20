@@ -3,7 +3,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.models.category import CategoryType
+from app.models.enums import CategoryType
 from app.schemas.validators import name_validator
 
 

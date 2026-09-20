@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_category_service, get_current_user
-from app.models import User
+from app.models import TransactionType, User
 from app.schemas import CategoryCreate, CategoryResponse, CategoryStatus, CategoryUpdate, Page
 from app.services import CategoryService
 
@@ -23,13 +23,14 @@ async def create_category(
 )
 async def get_user_categories(
     category_status: CategoryStatus = CategoryStatus.ACTIVE,
+    usable_for: TransactionType | None = None,
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     category_service: CategoryService = Depends(get_category_service),
 ):
     return await category_service.get_user_categories(
-        current_user.id, category_status, limit, offset
+        current_user.id, category_status, limit, offset, usable_for=usable_for
     )
 
 

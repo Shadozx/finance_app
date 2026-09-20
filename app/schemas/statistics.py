@@ -5,7 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, field_serializer, field_validator, model_validator
 
 from app.core import today
-from app.models.transaction import TransactionType
+from app.models.enums import TransactionType
 from app.schemas.validators import currency_code_validator, validate_date_range
 
 
