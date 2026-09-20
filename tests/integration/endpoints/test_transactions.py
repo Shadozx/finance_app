@@ -138,9 +138,7 @@ class TestCreateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
 
         response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
@@ -199,9 +197,7 @@ class TestCreateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         category_response = await client.put(
             f"/api/v1/categories/{category['id']}",
@@ -2230,9 +2226,7 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         created = await create_transaction(client, payload, headers)
         category_response = await client.put(
@@ -2302,9 +2296,7 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         created = await create_transaction(client, payload, headers)
         payload["type"] = "INCOME"
@@ -2378,9 +2370,7 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         original_payload = transaction_payload(
             currency_code=active_currency["code"], account_id=created_account["id"]

@@ -81,9 +81,7 @@ class TestCreateTransactionTemplate:
             amount=amount,
             currency_code=active_currency["code"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         category_response = await client.put(
             f"/api/v1/categories/{category['id']}",
@@ -1229,9 +1227,7 @@ class TestUpdateTransactionTemplate:
             template_type=category["type"],
             currency_code=active_currency["code"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         created = await create_transaction_template(client, payload, headers)
         new_name = "Renamed template"
@@ -1299,9 +1295,7 @@ class TestUpdateTransactionTemplate:
             amount=amount,
             currency_code=active_currency["code"],
             category_id=None,
-            splits=[
-                split_payload(category["id"], split_amount), split_payload(None, split_amount)
-            ],
+            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
         )
         created = await create_transaction_template(client, payload, headers)
         category_response = await client.put(
