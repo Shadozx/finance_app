@@ -1,3 +1,4 @@
+import enum
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -11,7 +12,7 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 from app.core import Base
-from app.models import CategoryType
+from app.models import CategoryType, TransactionKind, TransactionType
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 MIGRATIONS_DATABASE = "migrations_test"
@@ -155,6 +156,37 @@ class TestMigrations:
         await upgrade(migrations_engine, alembic_config)
 
         assert set(Base.metadata.tables) <= await table_names(migrations_engine)
+
+    @pytest.mark.parametrize(
+        "type_name, declared_enum",
+        [
+            ("categorytype", CategoryType),
+            ("transactiontype", TransactionType),
+            ("transactionkind", TransactionKind),
+        ],
+    )
+    async def test_enum_labels_and_their_order_match_models(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+        type_name: str,
+        declared_enum: type[enum.Enum],
+    ):
+        """`alembic check` compares tables and columns, never enum labels.
+
+        The order is part of the type: it decides how ORDER BY sorts such a column.
+        """
+        expected_labels = [member.name for member in declared_enum]
+        await upgrade(migrations_engine, alembic_config)
+
+        row = await fetch_row(
+            migrations_engine,
+            "SELECT array_agg(enumlabel::text ORDER BY enumsortorder) AS labels"
+            " FROM pg_enum JOIN pg_type ON pg_type.oid = pg_enum.enumtypid"
+            f" WHERE pg_type.typname = '{type_name}'",
+        )
+
+        assert row.labels == expected_labels
 
 
 class TestDataMigrations:
@@ -617,23 +649,6 @@ class TestDataMigrations:
         row = await fetch_row(migrations_engine, "SELECT type::text AS type FROM categories")
 
         assert row.type == expected_type
-
-    async def test_category_type_labels_and_order_match_model(
-        self,
-        migrations_engine: AsyncEngine,
-        alembic_config: Config,
-    ):
-        expected_labels = [member.name for member in CategoryType]
-        await upgrade(migrations_engine, alembic_config)
-
-        row = await fetch_row(
-            migrations_engine,
-            "SELECT array_agg(enumlabel::text ORDER BY enumsortorder) AS labels"
-            " FROM pg_enum JOIN pg_type ON pg_type.oid = pg_enum.enumtypid"
-            " WHERE pg_type.typname = 'categorytype'",
-        )
-
-        assert row.labels == expected_labels
 
     async def test_category_type_restores_each_category_from_history_after_downgrade(
         self,
