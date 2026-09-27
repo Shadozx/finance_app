@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
-from app.core.exceptions import AppException
+from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
 from app.schemas.error import ErrorItem, ErrorResponse
 
 logger = structlog.get_logger()
@@ -64,14 +64,18 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
 
 
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
-    return build_error_response(exc.status_code, exc.code, exc.message)
+    errors = [
+        ErrorItem(loc=["body", *error.loc], code=error.code, detail=error.detail)
+        for error in exc.errors
+    ]
+    return build_error_response(exc.status_code, exc.code, exc.message, errors=errors or None)
 
 
 async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     return build_error_response(
         422,
         ErrorCode.VALIDATION_FAILED,
-        "Request validation failed",
+        REQUEST_VALIDATION_FAILED_MESSAGE,
         errors=validation_error_items(exc.errors()),
     )
 

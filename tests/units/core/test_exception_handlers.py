@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException
 from structlog.testing import capture_logs
 
 from app.core.config import settings
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.exception_handlers import (
     app_exception_handler,
     global_exception_handler,
@@ -22,7 +22,14 @@ from app.core.exception_handlers import (
     integrity_error_handler,
     request_validation_handler,
 )
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import (
+    AppException,
+    AuthenticationException,
+    FieldError,
+    NotFoundException,
+    ValidationException,
+    ValueExistsException,
+)
 from app.main import app
 
 
@@ -44,6 +51,98 @@ async def test_app_exception_handler_inherits_status_and_code(http_request: Requ
         "code": ErrorCode.NOT_FOUND,
         "detail": detail,
     }
+
+
+async def test_app_exception_handler_loc_adds_body_prefix(http_request: Request):
+    detail = "Currency not found"
+    exception = NotFoundException(detail, loc=("currency_code",))
+
+    response = await app_exception_handler(http_request, exception)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert json.loads(response.body) == {
+        "status": response.status_code,
+        "code": ErrorCode.NOT_FOUND,
+        "detail": detail,
+        "errors": [
+            {"loc": ["body", "currency_code"], "code": ErrorCode.NOT_FOUND, "detail": detail}
+        ],
+    }
+
+
+async def test_app_exception_handler_errors_preserves_codes(http_request: Request):
+    field_errors = [
+        FieldError(("to_amount",), FieldErrorCode.MUST_MATCH, "Amounts must match"),
+        FieldError(("splits", 0, "amount"), "greater_than", "Amount must be positive"),
+    ]
+    exception = ValidationException(errors=field_errors)
+
+    response = await app_exception_handler(http_request, exception)
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert json.loads(response.body) == {
+        "status": response.status_code,
+        "code": ErrorCode.VALIDATION_FAILED,
+        "detail": "Request validation failed",
+        "errors": [
+            {
+                "loc": ["body", "to_amount"],
+                "code": FieldErrorCode.MUST_MATCH,
+                "detail": field_errors[0].detail,
+            },
+            {
+                "loc": ["body", "splits", 0, "amount"],
+                "code": "greater_than",
+                "detail": field_errors[1].detail,
+            },
+        ],
+    }
+
+
+async def test_app_exception_handler_empty_loc_points_to_body(http_request: Request):
+    detail = "Budget already exists"
+    exception = ValueExistsException(detail, loc=())
+
+    response = await app_exception_handler(http_request, exception)
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert json.loads(response.body) == {
+        "status": response.status_code,
+        "code": ErrorCode.ALREADY_EXISTS,
+        "detail": detail,
+        "errors": [{"loc": ["body"], "code": ErrorCode.ALREADY_EXISTS, "detail": detail}],
+    }
+
+
+@pytest.mark.parametrize("loc", [("name",), ()])
+def test_app_exception_rejects_loc_and_errors_together(loc: tuple[str | int, ...]):
+    detail = "Conflicting arguments"
+
+    with pytest.raises(TypeError, match="loc and errors cannot be provided together"):
+        AppException(detail, loc=loc, errors=[])
+
+
+@pytest.mark.parametrize(
+    "exception_type, expected_detail",
+    [
+        (NotFoundException, "Resource not found"),
+        (ValueExistsException, "Value already exists"),
+        (AuthenticationException, "Authentication failed"),
+        (ValidationException, "Request validation failed"),
+    ],
+)
+async def test_app_exception_handler_uses_default_message(
+    http_request: Request, exception_type: type[AppException], expected_detail: str
+):
+    exception = exception_type(loc=("name",))
+
+    response = await app_exception_handler(http_request, exception)
+    body = json.loads(response.body)
+
+    assert body["detail"] == expected_detail
+    assert body["errors"] == [
+        {"loc": ["body", "name"], "code": exception.code, "detail": expected_detail}
+    ]
 
 
 async def test_request_validation_handler_preserves_locations_and_omits_inputs(
@@ -190,6 +289,7 @@ def test_openapi_uses_error_response_for_validation():
                 assert "422" not in responses
                 continue
             response = responses["422"]
+            assert response["description"] == "Request validation failed"
             assert set(response["content"]) == {"application/problem+json"}
             assert response["content"]["application/problem+json"]["schema"] == {
                 "$ref": "#/components/schemas/ErrorResponse"

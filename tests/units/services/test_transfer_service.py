@@ -192,11 +192,12 @@ class TestCreateTransfer:
     ):
         existing_usd_account.currency_code = existing_account.currency_code
 
-        with pytest.raises(
-            ValidationException,
-            match="Transfer between accounts in the same currency must have equal amounts",
-        ):
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
             await transfer_service.create_transfer(data, existing_account.user_id)
+
+        assert exc_info.value.errors[0].detail == (
+            "Transfer between accounts in the same currency must have equal amounts"
+        )
 
         transaction_repo_mock.add.assert_not_called()
 

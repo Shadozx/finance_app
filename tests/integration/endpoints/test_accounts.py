@@ -2,8 +2,11 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode
 from tests.integration.endpoints.helpers import (
     account_payload,
+    assert_field_error,
+    assert_no_field_errors,
     create_account,
     create_transaction,
     transaction_payload,
@@ -116,7 +119,7 @@ class TestCreateAccount:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_create_account_with_archived_name_conflicts(
         self,
@@ -692,7 +695,7 @@ class TestGetAccountById:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_no_field_errors(response, ErrorCode.NOT_FOUND)
 
     async def test_get_account_by_id_other_user_not_found(
         self,
@@ -876,7 +879,7 @@ class TestUpdateAccount:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_update_account_not_found(
         self,
@@ -1008,7 +1011,7 @@ class TestArchiveAccount:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_no_field_errors(response, ErrorCode.ALREADY_IN_STATE)
 
     async def test_archive_account_not_found(
         self,
@@ -1103,7 +1106,7 @@ class TestRestoreAccount:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_no_field_errors(response, ErrorCode.ALREADY_IN_STATE)
 
     async def test_restore_account_not_found(
         self,
@@ -1347,7 +1350,7 @@ class TestReconcileAccount:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_no_field_errors(response, ErrorCode.ARCHIVED)
 
     async def test_reconcile_account_other_user_not_found(
         self,

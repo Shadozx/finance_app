@@ -5,9 +5,11 @@ from fastapi import status
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import Currency
 from tests.integration.endpoints.helpers import (
     account_payload,
+    assert_field_error,
     create_account,
     create_transfer,
     transfer_payload,
@@ -173,7 +175,14 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["detail"] == "Request validation failed"
+        assert_field_error(
+            response,
+            ErrorCode.VALIDATION_FAILED,
+            ["body", "to_amount"],
+            FieldErrorCode.MUST_MATCH,
+            detail="Transfer between accounts in the same currency must have equal amounts",
+        )
 
     async def test_create_transfer_with_archived_account_fails(
         self,
@@ -194,7 +203,7 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "to_account_id"])
 
     async def test_create_transfer_from_archived_account_fails(
         self,
@@ -215,7 +224,7 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "from_account_id"])
 
     async def test_create_transfer_with_other_user_account_not_found(
         self,
@@ -243,7 +252,7 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "to_account_id"])
 
     async def test_create_transfer_with_unknown_account_fails(
         self,
@@ -388,7 +397,35 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.INACTIVE, ["body", "to_account_id"])
+
+    async def test_create_transfer_from_deactivated_currency_fails(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        uah_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        currency = await test_session.get(Currency, active_currency["code"])
+        currency.is_active = False
+        await test_session.commit()
+
+        payload = transfer_payload(
+            from_account_id=created_account["id"],
+            to_account_id=uah_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSFERS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        assert_field_error(response, ErrorCode.INACTIVE, ["body", "from_account_id"])
 
     async def test_create_transfer_without_token(
         self,
@@ -685,7 +722,14 @@ class TestUpdateTransfer:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["detail"] == "Request validation failed"
+        assert_field_error(
+            response,
+            ErrorCode.VALIDATION_FAILED,
+            ["body", "to_amount"],
+            FieldErrorCode.MUST_MATCH,
+            detail="Transfer between accounts in the same currency must have equal amounts",
+        )
 
     async def test_update_transfer_without_token(
         self,

@@ -2,6 +2,8 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode
+from tests.integration.endpoints.helpers import assert_field_error
 from tests.integration.endpoints.types import AuthenticatedUser
 
 API_USERS_ME = "/api/v1/users/me"
@@ -90,7 +92,7 @@ class TestUpdateUsername:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "new_username"])
 
     @pytest.mark.parametrize(
         "payload, reason",
@@ -225,7 +227,7 @@ class TestUpdatePassword:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.INVALID_CREDENTIALS, ["body", "current_password"])
 
     async def test_update_password_same_as_current(
         self, client: AsyncClient, authenticated_user: AuthenticatedUser

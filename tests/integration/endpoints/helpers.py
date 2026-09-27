@@ -1,6 +1,7 @@
 from fastapi import status
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 
+from app.core.error_codes import ErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.types import (
     AccountData,
@@ -9,6 +10,34 @@ from tests.integration.endpoints.types import (
     TransactionTemplateData,
     TransferData,
 )
+
+
+def assert_field_error(
+    response: Response,
+    code: ErrorCode,
+    loc: list[str | int],
+    item_code: str | None = None,
+    *,
+    detail: str | None = None,
+) -> None:
+    body = response.json()
+
+    assert body["code"] == code
+    assert body["errors"] == [
+        {
+            "loc": loc,
+            "code": code if item_code is None else item_code,
+            "detail": body["detail"] if detail is None else detail,
+        }
+    ]
+
+
+def assert_no_field_errors(response: Response, code: ErrorCode) -> None:
+    body = response.json()
+
+    assert body["code"] == code
+    assert "errors" not in body
+    assert isinstance(body["detail"], str)
 
 
 def register_payload(

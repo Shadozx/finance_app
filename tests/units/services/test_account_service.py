@@ -82,6 +82,7 @@ class TestCreateAccount:
         validate_currency_spy.assert_called_once_with(
             account_service.currency_repository,
             data.currency_code,
+            loc=("currency_code",),
         )
 
         account_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -336,6 +337,7 @@ class TestGetAccount:
             existing_account.user_id,
             existing_account.id,
             allow_archived=True,
+            loc=None,
         )
 
         transaction_repo_mock.get_balance.assert_called_once_with(existing_account.id)
@@ -618,6 +620,7 @@ class TestUpdateAccount:
             user_id,
             existing_account.id,
             allow_archived=True,
+            loc=None,
         )
 
         account_repo_mock.update.assert_called_once()

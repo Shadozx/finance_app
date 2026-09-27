@@ -9,7 +9,12 @@ from app.core.config import settings
 from app.core.error_codes import ErrorCode
 from app.main import app
 from app.repositories import CategoryRepository
-from tests.integration.endpoints.helpers import category_payload, create_category, register_payload
+from tests.integration.endpoints.helpers import (
+    assert_field_error,
+    category_payload,
+    create_category,
+    register_payload,
+)
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
 
 API_CATEGORIES = "/api/v1/categories"
@@ -69,7 +74,13 @@ class TestErrorHandling:
 
         response = await client.post(API_CATEGORIES, json=payload, headers=headers)
 
-        assert_error_response(response, status.HTTP_409_CONFLICT, ErrorCode.ALREADY_EXISTS)
+        assert_error_response(
+            response,
+            status.HTTP_409_CONFLICT,
+            ErrorCode.ALREADY_EXISTS,
+            expected_keys=("status", "code", "detail", "errors"),
+        )
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_request_validation_response_format(self, client: AsyncClient):
         short_password = "short"

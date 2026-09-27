@@ -41,9 +41,11 @@ class AccountService:
         user_id: int,
     ) -> AccountResponse:
         if await self.account_repository.get_by_user_and_name(user_id, data.name):
-            raise ValueExistsException("Account with this name exists")
+            raise ValueExistsException("Account with this name exists", loc=("name",))
 
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code, loc=("currency_code",)
+        )
 
         new_account = Account(
             name=data.name,
@@ -83,6 +85,7 @@ class AccountService:
             user_id,
             account_id,
             allow_archived=True,
+            loc=None,
         )
 
         balance = await self.transaction_repository.get_balance(account_id)
@@ -124,12 +127,13 @@ class AccountService:
             user_id,
             account_id,
             allow_archived=True,
+            loc=None,
         )
 
         duplicate = await self.account_repository.get_by_user_and_name(user_id, data.name)
 
         if duplicate and duplicate.id != account_id:
-            raise ValueExistsException("Account with this name exists")
+            raise ValueExistsException("Account with this name exists", loc=("name",))
 
         existing_account.name = data.name
 
@@ -153,6 +157,7 @@ class AccountService:
             self.account_repository,
             user_id,
             account_id,
+            loc=None,
         )
 
         current_balance = await self.transaction_repository.get_balance(account_id)
@@ -213,6 +218,7 @@ class AccountService:
             user_id,
             account_id,
             allow_archived=True,
+            loc=None,
         )
 
         if existing_account.archived_at:
@@ -234,6 +240,7 @@ class AccountService:
             user_id,
             account_id,
             allow_archived=True,
+            loc=None,
         )
 
         if not existing_account.archived_at:

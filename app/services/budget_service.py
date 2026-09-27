@@ -98,16 +98,19 @@ class BudgetService:
             user_id, data.category_id, data.currency_code, data.start_date, data.end_date
         ):
             raise ValueExistsException(
-                "Budget for this category, currency and period already exists"
+                "Budget for this category, currency and period already exists", loc=()
             )
 
         await validators.validate_category(
             self.category_repository,
             user_id,
             data.category_id,
+            loc=("category_id",),
             expected_type=TransactionType.EXPENSE,
         )
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code, loc=("currency_code",)
+        )
 
         new_budget = Budget(
             name=data.name,
@@ -138,7 +141,7 @@ class BudgetService:
         )
         if duplicate and duplicate.id != budget_id:
             raise ValueExistsException(
-                "Budget for this category, currency and period already exists"
+                "Budget for this category, currency and period already exists", loc=()
             )
 
         existing_budget = await validators.validate_budget(
@@ -153,6 +156,7 @@ class BudgetService:
             user_id,
             data.category_id,
             allow_archived=not category_changed,
+            loc=("category_id",),
             expected_type=TransactionType.EXPENSE if category_changed else None,
         )
 
@@ -160,6 +164,7 @@ class BudgetService:
             self.currency_repository,
             data.currency_code,
             allow_inactive=not currency_changed,
+            loc=("currency_code",),
         )
 
         existing_budget.name = data.name

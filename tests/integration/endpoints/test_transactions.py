@@ -4,12 +4,15 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from app.schemas.pagination import MAX_RECORD_PAGE_SIZE
 from app.schemas.validators import MAX_DATE_RANGE_DAYS
 from tests.integration.endpoints.helpers import (
     account_payload,
     archive_category,
+    assert_field_error,
+    assert_no_field_errors,
     category_payload,
     create_account,
     create_category,
@@ -181,6 +184,8 @@ class TestCreateTransaction:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
 
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "category_id"])
+
     async def test_create_transaction_splits_opposite_category_type_fails(
         self,
         client: AsyncClient,
@@ -212,6 +217,8 @@ class TestCreateTransaction:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits"])
 
     async def test_create_transaction_success(
         self,
@@ -416,7 +423,14 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["detail"] == "Request validation failed"
+        assert_field_error(
+            response,
+            ErrorCode.VALIDATION_FAILED,
+            ["body", "settled_amount"],
+            FieldErrorCode.NOT_ALLOWED,
+            detail="Amount charged to the account is only needed when currencies differ",
+        )
 
     async def test_create_transaction_with_other_user_category_not_found(
         self,
@@ -470,7 +484,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "category_id"])
 
     async def test_create_transaction_with_unknown_category_fails(
         self,
@@ -490,7 +504,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "category_id"])
 
     async def test_create_transaction_with_inactive_currency_fails(
         self,
@@ -510,7 +524,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.INACTIVE, ["body", "currency_code"])
 
     async def test_create_transaction_with_unknown_currency_fails(
         self,
@@ -527,7 +541,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "currency_code"])
 
     async def test_create_transaction_currency_code_normalized(
         self,
@@ -598,7 +612,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "account_id"])
 
     async def test_create_transaction_with_archived_account_fails(
         self,
@@ -619,7 +633,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "account_id"])
 
     async def test_create_transaction_different_currency_without_settled_amount(
         self,
@@ -640,7 +654,14 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["detail"] == "Request validation failed"
+        assert_field_error(
+            response,
+            ErrorCode.VALIDATION_FAILED,
+            ["body", "settled_amount"],
+            FieldErrorCode.MISSING,
+            detail="Amount charged to the account is required, in the account currency",
+        )
 
     @pytest.mark.parametrize(
         "payload_update, reason",
@@ -1048,7 +1069,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits"])
 
     async def test_create_transaction_splits_with_unknown_category_fails(
         self,
@@ -1075,7 +1096,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "splits"])
 
     async def test_create_transaction_without_token(
         self,
@@ -3043,7 +3064,7 @@ class TestUpdateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_no_field_errors(response, ErrorCode.PARTIAL_UPDATE_NOT_ALLOWED)
 
     async def test_update_transaction_replaces_splits_success(
         self,

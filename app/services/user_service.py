@@ -31,10 +31,10 @@ class UserService:
 
     async def register_user(self, user: UserCreate) -> UserResponse:
         if await self.user_repository.get_by_email(user.email):
-            raise ValueExistsException("User with this email already exists")
+            raise ValueExistsException("User with this email already exists", loc=("email",))
 
         if await self.user_repository.get_by_username(user.username):
-            raise ValueExistsException("User with this username already exists")
+            raise ValueExistsException("User with this username already exists", loc=("username",))
 
         new_user = User(
             username=user.username, email=user.email, hashed_password=hash_password(user.password)
@@ -80,7 +80,7 @@ class UserService:
         if duplicate_username_user and duplicate_username_user.id != user_id:
             logger.info("username_update_failed", user_id=user_id, new_username=data.new_username)
 
-            raise ValueExistsException("Username is already taken")
+            raise ValueExistsException("Username is already taken", loc=("new_username",))
 
         existing_user.username = data.new_username
         updated_user = await self.user_repository.update(existing_user)
@@ -103,7 +103,9 @@ class UserService:
             logger.warning("password_update_failed", user_id=user_id)
 
             raise AuthenticationException(
-                "Current password is incorrect", code=ErrorCode.INVALID_CREDENTIALS
+                "Current password is incorrect",
+                code=ErrorCode.INVALID_CREDENTIALS,
+                loc=("current_password",),
             )
 
         existing_user.hashed_password = hash_password(data.new_password)

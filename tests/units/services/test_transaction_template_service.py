@@ -88,10 +88,13 @@ class TestCreateTemplate:
             transaction_template_service.category_repository,
             user_id,
             existing_category.id,
+            loc=("category_id",),
             expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
-            transaction_template_service.currency_repository, existing_currency.code
+            transaction_template_service.currency_repository,
+            existing_currency.code,
+            loc=("currency_code",),
         )
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -455,12 +458,14 @@ class TestUpdateTemplate:
             user_id,
             existing_category.id,
             allow_archived=False,
+            loc=("category_id",),
             expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
             transaction_template_service.currency_repository,
             existing_currency.code,
             allow_inactive=True,
+            loc=("currency_code",),
         )
 
         transaction_template_repo_mock.get_by_user_and_name.assert_called_once_with(
@@ -671,6 +676,7 @@ class TestUpdateTemplate:
             user_id,
             data.category_id,
             allow_archived=False,
+            loc=("category_id",),
             expected_type=data.type,
         )
 
@@ -716,6 +722,7 @@ class TestUpdateTemplate:
             transaction_template_service.currency_repository,
             data.currency_code,
             allow_inactive=True,
+            loc=("currency_code",),
         )
 
         transaction_template_repo_mock.update.assert_called_once()

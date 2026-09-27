@@ -4,7 +4,8 @@ from uuid import UUID, uuid4
 import structlog
 
 from app.core import UnitOfWork
-from app.core.exceptions import NotFoundException, ValidationException
+from app.core.error_codes import FieldErrorCode
+from app.core.exceptions import FieldError, NotFoundException, ValidationException
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import TransferCreate, TransferResponse, TransferUpdate
@@ -32,15 +33,19 @@ class TransferService:
         user_id: int,
     ) -> TransferResponse:
         from_account = await validators.validate_account(
-            self.account_repository, user_id, data.from_account_id
+            self.account_repository, user_id, data.from_account_id, loc=("from_account_id",)
         )
 
         to_account = await validators.validate_account(
-            self.account_repository, user_id, data.to_account_id
+            self.account_repository, user_id, data.to_account_id, loc=("to_account_id",)
         )
 
-        await validators.validate_currency(self.currency_repository, from_account.currency_code)
-        await validators.validate_currency(self.currency_repository, to_account.currency_code)
+        await validators.validate_currency(
+            self.currency_repository, from_account.currency_code, loc=("from_account_id",)
+        )
+        await validators.validate_currency(
+            self.currency_repository, to_account.currency_code, loc=("to_account_id",)
+        )
 
         self._validate_amounts(data, from_account, to_account)
 
@@ -96,11 +101,11 @@ class TransferService:
         from_side, to_side = await self._get_sides(transfer_group_id, user_id)
 
         from_account = await validators.validate_account(
-            self.account_repository, user_id, from_side.account_id, allow_archived=True
+            self.account_repository, user_id, from_side.account_id, allow_archived=True, loc=None
         )
 
         to_account = await validators.validate_account(
-            self.account_repository, user_id, to_side.account_id, allow_archived=True
+            self.account_repository, user_id, to_side.account_id, allow_archived=True, loc=None
         )
 
         return self._to_response(transfer_group_id, from_side, to_side, from_account, to_account)
@@ -120,6 +125,7 @@ class TransferService:
             user_id,
             data.from_account_id,
             allow_archived=data.from_account_id in current_account_ids,
+            loc=("from_account_id",),
         )
 
         to_account = await validators.validate_account(
@@ -127,18 +133,21 @@ class TransferService:
             user_id,
             data.to_account_id,
             allow_archived=data.to_account_id in current_account_ids,
+            loc=("to_account_id",),
         )
 
         await validators.validate_currency(
             self.currency_repository,
             from_account.currency_code,
             allow_inactive=data.from_account_id in current_account_ids,
+            loc=("from_account_id",),
         )
 
         await validators.validate_currency(
             self.currency_repository,
             to_account.currency_code,
             allow_inactive=data.to_account_id in current_account_ids,
+            loc=("to_account_id",),
         )
 
         self._validate_amounts(data, from_account, to_account)
@@ -205,7 +214,13 @@ class TransferService:
 
         if data.from_amount != data.to_amount:
             raise ValidationException(
-                "Transfer between accounts in the same currency must have equal amounts"
+                errors=[
+                    FieldError(
+                        loc=("to_amount",),
+                        code=FieldErrorCode.MUST_MATCH,
+                        detail="Transfer between accounts in the same currency must have equal amounts",
+                    )
+                ],
             )
 
     @staticmethod

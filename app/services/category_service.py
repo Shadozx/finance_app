@@ -25,7 +25,7 @@ class CategoryService:
         user_id: int,
     ) -> CategoryResponse:
         if await self.category_repository.get_by_user_and_name(user_id, data.name):
-            raise ValueExistsException("Category with this name exists")
+            raise ValueExistsException("Category with this name exists", loc=("name",))
 
         new_category = Category(
             name=data.name,
@@ -85,7 +85,7 @@ class CategoryService:
         duplicate = await self.category_repository.get_by_user_and_name(user_id, data.name)
 
         if duplicate and duplicate.id != category_id:
-            raise ValueExistsException("Category with this name exists")
+            raise ValueExistsException("Category with this name exists", loc=("name",))
 
         existing_category.name = data.name
         existing_category.type = data.type

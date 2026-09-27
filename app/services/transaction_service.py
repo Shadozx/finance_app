@@ -46,7 +46,11 @@ class TransactionService:
         self, data: TransactionCreate, user_id: int
     ) -> TransactionResponse:
         await validators.validate_category(
-            self.category_repository, user_id, data.category_id, expected_type=data.type
+            self.category_repository,
+            user_id,
+            data.category_id,
+            loc=("category_id",),
+            expected_type=data.type,
         )
 
         if data.splits is not None:
@@ -56,13 +60,19 @@ class TransactionService:
 
             for category_id in split_category_ids:
                 await validators.validate_category(
-                    self.category_repository, user_id, category_id, expected_type=data.type
+                    self.category_repository,
+                    user_id,
+                    category_id,
+                    loc=("splits",),
+                    expected_type=data.type,
                 )
 
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code, loc=("currency_code",)
+        )
 
         account = await validators.validate_account(
-            self.account_repository, user_id, data.account_id
+            self.account_repository, user_id, data.account_id, loc=("account_id",)
         )
 
         settled_amount = validators.resolve_settled_amount(
@@ -204,6 +214,7 @@ class TransactionService:
             user_id,
             data.category_id,
             allow_archived=not category_changed,
+            loc=("category_id",),
             expected_type=data.type if category_changed or type_changed else None,
         )
 
@@ -225,6 +236,7 @@ class TransactionService:
                     user_id,
                     category_id,
                     allow_archived=category_id in old_category_ids,
+                    loc=("splits",),
                     expected_type=(
                         data.type if category_id not in old_category_ids or type_changed else None
                     ),
@@ -234,6 +246,7 @@ class TransactionService:
             self.currency_repository,
             data.currency_code,
             allow_inactive=not currency_changed,
+            loc=("currency_code",),
         )
 
         account = await validators.validate_account(
@@ -241,6 +254,7 @@ class TransactionService:
             user_id,
             data.account_id,
             allow_archived=not account_changed,
+            loc=("account_id",),
         )
 
         settled_amount = validators.resolve_settled_amount(

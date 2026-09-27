@@ -27,7 +27,7 @@ from app.core.exception_handlers import (
     integrity_error_handler,
     request_validation_handler,
 )
-from app.core.exceptions import AppException
+from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
 from app.core.logging_config import setup_logging
 from app.core.middleware import RequestIDMiddleware
 from app.core.openapi import configure_openapi
@@ -45,7 +45,7 @@ app = FastAPI(
     responses={
         422: {
             "model": ErrorResponse,
-            "description": "Request validation failed",
+            "description": REQUEST_VALIDATION_FAILED_MESSAGE,
             "content": {
                 "application/problem+json": {
                     "schema": {"$ref": "#/components/schemas/ErrorResponse"}

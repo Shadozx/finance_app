@@ -67,6 +67,7 @@ class TestValidateCategory:
             category_repo_mock,
             existing_category.user_id,
             existing_category.id,
+            loc=("category_id",),
             expected_type=expected_type,
         )
 
@@ -103,6 +104,7 @@ class TestValidateCategory:
                 category_repo_mock,
                 existing_category.user_id,
                 existing_category.id,
+                loc=("category_id",),
                 expected_type=expected_type,
             )
 
@@ -120,7 +122,10 @@ class TestValidateCategory:
         category_repo_mock.get_by_id.return_value = existing_category
 
         result = await validate_category(
-            category_repo_mock, existing_category.user_id, existing_category.id
+            category_repo_mock,
+            existing_category.user_id,
+            existing_category.id,
+            loc=("category_id",),
         )
 
         assert result is existing_category
@@ -146,7 +151,7 @@ class TestValidateCategory:
 
         category_repo_mock.get_by_id.return_value = None
 
-        result = await validate_category(category_repo_mock, 1, None)
+        result = await validate_category(category_repo_mock, 1, None, loc=("category_id",))
 
         assert result is None
 
@@ -166,7 +171,7 @@ class TestValidateCategory:
         category_repo_mock.get_by_id.return_value = None
 
         with pytest.raises(NotFoundException, match="Category not found"):
-            await validate_category(category_repo_mock, 1, wrong_category_id)
+            await validate_category(category_repo_mock, 1, wrong_category_id, loc=("category_id",))
 
         category_repo_mock.get_by_id.assert_called_once_with(wrong_category_id)
 
@@ -185,7 +190,9 @@ class TestValidateCategory:
         wrong_user_id = existing_category.user_id + 1
 
         with pytest.raises(NotFoundException, match="Category not found"):
-            await validate_category(category_repo_mock, wrong_user_id, existing_category.id)
+            await validate_category(
+                category_repo_mock, wrong_user_id, existing_category.id, loc=("category_id",)
+            )
 
         category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
 
@@ -205,7 +212,9 @@ class TestValidateCategory:
 
         with capture_logs() as logs:
             with pytest.raises(NotFoundException):
-                await validate_category(category_repo_mock, wrong_user_id, existing_category.id)
+                await validate_category(
+                    category_repo_mock, wrong_user_id, existing_category.id, loc=("category_id",)
+                )
 
         assert [log["event"] for log in logs] == ["category_permission_denied"]
 
@@ -225,7 +234,9 @@ class TestValidateCategory:
 
         with capture_logs() as logs:
             with pytest.raises(NotFoundException):
-                await validate_category(category_repo_mock, 1, wrong_category_id)
+                await validate_category(
+                    category_repo_mock, 1, wrong_category_id, loc=("category_id",)
+                )
 
         assert logs == []
 
@@ -245,7 +256,10 @@ class TestValidateCategory:
             NotAllowedActionException, match="Archived category is not allowed to use"
         ):
             await validate_category(
-                category_repo_mock, existing_category.user_id, existing_category.id
+                category_repo_mock,
+                existing_category.user_id,
+                existing_category.id,
+                loc=("category_id",),
             )
 
         category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
@@ -262,7 +276,9 @@ class TestValidateCurrency:
         """
         currency_repo_mock.get_by_code.return_value = existing_currency
 
-        result = await validate_currency(currency_repo_mock, existing_currency.code)
+        result = await validate_currency(
+            currency_repo_mock, existing_currency.code, loc=("currency_code",)
+        )
 
         assert result is existing_currency
 
@@ -291,7 +307,7 @@ class TestValidateCurrency:
         wrong_currency_code = "UAH"
 
         with pytest.raises(NotFoundException, match="Currency not found"):
-            await validate_currency(currency_repo_mock, wrong_currency_code)
+            await validate_currency(currency_repo_mock, wrong_currency_code, loc=("currency_code",))
 
         currency_repo_mock.get_by_code.assert_called_once_with(wrong_currency_code)
 
@@ -308,7 +324,9 @@ class TestValidateCurrency:
         currency_repo_mock.get_by_code.return_value = existing_currency
 
         with pytest.raises(NotAllowedActionException, match="Currency is not active"):
-            await validate_currency(currency_repo_mock, existing_currency.code)
+            await validate_currency(
+                currency_repo_mock, existing_currency.code, loc=("currency_code",)
+            )
 
         currency_repo_mock.get_by_code.assert_called_once_with(existing_currency.code)
 
@@ -577,16 +595,17 @@ class TestResolveSettledAmount:
         WHEN: resolve_settled_amount called
         THEN: ValidationException raised
         """
-        with pytest.raises(
-            ValidationException,
-            match="Amount charged to the account is only needed when currencies differ",
-        ):
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
             resolve_settled_amount(
                 existing_account,
                 existing_account.currency_code,
                 Decimal("200.00"),
                 Decimal("1050.00"),
             )
+
+        assert exc_info.value.errors[0].detail == (
+            "Amount charged to the account is only needed when currencies differ"
+        )
 
     def test_resolve_settled_amount_different_currency_without_settled_amount(
         self,
@@ -598,13 +617,14 @@ class TestResolveSettledAmount:
         WHEN: resolve_settled_amount called
         THEN: ValidationException raised
         """
-        with pytest.raises(
-            ValidationException,
-            match="Amount charged to the account is required, in the account currency",
-        ):
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
             resolve_settled_amount(
                 existing_account, existing_usd_currency.code, Decimal("20.00"), None
             )
+
+        assert exc_info.value.errors[0].detail == (
+            "Amount charged to the account is required, in the account currency"
+        )
 
 
 class TestResolveSplits:

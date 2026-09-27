@@ -132,11 +132,13 @@ class TestCreateBudget:
             budget_service.category_repository,
             user_id,
             existing_category.id,
+            loc=("category_id",),
             expected_type=TransactionType.EXPENSE,
         )
         validate_currency_spy.assert_called_once_with(
             budget_service.currency_repository,
             existing_currency.code,
+            loc=("currency_code",),
         )
 
         budget_repo_mock.find_same_budget.assert_called_once_with(
@@ -295,12 +297,14 @@ class TestUpdateBudget:
             user_id,
             existing_category.id,
             allow_archived=True,
+            loc=("category_id",),
             expected_type=None,
         )
         validate_currency_spy.assert_called_once_with(
             budget_service.currency_repository,
             existing_currency.code,
             allow_inactive=True,
+            loc=("currency_code",),
         )
 
         budget_repo_mock.find_same_budget.assert_called_once_with(
@@ -438,6 +442,7 @@ class TestUpdateBudget:
             existing_budget.user_id,
             data.category_id,
             allow_archived=True,
+            loc=("category_id",),
             expected_type=None,
         )
 
@@ -481,6 +486,7 @@ class TestUpdateBudget:
             budget_service.currency_repository,
             data.currency_code,
             allow_inactive=True,
+            loc=("currency_code",),
         )
 
         budget_repo_mock.update.assert_called_once()

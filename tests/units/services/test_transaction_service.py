@@ -278,14 +278,18 @@ class TestCreateTransaction:
             transaction_service.category_repository,
             user_id,
             existing_category.id,
+            loc=("category_id",),
             expected_type=data.type,
         )
         validate_currency_spy.assert_called_once_with(
-            transaction_service.currency_repository, existing_currency.code
+            transaction_service.currency_repository, existing_currency.code, loc=("currency_code",)
         )
 
         validate_account_spy.assert_called_once_with(
-            transaction_service.account_repository, user_id, existing_account.id
+            transaction_service.account_repository,
+            user_id,
+            existing_account.id,
+            loc=("account_id",),
         )
 
         resolve_settled_amount_spy.assert_called_once_with(
@@ -406,11 +410,12 @@ class TestCreateTransaction:
         currency_repo_mock.get_by_code.return_value = existing_usd_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
-        with pytest.raises(
-            ValidationException,
-            match="Amount charged to the account is required, in the account currency",
-        ):
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
             await transaction_service.create_transaction(data, existing_account.user_id)
+
+        assert exc_info.value.errors[0].detail == (
+            "Amount charged to the account is required, in the account currency"
+        )
 
         transaction_repo_mock.add.assert_not_called()
 
@@ -546,11 +551,14 @@ class TestCreateTransaction:
         assert category_repo_mock.get_by_id.call_count == 2
 
         validate_currency_spy.assert_called_once_with(
-            transaction_service.currency_repository, existing_currency.code
+            transaction_service.currency_repository, existing_currency.code, loc=("currency_code",)
         )
 
         validate_account_spy.assert_called_once_with(
-            transaction_service.account_repository, user_id, existing_account.id
+            transaction_service.account_repository,
+            user_id,
+            existing_account.id,
+            loc=("account_id",),
         )
 
         resolve_settled_amount_spy.assert_called_once_with(
@@ -1097,11 +1105,15 @@ class TestUpdateTransaction:
             user_id,
             existing_category.id,
             allow_archived=False,
+            loc=("category_id",),
             expected_type=data.type,
         )
 
         validate_currency_spy.assert_called_once_with(
-            transaction_service.currency_repository, data.currency_code, allow_inactive=True
+            transaction_service.currency_repository,
+            data.currency_code,
+            allow_inactive=True,
+            loc=("currency_code",),
         )
 
         validate_account_spy.assert_called_once_with(
@@ -1109,6 +1121,7 @@ class TestUpdateTransaction:
             user_id,
             existing_account.id,
             allow_archived=True,
+            loc=("account_id",),
         )
 
         resolve_settled_amount_spy.assert_called_once_with(
@@ -1298,15 +1311,16 @@ class TestUpdateTransaction:
         account_repo_mock.get_by_id.return_value = existing_account
         transaction_split_repo_mock.get_by_transaction.return_value = []
 
-        with pytest.raises(
-            ValidationException,
-            match="Amount charged to the account is required, in the account currency",
-        ):
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
             await transaction_service.update_transaction(
                 existing_transaction.id,
                 data,
                 existing_transaction.user_id,
             )
+
+        assert exc_info.value.errors[0].detail == (
+            "Amount charged to the account is required, in the account currency"
+        )
 
         transaction_repo_mock.update.assert_not_called()
 
@@ -1404,6 +1418,7 @@ class TestUpdateTransaction:
             transaction_service.currency_repository,
             data.currency_code,
             allow_inactive=True,
+            loc=("currency_code",),
         )
 
         transaction_repo_mock.update.assert_called_once()
@@ -1451,6 +1466,7 @@ class TestUpdateTransaction:
             existing_transaction.user_id,
             data.category_id,
             allow_archived=True,
+            loc=("category_id",),
             expected_type=None,
         )
 

@@ -2,9 +2,10 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.exceptions import (
     AuthenticationException,
+    FieldError,
     NotAllowedActionException,
     NotFoundException,
     ValidationException,
@@ -40,6 +41,7 @@ async def validate_category(
     category_id: int | None,
     allow_archived: bool = False,
     *,
+    loc: tuple[str | int, ...] | None,
     expected_type: TransactionType | None = None,
 ) -> Category | None:
     """
@@ -49,6 +51,7 @@ async def validate_category(
         category_repository: Repository to fetch category
         user_id: User who should own the category
         category_id: Category to validate (None = skip validation)
+        loc: Body field path, or None for a path resource or stored data.
         allow_archived: Skip the archived check. Editing an existing
             transaction must stay possible even if its category was
             archived later; only attaching a transaction TO an archived
@@ -72,16 +75,16 @@ async def validate_category(
     existing_category = await category_repository.get_by_id(category_id)
 
     if not existing_category:
-        raise NotFoundException("Category not found")
+        raise NotFoundException("Category not found", loc=loc)
 
     if existing_category.user_id != user_id:
         logger.warning("category_permission_denied", user_id=user_id, category_id=category_id)
 
-        raise NotFoundException("Category not found")
+        raise NotFoundException("Category not found", loc=loc)
 
     if not allow_archived and existing_category.archived_at:
         raise NotAllowedActionException(
-            "Archived category is not allowed to use", code=ErrorCode.ARCHIVED
+            "Archived category is not allowed to use", code=ErrorCode.ARCHIVED, loc=loc
         )
 
     if (
@@ -89,7 +92,9 @@ async def validate_category(
         and existing_category.type not in USABLE_CATEGORY_TYPES[expected_type]
     ):
         raise NotAllowedActionException(
-            "Category type is not compatible with this operation", code=ErrorCode.TYPE_MISMATCH
+            "Category type is not compatible with this operation",
+            code=ErrorCode.TYPE_MISMATCH,
+            loc=loc,
         )
 
     return existing_category
@@ -99,6 +104,8 @@ async def validate_currency(
     currency_repository: CurrencyRepository,
     currency_code: str,
     allow_inactive: bool = False,
+    *,
+    loc: tuple[str | int, ...] | None,
 ) -> Currency:
     """
     Validate currency exists and is active.
@@ -106,6 +113,7 @@ async def validate_currency(
     Args:
         currency_repository: Repository to fetch currency
         currency_code: Currency code to validate
+        loc: Body field path, or None for a path resource or stored data.
         allow_inactive: Skip the active check. Editing an existing
             transaction must stay possible even if its currency was
             deactivated later; only attaching a transaction TO an
@@ -122,10 +130,10 @@ async def validate_currency(
     existing_currency = await currency_repository.get_by_code(currency_code)
 
     if not existing_currency:
-        raise NotFoundException("Currency not found")
+        raise NotFoundException("Currency not found", loc=loc)
 
     if not allow_inactive and not existing_currency.is_active:
-        raise NotAllowedActionException("Currency is not active", code=ErrorCode.INACTIVE)
+        raise NotAllowedActionException("Currency is not active", code=ErrorCode.INACTIVE, loc=loc)
 
     return existing_currency
 
@@ -269,6 +277,8 @@ async def validate_account(
     user_id: int,
     account_id: int,
     allow_archived: bool = False,
+    *,
+    loc: tuple[str | int, ...] | None,
 ) -> Account:
     """
     Validate account exists, is owned by user, and (optionally) not archived.
@@ -277,6 +287,7 @@ async def validate_account(
         account_repository: Repository to fetch account
         user_id: User who should own the account
         account_id: Account to validate
+        loc: Body field path, or None for a path resource or stored data.
         allow_archived: Skip the archived check. Editing an existing
             transaction must stay possible even if its account was
             archived later; only attaching a transaction TO an archived
@@ -294,16 +305,16 @@ async def validate_account(
     existing_account = await account_repository.get_by_id(account_id)
 
     if not existing_account:
-        raise NotFoundException("Account not found")
+        raise NotFoundException("Account not found", loc=loc)
 
     if existing_account.user_id != user_id:
         logger.warning("account_permission_denied", user_id=user_id, account_id=account_id)
 
-        raise NotFoundException("Account not found")
+        raise NotFoundException("Account not found", loc=loc)
 
     if not allow_archived and existing_account.archived_at:
         raise NotAllowedActionException(
-            "Archived account is not allowed to use", code=ErrorCode.ARCHIVED
+            "Archived account is not allowed to use", code=ErrorCode.ARCHIVED, loc=loc
         )
 
     return existing_account
@@ -326,18 +337,30 @@ def resolve_settled_amount(
         Amount in the account currency
 
     Raises:
-        NotAllowedActionException: Settled amount is missing or redundant
+        ValidationException: Settled amount is missing or redundant
     """
     if account.currency_code == currency_code:
         if settled_amount is not None:
             raise ValidationException(
-                "Amount charged to the account is only needed when currencies differ"
+                errors=[
+                    FieldError(
+                        loc=("settled_amount",),
+                        code=FieldErrorCode.NOT_ALLOWED,
+                        detail="Amount charged to the account is only needed when currencies differ",
+                    )
+                ],
             )
         return amount
 
     if settled_amount is None:
         raise ValidationException(
-            "Amount charged to the account is required, in the account currency"
+            errors=[
+                FieldError(
+                    loc=("settled_amount",),
+                    code=FieldErrorCode.MISSING,
+                    detail="Amount charged to the account is required, in the account currency",
+                )
+            ],
         )
 
     return settled_amount

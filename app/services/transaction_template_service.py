@@ -80,10 +80,16 @@ class TransactionTemplateService:
     ) -> TransactionTemplateResponse:
 
         if await self.transaction_template_repository.get_by_user_and_name(data.name, user_id):
-            raise ValueExistsException("Transaction template with this name already exists")
+            raise ValueExistsException(
+                "Transaction template with this name already exists", loc=("name",)
+            )
 
         await validators.validate_category(
-            self.category_repository, user_id, data.category_id, expected_type=data.type
+            self.category_repository,
+            user_id,
+            data.category_id,
+            loc=("category_id",),
+            expected_type=data.type,
         )
 
         if data.splits is not None:
@@ -93,10 +99,16 @@ class TransactionTemplateService:
 
             for category_id in split_category_ids:
                 await validators.validate_category(
-                    self.category_repository, user_id, category_id, expected_type=data.type
+                    self.category_repository,
+                    user_id,
+                    category_id,
+                    loc=("splits",),
+                    expected_type=data.type,
                 )
 
-        await validators.validate_currency(self.currency_repository, data.currency_code)
+        await validators.validate_currency(
+            self.currency_repository, data.currency_code, loc=("currency_code",)
+        )
 
         new_template = TransactionTemplate(
             type=data.type,
@@ -141,7 +153,9 @@ class TransactionTemplateService:
         )
 
         if duplicate_template and duplicate_template.id != template_id:
-            raise ValueExistsException("Transaction template with this name already exists")
+            raise ValueExistsException(
+                "Transaction template with this name already exists", loc=("name",)
+            )
 
         existing_template = await validators.validate_template(
             self.transaction_template_repository, user_id, template_id
@@ -156,6 +170,7 @@ class TransactionTemplateService:
             user_id,
             data.category_id,
             allow_archived=False,
+            loc=("category_id",),
             expected_type=data.type,
         )
 
@@ -170,6 +185,7 @@ class TransactionTemplateService:
                     user_id,
                     category_id,
                     allow_archived=False,
+                    loc=("splits",),
                     expected_type=data.type,
                 )
 
@@ -177,6 +193,7 @@ class TransactionTemplateService:
             self.currency_repository,
             data.currency_code,
             allow_inactive=not currency_changed,
+            loc=("currency_code",),
         )
 
         existing_template.type = data.type

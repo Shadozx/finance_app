@@ -16,3 +16,9 @@ class ErrorCode(StrEnum):
     RATE_LIMITED = "rate_limited"
     UNAVAILABLE = "unavailable"
     INTERNAL_ERROR = "internal_error"
+
+
+class FieldErrorCode(StrEnum):
+    MUST_MATCH = "must_match"
+    NOT_ALLOWED = "not_allowed"
+    MISSING = "missing"

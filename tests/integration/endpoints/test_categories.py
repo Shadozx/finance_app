@@ -2,9 +2,15 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode
 from app.models import CategoryType
 from app.services.default_categories import DEFAULT_CATEGORIES
-from tests.integration.endpoints.helpers import archive_category, category_payload, create_category
+from tests.integration.endpoints.helpers import (
+    archive_category,
+    assert_field_error,
+    category_payload,
+    create_category,
+)
 from tests.integration.endpoints.types import AuthenticatedUser, CategoryData
 
 API_CATEGORIES = "/api/v1/categories"
@@ -86,7 +92,7 @@ class TestCreateCategory:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_create_category_with_archived_name_conflicts(
         self,
@@ -605,7 +611,7 @@ class TestUpdateCategory:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_update_category_of_other_user_not_found(
         self,

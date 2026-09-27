@@ -2,8 +2,9 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode
 from app.services.default_categories import DEFAULT_CATEGORIES
-from tests.integration.endpoints.helpers import register_payload
+from tests.integration.endpoints.helpers import assert_field_error, register_payload
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
@@ -88,7 +89,10 @@ class TestRegister:
         response = await client.post(API_AUTH_REGISTER_URL, json=duplicate)
 
         assert response.status_code == status.HTTP_409_CONFLICT, reason
-        assert "detail" in response.json()
+        duplicate_field = next(
+            field for field in ("email", "username") if duplicate[field] == payload[field]
+        )
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", duplicate_field])
 
     @pytest.mark.parametrize(
         "payload, reason",

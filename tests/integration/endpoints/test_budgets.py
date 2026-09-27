@@ -2,9 +2,11 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
+from app.core.error_codes import ErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     archive_category,
+    assert_field_error,
     category_payload,
     create_category,
     create_transaction,
@@ -178,7 +180,7 @@ class TestCreateBudget:
             API_BUDGETS, json=payload, headers=authenticated_user["headers"]
         )
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body"])
 
     async def test_create_budget_other_user_category_not_found(
         self,
@@ -1103,6 +1105,8 @@ class TestBudgetEdgeCases:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
+
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body"])
 
     async def test_update_same_budget_no_self_conflict(
         self,
