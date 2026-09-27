@@ -1,6 +1,7 @@
 import structlog
 
 from app.core import UnitOfWork
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
@@ -111,7 +112,7 @@ class CategoryService:
             raise NotFoundException("Category not found")
 
         if existing_category.archived_at:
-            raise NotAllowedActionException("Category is archived")
+            raise NotAllowedActionException("Category is archived", code=ErrorCode.ALREADY_IN_STATE)
 
         await self.category_repository.archive(existing_category)
 
@@ -133,7 +134,9 @@ class CategoryService:
             raise NotFoundException("Category not found")
 
         if not existing_category.archived_at:
-            raise NotAllowedActionException("Category is not archived")
+            raise NotAllowedActionException(
+                "Category is not archived", code=ErrorCode.ALREADY_IN_STATE
+            )
 
         duplicate = await self.category_repository.get_by_user_and_name(
             user_id, existing_category.name

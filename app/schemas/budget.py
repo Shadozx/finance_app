@@ -1,9 +1,22 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationInfo,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
-from app.schemas.validators import amount_validator, currency_code_validator, validate_date_range
+from app.schemas.pagination import RecordPagination
+from app.schemas.validators import (
+    amount_validator,
+    currency_code_validator,
+    validate_date_range,
+    validate_end_date_against_start,
+)
 
 
 class BudgetCreate(BaseModel):
@@ -75,7 +88,7 @@ class BudgetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class BudgetFilters(BaseModel):
+class BudgetFilters(RecordPagination):
     currency_code: str | None = None
 
     category_id: int | None = None
@@ -91,13 +104,15 @@ class BudgetFilters(BaseModel):
             return currency_code_validator(v)
         return v
 
+    @field_validator("end_date")
+    @classmethod
+    def validate_end_date(cls, v: date | None, info: ValidationInfo) -> date | None:
+        return validate_end_date_against_start(v, info, check_dates=validate_date_range)
+
     @model_validator(mode="after")
     def validate_dates(self) -> "BudgetFilters":
         if (self.start_date is None) != (self.end_date is None):
             raise ValueError("Both dates must be provided, or neither")
-
-        if self.start_date is not None and self.end_date is not None:
-            validate_date_range(self.start_date, self.end_date)
 
         return self
 

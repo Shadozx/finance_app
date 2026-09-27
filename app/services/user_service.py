@@ -1,6 +1,7 @@
 import structlog
 
 from app.core import UnitOfWork, utc_now
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
@@ -63,7 +64,9 @@ class UserService:
         if not existing_user or not is_password_valid:
             logger.warning("user_authenticate_failed", email=user.email)
 
-            raise AuthenticationException("Invalid email or password")
+            raise AuthenticationException(
+                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+            )
 
         logger.info("user_authenticate_success", user_id=existing_user.id, email=user.email)
 
@@ -99,7 +102,9 @@ class UserService:
         if not verify_password(data.current_password, existing_user.hashed_password):
             logger.warning("password_update_failed", user_id=user_id)
 
-            raise AuthenticationException("Current password is incorrect")
+            raise AuthenticationException(
+                "Current password is incorrect", code=ErrorCode.INVALID_CREDENTIALS
+            )
 
         existing_user.hashed_password = hash_password(data.new_password)
         existing_user.password_changed_at = utc_now()

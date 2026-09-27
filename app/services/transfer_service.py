@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from app.core import UnitOfWork
-from app.core.exceptions import NotAllowedActionException, NotFoundException
+from app.core.exceptions import NotFoundException, ValidationException
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import TransferCreate, TransferResponse, TransferUpdate
@@ -204,7 +204,7 @@ class TransferService:
             return
 
         if data.from_amount != data.to_amount:
-            raise NotAllowedActionException(
+            raise ValidationException(
                 "Transfer between accounts in the same currency must have equal amounts"
             )
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 import structlog
 
 from app.core import UnitOfWork, today
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import NotAllowedActionException, ValueExistsException
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
@@ -215,7 +216,7 @@ class AccountService:
         )
 
         if existing_account.archived_at:
-            raise NotAllowedActionException("Account is archived")
+            raise NotAllowedActionException("Account is archived", code=ErrorCode.ALREADY_IN_STATE)
 
         await self.account_repository.archive(existing_account)
 
@@ -236,7 +237,9 @@ class AccountService:
         )
 
         if not existing_account.archived_at:
-            raise NotAllowedActionException("Account is not archived")
+            raise NotAllowedActionException(
+                "Account is not archived", code=ErrorCode.ALREADY_IN_STATE
+            )
 
         duplicate = await self.account_repository.get_by_user_and_name(
             user_id,

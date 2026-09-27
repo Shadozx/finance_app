@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import get_current_user, get_statistics_service
 from app.models import User
@@ -15,7 +17,7 @@ router = APIRouter(prefix="/statistics", tags=["statistics"])
 
 @router.get("/summary", response_model=SummaryResponse)
 async def get_summary(
-    filters: StatisticsFilters = Depends(),
+    filters: Annotated[StatisticsFilters, Query()],
     current_user: User = Depends(get_current_user),
     statistics_service: StatisticsService = Depends(get_statistics_service),
 ):
@@ -24,7 +26,7 @@ async def get_summary(
 
 @router.get("/categories", response_model=CategorySummaryResponse)
 async def get_categories(
-    filters: CategoryStatisticsFilters = Depends(),
+    filters: Annotated[CategoryStatisticsFilters, Query()],
     current_user: User = Depends(get_current_user),
     statistics_service: StatisticsService = Depends(get_statistics_service),
 ):

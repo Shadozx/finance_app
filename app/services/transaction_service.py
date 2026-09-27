@@ -1,6 +1,7 @@
 import structlog
 
 from app.core import UnitOfWork
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import NotAllowedActionException
 from app.models import Transaction, TransactionKind, TransactionSplit
 from app.repositories import (
@@ -188,7 +189,10 @@ class TransactionService:
         )
 
         if existing_transaction.kind == TransactionKind.TRANSFER:
-            raise NotAllowedActionException("Transfer cannot be edited one side at a time")
+            raise NotAllowedActionException(
+                "Transfer cannot be edited one side at a time",
+                code=ErrorCode.PARTIAL_UPDATE_NOT_ALLOWED,
+            )
 
         type_changed = data.type != existing_transaction.type
         category_changed = data.category_id != existing_transaction.category_id

@@ -239,7 +239,7 @@ class TestUpdatePassword:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
         assert "detail" in response.json()
 

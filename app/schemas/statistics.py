@@ -2,11 +2,15 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ValidationInfo, field_serializer, field_validator, model_validator
 
 from app.core import today
 from app.models.enums import TransactionType
-from app.schemas.validators import currency_code_validator, validate_date_range
+from app.schemas.validators import (
+    currency_code_validator,
+    validate_date_range,
+    validate_end_date_against_start,
+)
 
 
 class StatisticsFilters(BaseModel):
@@ -23,6 +27,11 @@ class StatisticsFilters(BaseModel):
             return currency_code_validator(v)
         return v
 
+    @field_validator("end_date")
+    @classmethod
+    def validate_end_date(cls, v: date | None, info: ValidationInfo) -> date | None:
+        return validate_end_date_against_start(v, info, check_dates=validate_date_range)
+
     @model_validator(mode="after")
     def validate_dates(self) -> "StatisticsFilters":
         if self.start_date is None and self.end_date is None:
@@ -33,8 +42,6 @@ class StatisticsFilters(BaseModel):
 
         if self.start_date is None or self.end_date is None:
             raise ValueError("Both dates must be provided, or neither")
-
-        validate_date_range(self.start_date, self.end_date)
 
         return self
 

@@ -1,10 +1,12 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi import status
 from httpx import AsyncClient
 
 from app.models import CategoryType
+from app.schemas.pagination import MAX_RECORD_PAGE_SIZE
+from app.schemas.validators import MAX_DATE_RANGE_DAYS
 from tests.integration.endpoints.helpers import (
     account_payload,
     archive_category,
@@ -413,7 +415,7 @@ class TestCreateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     async def test_create_transaction_with_other_user_category_not_found(
@@ -637,7 +639,7 @@ class TestCreateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     @pytest.mark.parametrize(
@@ -1896,6 +1898,22 @@ class TestGetTransactionsFilters:
         assert wrong_type_transaction["id"] not in ids
         assert wrong_category_transaction["id"] not in ids
 
+    async def test_get_transactions_date_range_over_one_year_allowed(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        start_date = date(2026, 1, 1)
+        end_date = start_date + timedelta(days=MAX_DATE_RANGE_DAYS + 1)
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"] == []
+
     async def test_get_transactions_invalid_date_range_fails(
         self,
         client: AsyncClient,
@@ -1911,7 +1929,7 @@ class TestGetTransactionsFilters:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
 
     @pytest.mark.parametrize(
         "params, reason",
@@ -1938,17 +1956,46 @@ class TestGetTransactionsFilters:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
-        assert "detail" in response.json()
+        field_name = next(iter(params))
+        assert response.json()["errors"][0]["loc"] == ["query", field_name]
 
 
 class TestPaginationBoundaries:
+    async def test_get_transactions_limit_above_max_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        invalid_limit = MAX_RECORD_PAGE_SIZE + 1
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"limit": invalid_limit},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "limit"]
+
+    async def test_get_transactions_negative_offset_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        negative_offset = -1
+        response = await client.get(
+            API_TRANSACTIONS,
+            params={"offset": negative_offset},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "offset"]
+
     @pytest.mark.parametrize(
         "params, reason",
         [
-            ({"limit": 101}, "limit_above_max"),
             ({"limit": 0}, "limit_zero"),
             ({"limit": -1}, "limit_negative"),
-            ({"offset": -1}, "offset_negative"),
         ],
     )
     async def test_get_transactions_invalid_pagination_rejected(
@@ -1965,7 +2012,7 @@ class TestPaginationBoundaries:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query", "limit"]
 
     async def test_get_transactions_limit_at_max_allowed(
         self,
@@ -1974,7 +2021,7 @@ class TestPaginationBoundaries:
     ):
         response = await client.get(
             API_TRANSACTIONS,
-            params={"limit": 100},
+            params={"limit": MAX_RECORD_PAGE_SIZE},
             headers=authenticated_user["headers"],
         )
 
@@ -2545,7 +2592,7 @@ class TestUpdateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     async def test_update_transaction_not_found(
@@ -2923,7 +2970,7 @@ class TestUpdateTransaction:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     async def test_update_transaction_keeps_archived_category_allowed(

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from structlog.testing import capture_logs
 
-from app.core.exceptions import NotAllowedActionException, NotFoundException
+from app.core.exceptions import NotAllowedActionException, NotFoundException, ValidationException
 from app.models import (
     Account,
     Budget,
@@ -575,10 +575,10 @@ class TestResolveSettledAmount:
         """
         GIVEN: Transaction currency matches the account, but settled amount is given
         WHEN: resolve_settled_amount called
-        THEN: NotAllowedActionException raised
+        THEN: ValidationException raised
         """
         with pytest.raises(
-            NotAllowedActionException,
+            ValidationException,
             match="Amount charged to the account is only needed when currencies differ",
         ):
             resolve_settled_amount(
@@ -596,10 +596,10 @@ class TestResolveSettledAmount:
         """
         GIVEN: Transaction currency differs from the account, settled amount not given
         WHEN: resolve_settled_amount called
-        THEN: NotAllowedActionException raised
+        THEN: ValidationException raised
         """
         with pytest.raises(
-            NotAllowedActionException,
+            ValidationException,
             match="Amount charged to the account is required, in the account currency",
         ):
             resolve_settled_amount(

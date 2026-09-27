@@ -609,6 +609,55 @@ class TestGetBudgets:
             headers=authenticated_user["headers"],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query"]
+
+    async def test_get_budgets_invalid_currency_code_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        invalid_currency_code = f"{active_currency['code']}D"
+        response = await client.get(
+            API_BUDGETS,
+            params={"currency_code": invalid_currency_code},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "currency_code"]
+
+    async def test_get_budgets_start_date_after_end_date_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        start_date = "2026-03-01"
+        end_date = "2026-01-01"
+        response = await client.get(
+            API_BUDGETS,
+            params={"start_date": start_date, "end_date": end_date},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+
+    async def test_get_budgets_range_over_one_year_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        start_date = "2024-01-01"
+        end_date = "2025-01-01"
+        response = await client.get(
+            API_BUDGETS,
+            params={"start_date": start_date, "end_date": end_date},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
 
     async def test_get_budgets_without_token(self, client: AsyncClient):
         response = await client.get(API_BUDGETS)

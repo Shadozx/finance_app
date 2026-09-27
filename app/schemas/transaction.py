@@ -2,10 +2,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from app.models.enums import TransactionKind, TransactionType
-from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator, currency_code_validator
+from app.schemas.pagination import RecordPagination
+from app.schemas.validators import (
+    MAX_DESCRIPTION_LENGTH,
+    amount_validator,
+    currency_code_validator,
+    validate_date_order,
+    validate_end_date_against_start,
+)
 
 
 class TransactionSplitCreate(BaseModel):
@@ -130,7 +137,7 @@ class TransactionResponse(TransactionListItem):
     splits: list[TransactionSplitResponse] | None = None
 
 
-class TransactionFilters(BaseModel):
+class TransactionFilters(RecordPagination):
     type: TransactionType | None = None
 
     currency_code: str | None = None
@@ -150,9 +157,7 @@ class TransactionFilters(BaseModel):
             return currency_code_validator(v)
         return v
 
-    @model_validator(mode="after")
-    def validate_dates(self) -> "TransactionFilters":
-        if self.start_date and self.end_date and self.start_date > self.end_date:
-            raise ValueError("Start date cannot be greater than end date")
-
-        return self
+    @field_validator("end_date")
+    @classmethod
+    def validate_end_date(cls, v: date | None, info: ValidationInfo) -> date | None:
+        return validate_end_date_against_start(v, info, check_dates=validate_date_order)

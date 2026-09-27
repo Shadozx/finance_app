@@ -1,6 +1,9 @@
 import re
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
+
+from pydantic import ValidationInfo
 
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -72,8 +75,25 @@ def currency_code_validator(currency_code: str) -> str:
     return currency_code
 
 
-def validate_date_range(start_date: date, end_date: date) -> None:
+def validate_date_order(start_date: date, end_date: date) -> None:
     if start_date > end_date:
         raise ValueError("Start date cannot be greater than end date")
+
+
+def validate_date_range(start_date: date, end_date: date) -> None:
+    validate_date_order(start_date, end_date)
     if (end_date - start_date).days > MAX_DATE_RANGE_DAYS:
         raise ValueError("Date range cannot exceed 1 year — split into multiple requests")
+
+
+def validate_end_date_against_start(
+    end_date: date | None,
+    info: ValidationInfo,
+    *,
+    check_dates: Callable[[date, date], None],
+) -> date | None:
+    # start_date is absent from info.data if it failed its own validation
+    start_date = info.data.get("start_date")
+    if end_date is not None and start_date is not None:
+        check_dates(start_date, end_date)
+    return end_date

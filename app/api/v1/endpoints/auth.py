@@ -5,6 +5,8 @@ from app.core.rate_limiter import limiter
 from app.schemas import TokenResponse, UserCreate, UserLogin, UserResponse
 from app.services import UserService
 
+LOGIN_REQUESTS_PER_MINUTE = 5
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -17,7 +19,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(f"{LOGIN_REQUESTS_PER_MINUTE}/minute")
 async def login(
     request: Request, data: UserLogin, user_service: UserService = Depends(get_user_service)
 ):

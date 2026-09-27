@@ -389,13 +389,13 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-        detail = response.json()["detail"]
+        errors = response.json()["errors"]
 
-        assert any("add up to" in error["msg"] for error in detail)
+        assert any("add up to" in error["detail"] for error in errors)
 
         # The whole payload is at fault, not one field: splits only make sense
         # against the template's own amount.
-        assert detail[0]["loc"] == ["body"]
+        assert errors[0]["loc"] == ["body"]
 
     async def test_create_template_splits_with_own_category_fails(
         self,
@@ -423,9 +423,9 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-        detail = response.json()["detail"]
+        errors = response.json()["errors"]
 
-        assert any("cannot have its own category" in error["msg"] for error in detail)
+        assert any("cannot have its own category" in error["detail"] for error in errors)
 
     async def test_create_template_single_split_fails(
         self,
@@ -450,9 +450,9 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-        detail = response.json()["detail"]
+        errors = response.json()["errors"]
 
-        assert any(error["type"] == "too_short" for error in detail)
+        assert any(error["code"] == "too_short" for error in errors)
 
     async def test_create_template_split_amount_too_many_decimals_fails(
         self,
@@ -480,9 +480,9 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-        detail = response.json()["detail"]
+        errors = response.json()["errors"]
 
-        assert any("more than 2 decimal places" in error["msg"] for error in detail)
+        assert any("more than 2 decimal places" in error["detail"] for error in errors)
 
     async def test_create_template_split_with_other_user_category_not_found(
         self,

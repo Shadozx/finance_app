@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_current_user, get_transaction_service
@@ -30,13 +32,13 @@ async def create_transaction(
 
 @router.get("", response_model=Page[TransactionListItem])
 async def get_transactions(
-    filters: TransactionFilters = Depends(),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    filters: Annotated[TransactionFilters, Query()],
     current_user: User = Depends(get_current_user),
     transaction_service: TransactionService = Depends(get_transaction_service),
 ):
-    return await transaction_service.get_user_transactions(current_user.id, filters, limit, offset)
+    return await transaction_service.get_user_transactions(
+        current_user.id, filters, filters.limit, filters.offset
+    )
 
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)

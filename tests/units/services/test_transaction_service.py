@@ -6,7 +6,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
-from app.core.exceptions import NotAllowedActionException, NotFoundException
+from app.core.exceptions import NotAllowedActionException, NotFoundException, ValidationException
 from app.models import (
     Account,
     Category,
@@ -407,7 +407,7 @@ class TestCreateTransaction:
         account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(
-            NotAllowedActionException,
+            ValidationException,
             match="Amount charged to the account is required, in the account currency",
         ):
             await transaction_service.create_transaction(data, existing_account.user_id)
@@ -1299,7 +1299,7 @@ class TestUpdateTransaction:
         transaction_split_repo_mock.get_by_transaction.return_value = []
 
         with pytest.raises(
-            NotAllowedActionException,
+            ValidationException,
             match="Amount charged to the account is required, in the account currency",
         ):
             await transaction_service.update_transaction(

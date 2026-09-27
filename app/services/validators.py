@@ -2,10 +2,12 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import (
     AuthenticationException,
     NotAllowedActionException,
     NotFoundException,
+    ValidationException,
 )
 from app.models import (
     USABLE_CATEGORY_TYPES,
@@ -78,13 +80,17 @@ async def validate_category(
         raise NotFoundException("Category not found")
 
     if not allow_archived and existing_category.archived_at:
-        raise NotAllowedActionException("Archived category is not allowed to use")
+        raise NotAllowedActionException(
+            "Archived category is not allowed to use", code=ErrorCode.ARCHIVED
+        )
 
     if (
         expected_type is not None
         and existing_category.type not in USABLE_CATEGORY_TYPES[expected_type]
     ):
-        raise NotAllowedActionException("Category type is not compatible with this operation")
+        raise NotAllowedActionException(
+            "Category type is not compatible with this operation", code=ErrorCode.TYPE_MISMATCH
+        )
 
     return existing_category
 
@@ -119,7 +125,7 @@ async def validate_currency(
         raise NotFoundException("Currency not found")
 
     if not allow_inactive and not existing_currency.is_active:
-        raise NotAllowedActionException("Currency is not active")
+        raise NotAllowedActionException("Currency is not active", code=ErrorCode.INACTIVE)
 
     return existing_currency
 
@@ -296,7 +302,9 @@ async def validate_account(
         raise NotFoundException("Account not found")
 
     if not allow_archived and existing_account.archived_at:
-        raise NotAllowedActionException("Archived account is not allowed to use")
+        raise NotAllowedActionException(
+            "Archived account is not allowed to use", code=ErrorCode.ARCHIVED
+        )
 
     return existing_account
 
@@ -322,13 +330,13 @@ def resolve_settled_amount(
     """
     if account.currency_code == currency_code:
         if settled_amount is not None:
-            raise NotAllowedActionException(
+            raise ValidationException(
                 "Amount charged to the account is only needed when currencies differ"
             )
         return amount
 
     if settled_amount is None:
-        raise NotAllowedActionException(
+        raise ValidationException(
             "Amount charged to the account is required, in the account currency"
         )
 

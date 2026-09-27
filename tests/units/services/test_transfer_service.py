@@ -6,7 +6,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
-from app.core.exceptions import NotAllowedActionException, NotFoundException
+from app.core.exceptions import NotAllowedActionException, NotFoundException, ValidationException
 from app.models import Account, Currency, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import TransferCreate, TransferUpdate
@@ -193,7 +193,7 @@ class TestCreateTransfer:
         existing_usd_account.currency_code = existing_account.currency_code
 
         with pytest.raises(
-            NotAllowedActionException,
+            ValidationException,
             match="Transfer between accounts in the same currency must have equal amounts",
         ):
             await transfer_service.create_transfer(data, existing_account.user_id)

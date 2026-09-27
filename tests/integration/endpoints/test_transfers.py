@@ -172,7 +172,7 @@ class TestCreateTransfer:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     async def test_create_transfer_with_archived_account_fails(
@@ -684,7 +684,7 @@ class TestUpdateTransfer:
             headers=authenticated_user["headers"],
         )
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
 
     async def test_update_transfer_without_token(

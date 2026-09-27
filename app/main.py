@@ -1,9 +1,10 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import IntegrityError
+from starlette.exceptions import HTTPException
 
 from app.api.v1.endpoints import (
     accounts,
@@ -22,13 +23,16 @@ from app.core.config import Environment, settings
 from app.core.exception_handlers import (
     app_exception_handler,
     global_exception_handler,
+    http_exception_handler,
     integrity_error_handler,
-    validation_exception_handler,
+    request_validation_handler,
 )
 from app.core.exceptions import AppException
 from app.core.logging_config import setup_logging
 from app.core.middleware import RequestIDMiddleware
+from app.core.openapi import configure_openapi
 from app.core.rate_limiter import limiter
+from app.schemas.error import ErrorResponse
 
 is_prod = settings.ENVIRONMENT == Environment.PROD
 
@@ -38,6 +42,17 @@ app = FastAPI(
     docs_url=None if is_prod else "/docs",
     redoc_url=None if is_prod else "/redoc",
     openapi_url=None if is_prod else "/openapi.json",
+    responses={
+        422: {
+            "model": ErrorResponse,
+            "description": "Request validation failed",
+            "content": {
+                "application/problem+json": {
+                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
+                }
+            },
+        }
+    },
 )
 
 setup_logging(settings)
@@ -69,12 +84,16 @@ app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(health.router, prefix="/api/v1")
 
 app.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
-app.add_exception_handler(ValidationError, validation_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RequestValidationError, request_validation_handler)  # type: ignore[arg-type]
+app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 
 # Starlette types handler as (Request, Exception); ours narrows to AppException —
 # safe, Starlette only dispatches matching type
 app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, global_exception_handler)
+
+
+configure_openapi(app)
 
 if __name__ == "__main__":
     # uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=[os.path.abspath("app")])

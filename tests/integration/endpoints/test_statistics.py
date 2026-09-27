@@ -357,7 +357,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
 
     async def test_get_summary_exactly_one_year_passes(
         self,
@@ -384,7 +384,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query"]
 
     async def test_get_summary_start_date_after_end_date_fails(
         self,
@@ -398,7 +398,23 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+
+    async def test_get_summary_invalid_currency_code_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        invalid_currency_code = f"{active_currency['code']}D"
+        response = await client.get(
+            API_SUMMARY,
+            params={"currency_code": invalid_currency_code},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "currency_code"]
 
     async def test_get_summary_filter_by_currency(
         self,
@@ -849,7 +865,54 @@ class TestGetCategories:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+
+    async def test_get_categories_start_date_after_end_date_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        start_date = "2026-03-01"
+        end_date = "2026-01-01"
+        response = await client.get(
+            API_CATEGORIES,
+            params={"type": "EXPENSE", "start_date": start_date, "end_date": end_date},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+
+    async def test_get_categories_single_date_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        start_date = "2026-01-01"
+        response = await client.get(
+            API_CATEGORIES,
+            params={"type": "EXPENSE", "start_date": start_date},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query"]
+
+    async def test_get_categories_invalid_currency_code_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        invalid_currency_code = f"{active_currency['code']}D"
+        response = await client.get(
+            API_CATEGORIES,
+            params={"type": "EXPENSE", "currency_code": invalid_currency_code},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["query", "currency_code"]
 
     async def test_get_categories_without_token(
         self,
