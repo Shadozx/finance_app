@@ -1,3 +1,4 @@
+from collections.abc import Sequence, Set
 from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
@@ -30,9 +31,13 @@ from app.repositories import (
     TransactionTemplateRepository,
     UserRepository,
 )
-from app.schemas import TransactionSplitCreate
+from app.schemas import TransactionSplitCreate, TransactionTemplateSplitCreate
 
 logger = structlog.get_logger()
+
+CATEGORY_NOT_FOUND_MESSAGE = "Category not found"
+CATEGORY_ARCHIVED_MESSAGE = "Archived category is not allowed to use"
+CATEGORY_TYPE_MISMATCH_MESSAGE = "Category type is not compatible with this operation"
 
 
 async def validate_category(
@@ -75,29 +80,94 @@ async def validate_category(
     existing_category = await category_repository.get_by_id(category_id)
 
     if not existing_category:
-        raise NotFoundException("Category not found", loc=loc)
+        raise NotFoundException(CATEGORY_NOT_FOUND_MESSAGE, loc=loc)
 
     if existing_category.user_id != user_id:
         logger.warning("category_permission_denied", user_id=user_id, category_id=category_id)
 
-        raise NotFoundException("Category not found", loc=loc)
+        raise NotFoundException(CATEGORY_NOT_FOUND_MESSAGE, loc=loc)
 
     if not allow_archived and existing_category.archived_at:
-        raise NotAllowedActionException(
-            "Archived category is not allowed to use", code=ErrorCode.ARCHIVED, loc=loc
-        )
+        raise NotAllowedActionException(CATEGORY_ARCHIVED_MESSAGE, code=ErrorCode.ARCHIVED, loc=loc)
 
     if (
         expected_type is not None
         and existing_category.type not in USABLE_CATEGORY_TYPES[expected_type]
     ):
         raise NotAllowedActionException(
-            "Category type is not compatible with this operation",
+            CATEGORY_TYPE_MISMATCH_MESSAGE,
             code=ErrorCode.TYPE_MISMATCH,
             loc=loc,
         )
 
     return existing_category
+
+
+async def validate_split_categories(
+    category_repository: CategoryRepository,
+    user_id: int,
+    splits: Sequence[TransactionSplitCreate | TransactionTemplateSplitCreate],
+    *,
+    expected_type: TransactionType,
+    archived_allowed_ids: Set[int] = frozenset(),
+    type_exempt_ids: Set[int] = frozenset(),
+) -> None:
+    """Report every split row of the first failing check: existence, archive, then type.
+
+    Update callers may allow archived categories or skip type checks for old assignments.
+    """
+    indices_by_category: dict[int, list[int]] = {}
+    for index, split in enumerate(splits):
+        if split.category_id is not None:
+            indices_by_category.setdefault(split.category_id, []).append(index)
+
+    if not indices_by_category:
+        return
+
+    categories = await category_repository.get_by_ids(set(indices_by_category))
+    categories_by_id = {category.id: category for category in categories}
+
+    not_found_indices: list[int] = []
+    archived_indices: list[int] = []
+    type_mismatch_indices: list[int] = []
+
+    for category_id, indices in indices_by_category.items():
+        category = categories_by_id.get(category_id)
+        if category is None:
+            not_found_indices.extend(indices)
+        elif category.user_id != user_id:
+            logger.warning("category_permission_denied", user_id=user_id, category_id=category_id)
+            not_found_indices.extend(indices)
+        elif category.archived_at and category_id not in archived_allowed_ids:
+            archived_indices.extend(indices)
+        elif (
+            category_id not in type_exempt_ids
+            and category.type not in USABLE_CATEGORY_TYPES[expected_type]
+        ):
+            type_mismatch_indices.extend(indices)
+
+    if not_found_indices:
+        code = ErrorCode.NOT_FOUND
+        message = CATEGORY_NOT_FOUND_MESSAGE
+        invalid_indices = not_found_indices
+    elif archived_indices:
+        code = ErrorCode.ARCHIVED
+        message = CATEGORY_ARCHIVED_MESSAGE
+        invalid_indices = archived_indices
+    elif type_mismatch_indices:
+        code = ErrorCode.TYPE_MISMATCH
+        message = CATEGORY_TYPE_MISMATCH_MESSAGE
+        invalid_indices = type_mismatch_indices
+    else:
+        return
+
+    errors = [
+        FieldError(loc=("splits", index, "category_id"), code=code, detail=message)
+        for index in sorted(invalid_indices)
+    ]
+    if code == ErrorCode.NOT_FOUND:
+        raise NotFoundException(message, errors=errors)
+    raise NotAllowedActionException(message, code=code, errors=errors)
 
 
 async def validate_currency(

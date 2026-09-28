@@ -4,7 +4,13 @@ from decimal import Decimal
 import pytest
 from structlog.testing import capture_logs
 
-from app.core.exceptions import NotAllowedActionException, NotFoundException, ValidationException
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import (
+    FieldError,
+    NotAllowedActionException,
+    NotFoundException,
+    ValidationException,
+)
 from app.models import (
     Account,
     Budget,
@@ -29,10 +35,11 @@ from app.services.validators import (
     validate_budget,
     validate_category,
     validate_currency,
+    validate_split_categories,
     validate_template,
     validate_transaction,
 )
-from tests.units.services.helpers import assert_model_fields
+from tests.units.services.helpers import assert_model_fields, make_category
 
 
 class TestValidateCategory:
@@ -263,6 +270,336 @@ class TestValidateCategory:
             )
 
         category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+
+
+class TestValidateSplitCategories:
+    @pytest.fixture
+    def splits(self, existing_category: Category) -> list[TransactionSplitCreate]:
+        split_amount = Decimal("50.00")
+        return [
+            TransactionSplitCreate(category_id=existing_category.id, amount=split_amount),
+            TransactionSplitCreate(category_id=None, amount=split_amount),
+        ]
+
+    @pytest.fixture
+    def second_category(self, existing_category: Category) -> Category:
+        return make_category(id=existing_category.id + 1, user_id=existing_category.user_id)
+
+    async def test_validate_split_categories_success(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [second_category, existing_category]
+
+        result = await validate_split_categories(
+            category_repo_mock,
+            existing_category.user_id,
+            splits,
+            expected_type=TransactionType.EXPENSE,
+        )
+
+        assert result is None
+        category_repo_mock.get_by_ids.assert_called_once_with(
+            {existing_category.id, second_category.id}
+        )
+        category_repo_mock.get_by_id.assert_not_called()
+
+    async def test_validate_split_categories_without_splits(
+        self, category_repo_mock: CategoryRepository, existing_category: Category
+    ):
+        result = await validate_split_categories(
+            category_repo_mock,
+            existing_category.user_id,
+            [],
+            expected_type=TransactionType.EXPENSE,
+        )
+
+        assert result is None
+        category_repo_mock.get_by_ids.assert_not_called()
+
+    async def test_validate_split_categories_without_categories(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        splits[0].category_id = None
+
+        result = await validate_split_categories(
+            category_repo_mock,
+            existing_category.user_id,
+            splits,
+            expected_type=TransactionType.EXPENSE,
+        )
+
+        assert result is None
+        category_repo_mock.get_by_ids.assert_not_called()
+
+    async def test_validate_split_categories_two_archived_categories(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        archived_at = datetime.now(UTC)
+        existing_category.archived_at = archived_at
+        second_category.archived_at = archived_at
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [second_category, existing_category]
+        detail = "Archived category is not allowed to use"
+
+        with pytest.raises(NotAllowedActionException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.ARCHIVED
+        assert exc_info.value.errors == [
+            FieldError(("splits", 0, "category_id"), ErrorCode.ARCHIVED, detail),
+            FieldError(("splits", 1, "category_id"), ErrorCode.ARCHIVED, detail),
+        ]
+
+    async def test_validate_split_categories_repeated_category_reports_both_rows(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        existing_category.archived_at = datetime.now(UTC)
+        splits[1].category_id = existing_category.id
+        category_repo_mock.get_by_ids.return_value = [existing_category]
+        detail = "Archived category is not allowed to use"
+
+        with pytest.raises(NotAllowedActionException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.ARCHIVED
+        assert exc_info.value.errors == [
+            FieldError(("splits", 0, "category_id"), ErrorCode.ARCHIVED, detail),
+            FieldError(("splits", 1, "category_id"), ErrorCode.ARCHIVED, detail),
+        ]
+        category_repo_mock.get_by_ids.assert_called_once_with({existing_category.id})
+
+    async def test_validate_split_categories_not_found_before_archived_and_type(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        missing_category_id = second_category.id + 1
+        existing_category.archived_at = datetime.now(UTC)
+        second_category.type = CategoryType.INCOME
+        splits[1].category_id = missing_category_id
+        splits.append(splits[0].model_copy(update={"category_id": second_category.id}))
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
+        detail = "Category not found"
+
+        with pytest.raises(NotFoundException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.NOT_FOUND
+        assert exc_info.value.errors == [
+            FieldError(("splits", 1, "category_id"), ErrorCode.NOT_FOUND, detail)
+        ]
+
+    async def test_validate_split_categories_missing_and_foreign_categories(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        missing_category_id = second_category.id + 1
+        second_category.user_id = existing_category.user_id + 1
+        splits[0].category_id = missing_category_id
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [second_category]
+        detail = "Category not found"
+
+        with capture_logs() as logs:
+            with pytest.raises(NotFoundException, match=detail) as exc_info:
+                await validate_split_categories(
+                    category_repo_mock,
+                    existing_category.user_id,
+                    splits,
+                    expected_type=TransactionType.EXPENSE,
+                )
+
+        assert exc_info.value.code == ErrorCode.NOT_FOUND
+        assert exc_info.value.errors == [
+            FieldError(("splits", 0, "category_id"), ErrorCode.NOT_FOUND, detail),
+            FieldError(("splits", 1, "category_id"), ErrorCode.NOT_FOUND, detail),
+        ]
+        assert [log["event"] for log in logs] == ["category_permission_denied"]
+        assert logs[0]["user_id"] == existing_category.user_id
+        assert logs[0]["category_id"] == second_category.id
+
+    async def test_validate_split_categories_foreign_archived_category_not_found(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        second_category.user_id = existing_category.user_id + 1
+        second_category.archived_at = datetime.now(UTC)
+        second_category.type = CategoryType.INCOME
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
+        detail = "Category not found"
+
+        with pytest.raises(NotFoundException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.NOT_FOUND
+        assert exc_info.value.errors == [
+            FieldError(("splits", 1, "category_id"), ErrorCode.NOT_FOUND, detail)
+        ]
+
+    async def test_validate_split_categories_archived_before_type_mismatch(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        existing_category.type = CategoryType.INCOME
+        second_category.archived_at = datetime.now(UTC)
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
+        detail = "Archived category is not allowed to use"
+
+        with pytest.raises(NotAllowedActionException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.ARCHIVED
+        assert exc_info.value.errors == [
+            FieldError(("splits", 1, "category_id"), ErrorCode.ARCHIVED, detail)
+        ]
+
+    async def test_validate_split_categories_archived_allowed_ids(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        existing_category.archived_at = datetime.now(UTC)
+        category_repo_mock.get_by_ids.return_value = [existing_category]
+
+        result = await validate_split_categories(
+            category_repo_mock,
+            existing_category.user_id,
+            splits,
+            expected_type=TransactionType.EXPENSE,
+            archived_allowed_ids={existing_category.id},
+        )
+
+        assert result is None
+
+    async def test_validate_split_categories_two_incompatible_categories(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        existing_category.type = CategoryType.INCOME
+        second_category.type = CategoryType.INCOME
+        splits[1].category_id = second_category.id
+        category_repo_mock.get_by_ids.return_value = [second_category, existing_category]
+        detail = "Category type is not compatible with this operation"
+
+        with pytest.raises(NotAllowedActionException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.TYPE_MISMATCH
+        assert exc_info.value.errors == [
+            FieldError(("splits", 0, "category_id"), ErrorCode.TYPE_MISMATCH, detail),
+            FieldError(("splits", 1, "category_id"), ErrorCode.TYPE_MISMATCH, detail),
+        ]
+
+    async def test_validate_split_categories_type_exempt_ids(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        existing_category.type = CategoryType.INCOME
+        category_repo_mock.get_by_ids.return_value = [existing_category]
+
+        result = await validate_split_categories(
+            category_repo_mock,
+            existing_category.user_id,
+            splits,
+            expected_type=TransactionType.EXPENSE,
+            type_exempt_ids={existing_category.id},
+        )
+
+        assert result is None
+
+    async def test_validate_split_categories_errors_sorted_by_row_index(
+        self,
+        category_repo_mock: CategoryRepository,
+        existing_category: Category,
+        second_category: Category,
+        splits: list[TransactionSplitCreate],
+    ):
+        archived_at = datetime.now(UTC)
+        existing_category.archived_at = archived_at
+        second_category.archived_at = archived_at
+        splits[1].category_id = second_category.id
+        splits.append(splits[0].model_copy())
+        category_repo_mock.get_by_ids.return_value = [second_category, existing_category]
+        detail = "Archived category is not allowed to use"
+
+        with pytest.raises(NotAllowedActionException, match=detail) as exc_info:
+            await validate_split_categories(
+                category_repo_mock,
+                existing_category.user_id,
+                splits,
+                expected_type=TransactionType.EXPENSE,
+            )
+
+        assert exc_info.value.code == ErrorCode.ARCHIVED
+        assert exc_info.value.errors == [
+            FieldError(("splits", 0, "category_id"), ErrorCode.ARCHIVED, detail),
+            FieldError(("splits", 1, "category_id"), ErrorCode.ARCHIVED, detail),
+            FieldError(("splits", 2, "category_id"), ErrorCode.ARCHIVED, detail),
+        ]
 
 
 class TestValidateCurrency:

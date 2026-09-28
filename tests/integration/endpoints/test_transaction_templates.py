@@ -96,6 +96,7 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits", 0, "category_id"])
 
     async def test_create_template_success(
         self,
@@ -513,7 +514,7 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "splits", 0, "category_id"])
 
     async def test_create_template_split_with_archived_category_fails(
         self,
@@ -540,7 +541,7 @@ class TestCreateTransactionTemplate:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits", 0, "category_id"])
 
     async def test_create_template_with_unknown_category_fails(
         self,
@@ -1314,6 +1315,7 @@ class TestUpdateTransactionTemplate:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits", 0, "category_id"])
 
         unchanged = await client.get(
             f"{API_TRANSACTION_TEMPLATES}/{created['id']}", headers=headers
@@ -1971,7 +1973,7 @@ class TestUpdateTransactionTemplate:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits", 0, "category_id"])
 
     async def test_update_template_without_token(
         self,

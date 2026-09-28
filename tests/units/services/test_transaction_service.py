@@ -36,6 +36,7 @@ from tests.units.services.helpers import (
     as_persisted,
     as_persisted_all,
     assert_model_fields,
+    make_category,
     make_transaction,
 )
 
@@ -507,7 +508,10 @@ class TestCreateTransaction:
         data.amount = Decimal("1000.00")
 
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
@@ -546,9 +550,12 @@ class TestCreateTransaction:
             settled_amount=Decimal("200.00"),
         )
 
-        assert validate_category_spy.call_count == 3
+        assert validate_category_spy.call_count == 1
 
-        assert category_repo_mock.get_by_id.call_count == 2
+        category_repo_mock.get_by_id.assert_not_called()
+        category_repo_mock.get_by_ids.assert_called_once_with(
+            {existing_category.id, second_category.id}
+        )
 
         validate_currency_spy.assert_called_once_with(
             transaction_service.currency_repository, existing_currency.code, loc=("currency_code",)
@@ -602,7 +609,7 @@ class TestCreateTransaction:
         ]
 
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        category_repo_mock.get_by_ids.return_value = [existing_category]
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
@@ -610,7 +617,8 @@ class TestCreateTransaction:
 
         await transaction_service.create_transaction(data, user_id)
 
-        category_repo_mock.get_by_id.assert_called_once_with(existing_category.id)
+        category_repo_mock.get_by_ids.assert_called_once_with({existing_category.id})
+        category_repo_mock.get_by_id.assert_not_called()
 
         splits = transaction_split_repo_mock.add_all.call_args[0][0]
 
@@ -642,7 +650,7 @@ class TestCreateTransaction:
         existing_category.archived_at = datetime.now(UTC)
 
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        category_repo_mock.get_by_ids.return_value = [existing_category]
         account_repo_mock.get_by_id.return_value = existing_account
 
         with pytest.raises(
@@ -680,7 +688,7 @@ class TestCreateTransaction:
         ]
 
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        category_repo_mock.get_by_ids.return_value = [existing_category]
         account_repo_mock.get_by_id.return_value = existing_account
 
         transaction_repo_mock.add.side_effect = as_persisted
@@ -1545,7 +1553,10 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         transaction_split_repo_mock.get_by_transaction.return_value = old_splits
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -1668,7 +1679,10 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         transaction_split_repo_mock.get_by_transaction.return_value = []
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -1722,7 +1736,7 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         transaction_split_repo_mock.get_by_transaction.return_value = old_splits
-        category_repo_mock.get_by_id.return_value = existing_category
+        category_repo_mock.get_by_ids.return_value = [existing_category]
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 
@@ -1762,7 +1776,7 @@ class TestUpdateTransaction:
 
         transaction_repo_mock.get_by_id.return_value = existing_transaction
         transaction_split_repo_mock.get_by_transaction.return_value = []
-        category_repo_mock.get_by_id.return_value = existing_category
+        category_repo_mock.get_by_ids.return_value = [existing_category]
         currency_repo_mock.get_by_code.return_value = existing_currency
         account_repo_mock.get_by_id.return_value = existing_account
 

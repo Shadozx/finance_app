@@ -16,6 +16,14 @@ class CategoryRepository:
             await self.session.execute(select(Category).where(Category.id == category_id))
         ).scalar_one_or_none()
 
+    async def get_by_ids(self, category_ids: set[int]) -> list[Category]:
+        if not category_ids:
+            return []
+
+        result = await self.session.execute(select(Category).where(Category.id.in_(category_ids)))
+
+        return list(result.scalars().all())
+
     async def get_by_user(
         self,
         user_id: int,

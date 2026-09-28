@@ -54,18 +54,9 @@ class TransactionService:
         )
 
         if data.splits is not None:
-            split_category_ids = {
-                split.category_id for split in data.splits if split.category_id is not None
-            }
-
-            for category_id in split_category_ids:
-                await validators.validate_category(
-                    self.category_repository,
-                    user_id,
-                    category_id,
-                    loc=("splits",),
-                    expected_type=data.type,
-                )
+            await validators.validate_split_categories(
+                self.category_repository, user_id, data.splits, expected_type=data.type
+            )
 
         await validators.validate_currency(
             self.currency_repository, data.currency_code, loc=("currency_code",)
@@ -224,23 +215,17 @@ class TransactionService:
             old_category_ids = {
                 split.category_id for split in old_splits if split.category_id is not None
             }
-            new_category_ids = {
-                split.category_id for split in data.splits if split.category_id is not None
-            }
-
-            for category_id in new_category_ids:
-                # A category already used by this transaction stays allowed even
-                # if archived later; attaching a new archived one is not.
-                await validators.validate_category(
-                    self.category_repository,
-                    user_id,
-                    category_id,
-                    allow_archived=category_id in old_category_ids,
-                    loc=("splits",),
-                    expected_type=(
-                        data.type if category_id not in old_category_ids or type_changed else None
-                    ),
-                )
+            # A category already used by this transaction stays allowed even if archived later;
+            # attaching a new archived one is not. Old assignments are checked for compatible
+            # types only when the transaction direction changes.
+            await validators.validate_split_categories(
+                self.category_repository,
+                user_id,
+                data.splits,
+                expected_type=data.type,
+                archived_allowed_ids=old_category_ids,
+                type_exempt_ids=old_category_ids if not type_changed else frozenset(),
+            )
 
         await validators.validate_currency(
             self.currency_repository,

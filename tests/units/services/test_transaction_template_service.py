@@ -26,6 +26,7 @@ from tests.units.services.helpers import (
     as_persisted,
     as_persisted_all,
     assert_model_fields,
+    make_category,
     make_transaction_template,
     make_transaction_template_split,
 )
@@ -228,7 +229,10 @@ class TestCreateTemplate:
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
 
         transaction_template_repo_mock.add.side_effect = as_persisted
         transaction_template_split_repo_mock.add_all.side_effect = as_persisted_all
@@ -277,7 +281,7 @@ class TestCreateTemplate:
         existing_category: Category,
         data: TransactionTemplateCreate,
     ):
-        """Three parts share two categories: each distinct one is validated once."""
+        """Three parts share two categories: both are fetched in one batch."""
         user_id = existing_category.user_id
 
         data.category_id = None
@@ -295,7 +299,10 @@ class TestCreateTemplate:
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
 
         transaction_template_repo_mock.add.side_effect = as_persisted
         transaction_template_split_repo_mock.add_all.side_effect = as_persisted_all
@@ -304,15 +311,11 @@ class TestCreateTemplate:
 
         await transaction_template_service.create_template(data, user_id)
 
-        # One call for the template's own (None) category, two for the deduplicated splits.
-        assert validate_category_spy.call_count == 3
-
-        assert category_repo_mock.get_by_id.call_count == 2
-
-        assert {call.args[0] for call in category_repo_mock.get_by_id.call_args_list} == {
-            existing_category.id,
-            existing_category.id + 1,
-        }
+        assert validate_category_spy.call_count == 1
+        category_repo_mock.get_by_id.assert_not_called()
+        category_repo_mock.get_by_ids.assert_called_once_with(
+            {existing_category.id, second_category.id}
+        )
 
         splits = transaction_template_split_repo_mock.add_all.call_args[0][0]
 
@@ -347,9 +350,7 @@ class TestCreateTemplate:
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         currency_repo_mock.get_by_code.return_value = existing_currency
-        category_repo_mock.get_by_id.side_effect = lambda category_id: (
-            existing_category if category_id == existing_category.id else None
-        )
+        category_repo_mock.get_by_ids.return_value = [existing_category]
 
         with pytest.raises(NotFoundException, match="Category not found"):
             await transaction_template_service.create_template(data, user_id)
@@ -773,7 +774,10 @@ class TestUpdateTemplate:
 
         transaction_template_repo_mock.get_by_user_and_name.return_value = None
         transaction_template_repo_mock.get_by_id.return_value = existing_template
-        category_repo_mock.get_by_id.return_value = existing_category
+        second_category = make_category(
+            id=existing_category.id + 1, user_id=existing_category.user_id
+        )
+        category_repo_mock.get_by_ids.return_value = [existing_category, second_category]
         currency_repo_mock.get_by_code.return_value = existing_currency
         transaction_template_split_repo_mock.get_by_template.return_value = old_splits
 

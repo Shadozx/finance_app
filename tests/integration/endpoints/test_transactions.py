@@ -218,7 +218,7 @@ class TestCreateTransaction:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
 
-        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits"])
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits", 0, "category_id"])
 
     async def test_create_transaction_success(
         self,
@@ -1041,7 +1041,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "splits", 1, "category_id"])
 
     async def test_create_transaction_splits_with_archived_category_fails(
         self,
@@ -1069,7 +1069,51 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits"])
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits", 1, "category_id"])
+
+    async def test_create_transaction_splits_two_archived_categories_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        created_category: CategoryData,
+        archived_category: CategoryData,
+        second_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        headers = authenticated_user["headers"]
+        await archive_category(client, second_category["id"], headers)
+        amount = "300.00"
+        split_amount = "100.00"
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            splits=[
+                split_payload(created_category["id"], split_amount),
+                split_payload(archived_category["id"], split_amount),
+                split_payload(second_category["id"], split_amount),
+            ],
+        )
+
+        response = await client.post(API_TRANSACTIONS, json=payload, headers=headers)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        body = response.json()
+        assert body["code"] == ErrorCode.ARCHIVED
+        assert body["detail"] == "Archived category is not allowed to use"
+        assert body["errors"] == [
+            {
+                "loc": ["body", "splits", 1, "category_id"],
+                "code": ErrorCode.ARCHIVED,
+                "detail": body["detail"],
+            },
+            {
+                "loc": ["body", "splits", 2, "category_id"],
+                "code": ErrorCode.ARCHIVED,
+                "detail": body["detail"],
+            },
+        ]
 
     async def test_create_transaction_splits_with_unknown_category_fails(
         self,
@@ -1096,7 +1140,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "splits"])
+        assert_field_error(response, ErrorCode.NOT_FOUND, ["body", "splits", 1, "category_id"])
 
     async def test_create_transaction_without_token(
         self,
@@ -2357,6 +2401,11 @@ class TestUpdateTransaction:
         category = await create_category(
             client, category_payload(category_type=CategoryType.EXPENSE), headers
         )
+        second_category = await create_category(
+            client,
+            category_payload(name="Second expense category", category_type=CategoryType.EXPENSE),
+            headers,
+        )
         amount = "100.00"
         split_amount = "50.00"
         payload = transaction_payload(
@@ -2364,7 +2413,10 @@ class TestUpdateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             category_id=None,
-            splits=[split_payload(category["id"], split_amount), split_payload(None, split_amount)],
+            splits=[
+                split_payload(category["id"], split_amount),
+                split_payload(second_category["id"], split_amount),
+            ],
         )
         created = await create_transaction(client, payload, headers)
         payload["type"] = "INCOME"
@@ -2375,6 +2427,21 @@ class TestUpdateTransaction:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
+
+        body = response.json()
+        assert body["code"] == ErrorCode.TYPE_MISMATCH
+        assert body["errors"] == [
+            {
+                "loc": ["body", "splits", 0, "category_id"],
+                "code": ErrorCode.TYPE_MISMATCH,
+                "detail": body["detail"],
+            },
+            {
+                "loc": ["body", "splits", 1, "category_id"],
+                "code": ErrorCode.TYPE_MISMATCH,
+                "detail": body["detail"],
+            },
+        ]
 
         unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
         assert unchanged.status_code == status.HTTP_200_OK
@@ -2457,6 +2524,7 @@ class TestUpdateTransaction:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json()["detail"] == "Category type is not compatible with this operation"
+        assert_field_error(response, ErrorCode.TYPE_MISMATCH, ["body", "splits", 0, "category_id"])
 
         unchanged = await client.get(f"{API_TRANSACTIONS}/{created['id']}", headers=headers)
         assert unchanged.status_code == status.HTTP_200_OK
@@ -3259,7 +3327,7 @@ class TestUpdateTransaction:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "detail" in response.json()
+        assert_field_error(response, ErrorCode.ARCHIVED, ["body", "splits", 1, "category_id"])
 
     async def test_update_transaction_splits_sum_mismatch_fails(
         self,

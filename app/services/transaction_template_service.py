@@ -93,18 +93,9 @@ class TransactionTemplateService:
         )
 
         if data.splits is not None:
-            split_category_ids = {
-                split.category_id for split in data.splits if split.category_id is not None
-            }
-
-            for category_id in split_category_ids:
-                await validators.validate_category(
-                    self.category_repository,
-                    user_id,
-                    category_id,
-                    loc=("splits",),
-                    expected_type=data.type,
-                )
+            await validators.validate_split_categories(
+                self.category_repository, user_id, data.splits, expected_type=data.type
+            )
 
         await validators.validate_currency(
             self.currency_repository, data.currency_code, loc=("currency_code",)
@@ -175,19 +166,9 @@ class TransactionTemplateService:
         )
 
         if data.splits is not None:
-            split_category_ids = {
-                split.category_id for split in data.splits if split.category_id is not None
-            }
-
-            for category_id in split_category_ids:
-                await validators.validate_category(
-                    self.category_repository,
-                    user_id,
-                    category_id,
-                    allow_archived=False,
-                    loc=("splits",),
-                    expected_type=data.type,
-                )
+            await validators.validate_split_categories(
+                self.category_repository, user_id, data.splits, expected_type=data.type
+            )
 
         await validators.validate_currency(
             self.currency_repository,
