@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, ValidationInfo, field_validator
 
-from app.schemas.validators import password_validator, username_validator
+from app.core.error_codes import FieldErrorCode
+from app.schemas.validators import field_error, password_validator, username_validator
 
 
 # --- Pydantic-схеми ---
@@ -43,8 +44,14 @@ class PasswordUpdate(BaseModel):
 
     @field_validator("new_password")
     @classmethod
-    def validate_new_password(cls, v: str) -> str:
-        return password_validator(v)
+    def validate_new_password(cls, v: str, info: ValidationInfo) -> str:
+        password = password_validator(v)
+        if info.data.get("current_password") == password:
+            raise field_error(
+                FieldErrorCode.SAME_AS_CURRENT,
+                "New password must be different from current password",
+            )
+        return password
 
 
 class UserResponse(BaseModel):

@@ -1,7 +1,7 @@
 from fastapi import status
 from httpx import AsyncClient, Response
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.types import (
     AccountData,
@@ -38,6 +38,21 @@ def assert_no_field_errors(response: Response, code: ErrorCode) -> None:
     assert body["code"] == code
     assert "errors" not in body
     assert isinstance(body["detail"], str)
+
+
+def assert_validation_error(
+    response: Response,
+    loc: list[str | int],
+    item_code: FieldErrorCode,
+) -> None:
+    body = response.json()
+
+    assert body["code"] == ErrorCode.VALIDATION_FAILED
+    assert body["detail"] == "Request validation failed"
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["loc"] == loc
+    assert body["errors"][0]["code"] == item_code
+    assert isinstance(body["errors"][0]["detail"], str)
 
 
 def register_payload(

@@ -2,8 +2,8 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
-from tests.integration.endpoints.helpers import assert_field_error
+from app.core.error_codes import ErrorCode, FieldErrorCode
+from tests.integration.endpoints.helpers import assert_field_error, assert_validation_error
 from tests.integration.endpoints.types import AuthenticatedUser
 
 API_USERS_ME = "/api/v1/users/me"
@@ -242,8 +242,7 @@ class TestUpdatePassword:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body", "new_password"], FieldErrorCode.SAME_AS_CURRENT)
 
     @pytest.mark.parametrize(
         "payload, reason",

@@ -2,7 +2,7 @@ import structlog
 
 from app.core import UnitOfWork, utc_now
 from app.core.error_codes import ErrorCode
-from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
+from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -95,9 +95,6 @@ class UserService:
 
     async def update_password(self, data: PasswordUpdate, user_id: int) -> None:
         existing_user = await validators.validate_user(self.user_repository, user_id)
-
-        if data.current_password == data.new_password:
-            raise ValidationException("New password must be different from current password")
 
         if not verify_password(data.current_password, existing_user.hashed_password):
             logger.warning("password_update_failed", user_id=user_id)

@@ -7,8 +7,10 @@ from fastapi import status
 from httpx import AsyncClient
 
 from app.core import today
+from app.core.error_codes import FieldErrorCode
 from tests.integration.endpoints.helpers import (
     account_payload,
+    assert_validation_error,
     category_payload,
     create_account,
     create_category,
@@ -357,7 +359,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+        assert_validation_error(response, ["query", "end_date"], FieldErrorCode.RANGE_TOO_LONG)
 
     async def test_get_summary_exactly_one_year_passes(
         self,
@@ -384,7 +386,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query"]
+        assert_validation_error(response, ["query"], FieldErrorCode.INCOMPLETE_RANGE)
 
     async def test_get_summary_start_date_after_end_date_fails(
         self,
@@ -398,7 +400,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+        assert_validation_error(response, ["query", "end_date"], FieldErrorCode.END_BEFORE_START)
 
     async def test_get_summary_invalid_currency_code_fails(
         self,
@@ -414,7 +416,7 @@ class TestGetSummary:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "currency_code"]
+        assert_validation_error(response, ["query", "currency_code"], FieldErrorCode.INVALID_FORMAT)
 
     async def test_get_summary_filter_by_currency(
         self,

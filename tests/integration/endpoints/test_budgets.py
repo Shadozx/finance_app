@@ -2,11 +2,12 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     archive_category,
     assert_field_error,
+    assert_validation_error,
     category_payload,
     create_category,
     create_transaction,
@@ -265,6 +266,29 @@ class TestCreateBudget:
             API_BUDGETS, json=payload, headers=authenticated_user["headers"]
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
+
+    async def test_create_budget_end_before_start_error_code(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        start_date = "2026-08-01"
+        end_date = "2026-07-31"
+        payload = budget_payload(
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        response = await client.post(
+            API_BUDGETS, json=payload, headers=authenticated_user["headers"]
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "end_date"], FieldErrorCode.END_BEFORE_START)
 
     async def test_create_budget_without_token(
         self,
@@ -611,7 +635,7 @@ class TestGetBudgets:
             headers=authenticated_user["headers"],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query"]
+        assert_validation_error(response, ["query"], FieldErrorCode.INCOMPLETE_RANGE)
 
     async def test_get_budgets_invalid_currency_code_fails(
         self,
@@ -627,7 +651,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "currency_code"]
+        assert_validation_error(response, ["query", "currency_code"], FieldErrorCode.INVALID_FORMAT)
 
     async def test_get_budgets_start_date_after_end_date_fails(
         self,
@@ -643,7 +667,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+        assert_validation_error(response, ["query", "end_date"], FieldErrorCode.END_BEFORE_START)
 
     async def test_get_budgets_range_over_one_year_fails(
         self,
@@ -659,7 +683,7 @@ class TestGetBudgets:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert response.json()["errors"][0]["loc"] == ["query", "end_date"]
+        assert_validation_error(response, ["query", "end_date"], FieldErrorCode.RANGE_TOO_LONG)
 
     async def test_get_budgets_without_token(self, client: AsyncClient):
         response = await client.get(API_BUDGETS)
@@ -1009,7 +1033,7 @@ class TestBudgetEdgeCases:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body", "name"], FieldErrorCode.STRING_TOO_LONG)
 
     async def test_create_budget_name_at_max_length_passes(
         self,

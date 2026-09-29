@@ -2,12 +2,14 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
+from app.schemas.validators import MAX_NAME_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
     archive_category,
     assert_field_error,
+    assert_validation_error,
     category_payload,
     create_category,
 )
@@ -164,6 +166,44 @@ class TestCreateCategory:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
+
+    async def test_create_category_blank_name_formats_error_detail(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        blank_name = "   "
+        payload = category_payload(name=blank_name)
+
+        response = await client.post(
+            API_CATEGORIES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "name"], FieldErrorCode.STRING_TOO_SHORT)
+        detail = response.json()["errors"][0]["detail"]
+        assert detail == "Category name must be at least 1 character"
+
+    async def test_create_category_long_name_formats_error_detail(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        long_name = "a" * (MAX_NAME_LENGTH + 1)
+        payload = category_payload(name=long_name)
+
+        response = await client.post(
+            API_CATEGORIES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "name"], FieldErrorCode.STRING_TOO_LONG)
+        detail = response.json()["errors"][0]["detail"]
+        assert detail == "Category name must be less than 100 characters"
 
     async def test_create_category_without_token(self, client: AsyncClient):
         response = await client.post(

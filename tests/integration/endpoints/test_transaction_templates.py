@@ -4,11 +4,12 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
     archive_category,
     assert_field_error,
+    assert_validation_error,
     category_payload,
     create_category,
     create_transaction_template,
@@ -391,14 +392,11 @@ class TestCreateTransactionTemplate:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-        errors = response.json()["errors"]
-
-        assert any("add up to" in error["detail"] for error in errors)
-
-        # The whole payload is at fault, not one field: splits only make sense
-        # against the template's own amount.
-        assert errors[0]["loc"] == ["body"]
+        assert_validation_error(response, ["body", "splits"], FieldErrorCode.MUST_MATCH)
+        assert (
+            response.json()["errors"][0]["detail"]
+            == "Split amounts must add up to 150.00, got 130.00"
+        )
 
     async def test_create_template_splits_with_own_category_fails(
         self,
@@ -414,7 +412,7 @@ class TestCreateTransactionTemplate:
             category_id=created_category["id"],
             splits=[
                 split_payload(created_category["id"], "100.00"),
-                split_payload(None, "50.00"),
+                split_payload(None, "49.99"),
             ],
         )
 
@@ -425,10 +423,7 @@ class TestCreateTransactionTemplate:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-
-        errors = response.json()["errors"]
-
-        assert any("cannot have its own category" in error["detail"] for error in errors)
+        assert_validation_error(response, ["body"], FieldErrorCode.NOT_ALLOWED)
 
     async def test_create_template_single_split_fails(
         self,
@@ -484,8 +479,14 @@ class TestCreateTransactionTemplate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
         errors = response.json()["errors"]
-
-        assert any("more than 2 decimal places" in error["detail"] for error in errors)
+        assert [error["code"] for error in errors] == [
+            FieldErrorCode.DECIMAL_MAX_PLACES,
+            FieldErrorCode.DECIMAL_MAX_PLACES,
+        ]
+        assert [error["loc"] for error in errors] == [
+            ["body", "splits", 0, "amount"],
+            ["body", "splits", 1, "amount"],
+        ]
 
     async def test_create_template_split_with_other_user_category_not_found(
         self,

@@ -2,9 +2,10 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_serializer, field_validator
 
-from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator
+from app.core.error_codes import FieldErrorCode
+from app.schemas.validators import MAX_DESCRIPTION_LENGTH, amount_validator, field_error
 
 
 class TransferCreate(BaseModel):
@@ -26,16 +27,22 @@ class TransferCreate(BaseModel):
         amount = amount_validator(v)
 
         if amount == 0:
-            raise ValueError("Transfer amount must be greater than zero")
+            raise field_error(
+                FieldErrorCode.GREATER_THAN, "Transfer amount must be greater than zero"
+            )
 
         return amount
 
-    @model_validator(mode="after")
-    def validate_accounts_differ(self) -> "TransferCreate":
-        if self.from_account_id == self.to_account_id:
-            raise ValueError("Transfer must be between two different accounts")
+    @field_validator("to_account_id")
+    @classmethod
+    def validate_accounts_differ(cls, v: int, info: ValidationInfo) -> int:
+        from_account_id = info.data.get("from_account_id")
+        if from_account_id is not None and from_account_id == v:
+            raise field_error(
+                FieldErrorCode.MUST_DIFFER, "Transfer must be between two different accounts"
+            )
 
-        return self
+        return v
 
 
 class TransferUpdate(TransferCreate):

@@ -2,7 +2,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
-from app.core.exceptions import AuthenticationException, ValidationException, ValueExistsException
+from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import DUMMY_PASSWORD_HASH
 from app.models import User
 from app.repositories import CategoryRepository, UserRepository
@@ -352,36 +352,6 @@ class TestUpdatePassword:
         user_repo_mock.update.assert_called_once()
 
         unit_of_work_mock.commit.assert_awaited_once()
-
-    async def test_update_password_same_as_current(
-        self,
-        mocker: MockerFixture,
-        user_service: UserService,
-        user_repo_mock: UserRepository,
-        unit_of_work_mock: UnitOfWork,
-        existing_user: User,
-        data: PasswordUpdate,
-    ):
-        same_password = "Password12345!"
-        data.new_password = same_password
-        data.current_password = same_password
-
-        mock_password = mocker.patch(
-            "app.services.user_service.verify_password",
-        )
-
-        user_repo_mock.get_by_id.return_value = existing_user
-
-        with pytest.raises(
-            ValidationException, match="New password must be different from current password"
-        ):
-            await user_service.update_password(data, existing_user.id)
-
-        mock_password.assert_not_called()
-
-        user_repo_mock.update.assert_not_called()
-
-        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_password_wrong_current(
         self,

@@ -1,13 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from app.core.error_codes import FieldErrorCode
 from app.models.enums import TransactionType
 from app.schemas.validators import (
     MAX_DESCRIPTION_LENGTH,
     amount_validator,
     currency_code_validator,
+    field_error,
     name_validator,
 )
 
@@ -58,17 +60,39 @@ class TransactionTemplateCreate(BaseModel):
             return self
 
         if self.category_id is not None:
-            raise ValueError("Transaction template with splits cannot have its own category")
+            raise field_error(
+                FieldErrorCode.NOT_ALLOWED,
+                "Transaction template with splits cannot have its own category",
+            )
 
         if self.amount == 0:
-            raise ValueError("Transaction template with zero amount cannot be split")
-
-        total = sum(split.amount for split in self.splits)
-
-        if total != self.amount:
-            raise ValueError(f"Split amounts must add up to {self.amount}, got {total}")
+            raise field_error(
+                FieldErrorCode.NOT_ALLOWED, "Transaction template with zero amount cannot be split"
+            )
 
         return self
+
+    @field_validator("splits")
+    @classmethod
+    def validate_split_total(
+        cls, v: list[TransactionTemplateSplitCreate] | None, info: ValidationInfo
+    ) -> list[TransactionTemplateSplitCreate] | None:
+        if v is None:
+            return v
+
+        amount = info.data.get("amount")
+        # Let model rules report zero amounts or a category paired with splits first.
+        if amount is None or amount == 0 or info.data.get("category_id") is not None:
+            return v
+
+        total = sum(split.amount for split in v)
+        if total != amount:
+            raise field_error(
+                FieldErrorCode.MUST_MATCH,
+                "Split amounts must add up to {amount}, got {total}",
+                {"amount": amount, "total": total},
+            )
+        return v
 
     @field_validator("name")
     @classmethod

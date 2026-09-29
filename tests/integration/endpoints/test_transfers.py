@@ -10,6 +10,7 @@ from app.models import Currency
 from tests.integration.endpoints.helpers import (
     account_payload,
     assert_field_error,
+    assert_validation_error,
     create_account,
     create_transfer,
     transfer_payload,
@@ -314,6 +315,28 @@ class TestCreateTransfer:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
 
+    async def test_create_transfer_zero_amount_error_code(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+    ):
+        payload = transfer_payload(
+            from_account_id=created_account["id"],
+            to_account_id=same_currency_account["id"],
+            from_amount="0.00",
+        )
+
+        response = await client.post(
+            API_TRANSFERS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "from_amount"], FieldErrorCode.GREATER_THAN)
+
     async def test_create_transfer_to_same_account_fails(
         self,
         client: AsyncClient,
@@ -333,7 +356,7 @@ class TestCreateTransfer:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body", "to_account_id"], FieldErrorCode.MUST_DIFFER)
 
     @pytest.mark.parametrize(
         "missing_field",

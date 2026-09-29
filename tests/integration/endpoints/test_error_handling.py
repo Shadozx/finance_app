@@ -83,7 +83,7 @@ class TestErrorHandling:
         assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "name"])
 
     async def test_request_validation_response_format(self, client: AsyncClient):
-        short_password = "short"
+        short_password = "Z9#v2!"
 
         response = await client.post(API_REGISTER, json=register_payload(password=short_password))
 

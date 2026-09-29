@@ -2,9 +2,13 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.services.default_categories import DEFAULT_CATEGORIES
-from tests.integration.endpoints.helpers import assert_field_error, register_payload
+from tests.integration.endpoints.helpers import (
+    assert_field_error,
+    assert_validation_error,
+    register_payload,
+)
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
@@ -14,6 +18,41 @@ API_CATEGORIES_URL = "/api/v1/categories"
 
 
 class TestRegister:
+    @pytest.mark.parametrize(
+        "payload, code, field",
+        [
+            (register_payload(username="ab"), FieldErrorCode.STRING_TOO_SHORT, "username"),
+            (register_payload(username="a" * 51), FieldErrorCode.STRING_TOO_LONG, "username"),
+            (
+                register_payload(username="invalid name"),
+                FieldErrorCode.STRING_PATTERN_MISMATCH,
+                "username",
+            ),
+            (
+                register_payload(password="PasswordWithoutDigit"),
+                FieldErrorCode.PASSWORD_TOO_WEAK,
+                "password",
+            ),
+            (
+                register_payload(password="12345678"),
+                FieldErrorCode.PASSWORD_TOO_WEAK,
+                "password",
+            ),
+        ],
+    )
+    async def test_register_named_validation_codes(
+        self,
+        client: AsyncClient,
+        payload: dict[str, str],
+        code: FieldErrorCode,
+        field: str,
+    ):
+        response = await client.post(API_AUTH_REGISTER_URL, json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", field], code)
+        assert "Value error," not in response.text
+
     async def test_register_success(
         self,
         client: AsyncClient,

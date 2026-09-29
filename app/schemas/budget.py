@@ -10,10 +10,12 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.error_codes import FieldErrorCode
 from app.schemas.pagination import RecordPagination
 from app.schemas.validators import (
     amount_validator,
     currency_code_validator,
+    field_error,
     validate_date_range,
     validate_end_date_against_start,
 )
@@ -41,7 +43,9 @@ class BudgetCreate(BaseModel):
         v = v.strip()
 
         if len(v) > 100:
-            raise ValueError("Budget name must be less than 100 characters")
+            raise field_error(
+                FieldErrorCode.STRING_TOO_LONG, "Budget name must be less than 100 characters"
+            )
 
         return v or None
 
@@ -55,11 +59,11 @@ class BudgetCreate(BaseModel):
     def validate_currency_code(cls, v: str) -> str:
         return currency_code_validator(v)
 
-    @model_validator(mode="after")
-    def validate_dates(self) -> "BudgetCreate":
-        validate_date_range(self.start_date, self.end_date)
-
-        return self
+    @field_validator("end_date")
+    @classmethod
+    def validate_end_date(cls, v: date, info: ValidationInfo) -> date:
+        validate_end_date_against_start(v, info, check_dates=validate_date_range)
+        return v
 
 
 class BudgetUpdate(BudgetCreate):
@@ -112,7 +116,9 @@ class BudgetFilters(RecordPagination):
     @model_validator(mode="after")
     def validate_dates(self) -> "BudgetFilters":
         if (self.start_date is None) != (self.end_date is None):
-            raise ValueError("Both dates must be provided, or neither")
+            raise field_error(
+                FieldErrorCode.INCOMPLETE_RANGE, "Both dates must be provided, or neither"
+            )
 
         return self
 

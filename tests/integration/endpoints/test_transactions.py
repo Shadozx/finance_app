@@ -13,6 +13,7 @@ from tests.integration.endpoints.helpers import (
     archive_category,
     assert_field_error,
     assert_no_field_errors,
+    assert_validation_error,
     category_payload,
     create_account,
     create_category,
@@ -706,6 +707,37 @@ class TestCreateTransaction:
         assert "detail" in response.json()
 
     @pytest.mark.parametrize(
+        "amount, code",
+        [
+            ("NaN", FieldErrorCode.FINITE_NUMBER),
+            ("-1.00", FieldErrorCode.GREATER_THAN_EQUAL),
+        ],
+    )
+    async def test_create_transaction_amount_error_codes(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+        amount: str,
+        code: FieldErrorCode,
+    ):
+        payload = transaction_payload(
+            amount=amount,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "amount"], code)
+
+    @pytest.mark.parametrize(
         "missing_field",
         [
             "date",
@@ -915,7 +947,7 @@ class TestCreateTransaction:
             account_id=created_account["id"],
             splits=[
                 split_payload(created_category["id"], "800.00"),
-                split_payload(second_category["id"], "200.00"),
+                split_payload(second_category["id"], "199.99"),
             ],
         )
 
@@ -926,7 +958,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body"], FieldErrorCode.NOT_ALLOWED)
 
     async def test_create_transaction_splits_sum_mismatch_fails(
         self,
@@ -954,7 +986,33 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body", "splits"], FieldErrorCode.MUST_MATCH)
+
+    async def test_create_transaction_invalid_amount_with_splits_has_one_error(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            amount="-1.00",
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            splits=[
+                split_payload(amount="1.00"),
+                split_payload(amount="2.00"),
+            ],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "amount"], FieldErrorCode.GREATER_THAN_EQUAL)
 
     async def test_create_transaction_single_split_fails(
         self,
@@ -995,7 +1053,7 @@ class TestCreateTransaction:
             currency_code=active_currency["code"],
             account_id=created_account["id"],
             splits=[
-                split_payload(created_category["id"], "0.00"),
+                split_payload(created_category["id"], "1.00"),
                 split_payload(second_category["id"], "0.00"),
             ],
         )
@@ -1007,7 +1065,7 @@ class TestCreateTransaction:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "detail" in response.json()
+        assert_validation_error(response, ["body"], FieldErrorCode.NOT_ALLOWED)
 
     async def test_create_transaction_splits_with_other_user_category_not_found(
         self,
