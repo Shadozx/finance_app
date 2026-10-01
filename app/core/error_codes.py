@@ -28,6 +28,7 @@ class FieldErrorCode(StrEnum):
     FINITE_NUMBER = "finite_number"
     GREATER_THAN_EQUAL = "greater_than_equal"
     GREATER_THAN = "greater_than"
+    LESS_THAN_EQUAL = "less_than_equal"
     DECIMAL_MAX_PLACES = "decimal_max_places"
     PASSWORD_TOO_WEAK = "password_too_weak"
     INVALID_FORMAT = "invalid_format"

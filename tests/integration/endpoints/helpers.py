@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from fastapi import status
 from httpx import AsyncClient, Response
 
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
+from app.schemas.validators import MAX_AMOUNT
 from tests.integration.endpoints.types import (
     AccountData,
     CategoryData,
@@ -10,6 +13,14 @@ from tests.integration.endpoints.types import (
     TransactionTemplateData,
     TransferData,
 )
+
+# Smallest step a NUMERIC(15, 2) money column can store
+CENT = Decimal("0.01")
+
+MAX_AMOUNT_VALUE = str(MAX_AMOUNT)
+OVER_MAX_AMOUNT_VALUE = str(MAX_AMOUNT + CENT)
+MIN_BALANCE_VALUE = str(-MAX_AMOUNT)
+UNDER_MIN_BALANCE_VALUE = str(-MAX_AMOUNT - CENT)
 
 
 def assert_field_error(

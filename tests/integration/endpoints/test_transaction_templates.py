@@ -7,6 +7,8 @@ from httpx import AsyncClient
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
+    MAX_AMOUNT_VALUE,
+    OVER_MAX_AMOUNT_VALUE,
     archive_category,
     assert_field_error,
     assert_validation_error,
@@ -208,6 +210,46 @@ class TestCreateTransactionTemplate:
         assert body["user_id"] == authenticated_user["user"]["id"]
 
         assert body["created_at"] is not None
+
+    async def test_create_template_max_amount_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_template_payload(
+            amount=MAX_AMOUNT_VALUE,
+            currency_code=active_currency["code"],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["amount"] == payload["amount"]
+
+    async def test_create_template_amount_over_max_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_template_payload(
+            amount=OVER_MAX_AMOUNT_VALUE,
+            currency_code=active_currency["code"],
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "amount"], FieldErrorCode.LESS_THAN_EQUAL)
 
     async def test_create_template_duplicate_name(
         self,

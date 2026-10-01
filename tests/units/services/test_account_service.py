@@ -5,9 +5,11 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
+from app.core.error_codes import FieldErrorCode
 from app.core.exceptions import (
     NotAllowedActionException,
     NotFoundException,
+    ValidationException,
     ValueExistsException,
 )
 from app.models import Account, Currency, TransactionKind, TransactionType
@@ -20,6 +22,7 @@ from app.schemas import (
     AccountUpdate,
     InitialBalanceKind,
 )
+from app.schemas.validators import MAX_AMOUNT
 from app.services import AccountService, validators
 from tests.units.services.helpers import as_persisted, assert_model_fields, make_account
 
@@ -1131,3 +1134,31 @@ class TestReconcileAccount:
             )
 
         transaction_repo_mock.add.assert_not_called()
+
+    async def test_reconcile_account_difference_over_max_fails(
+        self,
+        account_service: AccountService,
+        account_repo_mock: AccountRepository,
+        transaction_repo_mock: TransactionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_account: Account,
+    ):
+        """Both balances fit the column, but the adjustment amount between them does not."""
+        account_repo_mock.get_by_id.return_value = existing_account
+        transaction_repo_mock.get_balance.return_value = -MAX_AMOUNT
+
+        data = AccountReconcile(actual_balance=MAX_AMOUNT)
+
+        with pytest.raises(ValidationException, match="Request validation failed") as exc_info:
+            await account_service.reconcile_account(
+                existing_account.id,
+                data,
+                existing_account.user_id,
+            )
+
+        assert exc_info.value.errors[0].loc == ("actual_balance",)
+        assert exc_info.value.errors[0].code == FieldErrorCode.LESS_THAN_EQUAL
+
+        transaction_repo_mock.add.assert_not_called()
+
+        unit_of_work_mock.commit.assert_not_awaited()

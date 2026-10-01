@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import Currency
 from tests.integration.endpoints.helpers import (
+    MAX_AMOUNT_VALUE,
+    OVER_MAX_AMOUNT_VALUE,
     account_payload,
     assert_field_error,
     assert_validation_error,
@@ -336,6 +338,51 @@ class TestCreateTransfer:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert_validation_error(response, ["body", "from_amount"], FieldErrorCode.GREATER_THAN)
+
+    async def test_create_transfer_max_amount_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+    ):
+        payload = transfer_payload(
+            from_account_id=created_account["id"],
+            to_account_id=same_currency_account["id"],
+            from_amount=MAX_AMOUNT_VALUE,
+            to_amount=MAX_AMOUNT_VALUE,
+        )
+
+        response = await client.post(
+            API_TRANSFERS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["from_amount"] == payload["from_amount"]
+
+    async def test_create_transfer_amount_over_max_error_code(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        same_currency_account: AccountData,
+    ):
+        payload = transfer_payload(
+            from_account_id=created_account["id"],
+            to_account_id=same_currency_account["id"],
+            from_amount=OVER_MAX_AMOUNT_VALUE,
+        )
+
+        response = await client.post(
+            API_TRANSFERS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "from_amount"], FieldErrorCode.LESS_THAN_EQUAL)
 
     async def test_create_transfer_to_same_account_fails(
         self,

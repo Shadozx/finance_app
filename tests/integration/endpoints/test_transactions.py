@@ -9,6 +9,8 @@ from app.models import CategoryType
 from app.schemas.pagination import MAX_RECORD_PAGE_SIZE
 from app.schemas.validators import MAX_DATE_RANGE_DAYS
 from tests.integration.endpoints.helpers import (
+    MAX_AMOUNT_VALUE,
+    OVER_MAX_AMOUNT_VALUE,
     account_payload,
     archive_category,
     assert_field_error,
@@ -312,6 +314,28 @@ class TestCreateTransaction:
         assert body["id"] is not None
         assert body["amount"] == payload["amount"]
         assert body["user_id"] == authenticated_user["user"]["id"]
+
+    async def test_create_transaction_max_amount_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        active_currency: CurrencyData,
+    ):
+        payload = transaction_payload(
+            amount=MAX_AMOUNT_VALUE,
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["amount"] == payload["amount"]
 
     async def test_create_transaction_created_at_is_not_the_operation_date(
         self,
@@ -711,6 +735,7 @@ class TestCreateTransaction:
         [
             ("NaN", FieldErrorCode.FINITE_NUMBER),
             ("-1.00", FieldErrorCode.GREATER_THAN_EQUAL),
+            (OVER_MAX_AMOUNT_VALUE, FieldErrorCode.LESS_THAN_EQUAL),
         ],
     )
     async def test_create_transaction_amount_error_codes(

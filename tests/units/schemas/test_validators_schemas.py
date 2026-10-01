@@ -4,9 +4,11 @@ from decimal import Decimal
 import pytest
 
 from app.schemas.validators import (
+    MAX_AMOUNT,
     MAX_DATE_RANGE_DAYS,
     MAX_NAME_LENGTH,
     amount_validator,
+    balance_validator,
     currency_code_validator,
     name_validator,
     password_validator,
@@ -130,6 +132,43 @@ class TestAmountValidator:
         """NaN and Infinity are not amounts: quantize would raise InvalidOperation, not ValueError."""
         with pytest.raises(ValueError, match="Amount must be a finite number"):
             amount_validator(Decimal(amount))
+
+    def test_amount_at_max_allowed(self):
+        assert amount_validator(MAX_AMOUNT) == MAX_AMOUNT
+
+    def test_amount_above_max_rejected(self):
+        """NUMERIC(15, 2) cannot hold it: the database would fail with an overflow."""
+        with pytest.raises(ValueError, match="Amount cannot exceed"):
+            amount_validator(MAX_AMOUNT + Decimal("0.01"))
+
+
+class TestBalanceValidator:
+    @pytest.mark.parametrize("balance", [Decimal("0"), Decimal("150.00"), Decimal("-150.00")])
+    def test_valid_balance_returned_as_is(self, balance: Decimal):
+        assert balance_validator(balance) == balance
+
+    @pytest.mark.parametrize("balance", [MAX_AMOUNT, -MAX_AMOUNT])
+    def test_balance_at_bounds_allowed(self, balance: Decimal):
+        assert balance_validator(balance) == balance
+
+    def test_balance_above_max_rejected(self):
+        with pytest.raises(ValueError, match="Balance cannot exceed"):
+            balance_validator(MAX_AMOUNT + Decimal("0.01"))
+
+    def test_balance_below_min_rejected(self):
+        with pytest.raises(ValueError, match="Balance cannot be less than"):
+            balance_validator(-MAX_AMOUNT - Decimal("0.01"))
+
+    @pytest.mark.parametrize("balance", [Decimal("33.333"), Decimal("-0.001")])
+    def test_balance_with_more_than_two_decimals_rejected(self, balance: Decimal):
+        """NUMERIC(15, 2) would silently round these, storing a different balance."""
+        with pytest.raises(ValueError, match="more than 2 decimal places"):
+            balance_validator(balance)
+
+    @pytest.mark.parametrize("balance", ["NaN", "Infinity", "-Infinity"])
+    def test_non_finite_balance_rejected(self, balance: str):
+        with pytest.raises(ValueError, match="Balance must be a finite number"):
+            balance_validator(Decimal(balance))
 
 
 class TestCurrencyCodeValidator:

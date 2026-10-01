@@ -17,6 +17,9 @@ MAX_DESCRIPTION_LENGTH = 1024
 
 MAX_NAME_LENGTH = 100
 
+# Largest value a NUMERIC(15, 2) money column can hold; keep in sync with the column precision
+MAX_AMOUNT = Decimal("9999999999999.99")
+
 
 def field_error(
     code: FieldErrorCode,
@@ -95,7 +98,40 @@ def amount_validator(amount: Decimal) -> Decimal:
             FieldErrorCode.DECIMAL_MAX_PLACES, "Amount cannot have more than 2 decimal places"
         )
 
+    if amount > MAX_AMOUNT:
+        raise field_error(
+            FieldErrorCode.LESS_THAN_EQUAL,
+            "Amount cannot exceed {max_amount}",
+            {"max_amount": str(MAX_AMOUNT)},
+        )
+
     return amount
+
+
+def balance_validator(balance: Decimal) -> Decimal:
+    if not balance.is_finite():
+        raise field_error(FieldErrorCode.FINITE_NUMBER, "Balance must be a finite number")
+
+    if balance != balance.quantize(Decimal("0.01")):
+        raise field_error(
+            FieldErrorCode.DECIMAL_MAX_PLACES, "Balance cannot have more than 2 decimal places"
+        )
+
+    if balance < -MAX_AMOUNT:
+        raise field_error(
+            FieldErrorCode.GREATER_THAN_EQUAL,
+            "Balance cannot be less than {min_balance}",
+            {"min_balance": str(-MAX_AMOUNT)},
+        )
+
+    if balance > MAX_AMOUNT:
+        raise field_error(
+            FieldErrorCode.LESS_THAN_EQUAL,
+            "Balance cannot exceed {max_balance}",
+            {"max_balance": str(MAX_AMOUNT)},
+        )
+
+    return balance
 
 
 def currency_code_validator(currency_code: str) -> str:

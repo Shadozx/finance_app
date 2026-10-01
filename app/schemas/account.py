@@ -4,7 +4,7 @@ from enum import Enum
 
 from pydantic import BaseModel, field_serializer, field_validator
 
-from app.schemas.validators import currency_code_validator, name_validator
+from app.schemas.validators import balance_validator, currency_code_validator, name_validator
 
 
 class AccountStatus(str, Enum):
@@ -41,6 +41,11 @@ class AccountCreate(BaseModel):
     def validate_currency_code(cls, v: str) -> str:
         return currency_code_validator(v)
 
+    @field_validator("initial_balance")
+    @classmethod
+    def validate_initial_balance(cls, v: Decimal) -> Decimal:
+        return balance_validator(v)
+
 
 class AccountUpdate(BaseModel):
     name: str
@@ -53,6 +58,11 @@ class AccountUpdate(BaseModel):
 
 class AccountReconcile(BaseModel):
     actual_balance: Decimal
+
+    @field_validator("actual_balance")
+    @classmethod
+    def validate_actual_balance(cls, v: Decimal) -> Decimal:
+        return balance_validator(v)
 
 
 class AccountResponse(BaseModel):

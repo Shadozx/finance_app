@@ -3,8 +3,13 @@ from decimal import Decimal
 import structlog
 
 from app.core import UnitOfWork, today
-from app.core.error_codes import ErrorCode
-from app.core.exceptions import NotAllowedActionException, ValueExistsException
+from app.core.error_codes import ErrorCode, FieldErrorCode
+from app.core.exceptions import (
+    FieldError,
+    NotAllowedActionException,
+    ValidationException,
+    ValueExistsException,
+)
 from app.models import Account, Transaction, TransactionKind, TransactionType
 from app.repositories import AccountRepository, CurrencyRepository, TransactionRepository
 from app.schemas import (
@@ -17,6 +22,7 @@ from app.schemas import (
     InitialBalanceKind,
     Page,
 )
+from app.schemas.validators import MAX_AMOUNT
 from app.services import validators
 
 logger = structlog.get_logger()
@@ -175,6 +181,18 @@ class AccountService:
                 account=self._to_response(existing_account, current_balance),
                 difference=Decimal("0"),
                 adjusted=False,
+            )
+
+        # The schema bounds actual_balance alone; the adjustment amount depends on the current balance
+        if abs(difference) > MAX_AMOUNT:
+            raise ValidationException(
+                errors=[
+                    FieldError(
+                        loc=("actual_balance",),
+                        code=FieldErrorCode.LESS_THAN_EQUAL,
+                        detail=f"Balance change cannot exceed {MAX_AMOUNT}",
+                    )
+                ],
             )
 
         adjustment = Transaction(

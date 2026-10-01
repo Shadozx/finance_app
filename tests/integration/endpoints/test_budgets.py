@@ -5,6 +5,8 @@ from httpx import AsyncClient
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from tests.integration.endpoints.helpers import (
+    MAX_AMOUNT_VALUE,
+    OVER_MAX_AMOUNT_VALUE,
     archive_category,
     assert_field_error,
     assert_validation_error,
@@ -164,6 +166,42 @@ class TestCreateBudget:
         )
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["amount"] == "0.00"
+
+    async def test_create_budget_max_amount_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        payload = budget_payload(
+            amount=MAX_AMOUNT_VALUE,
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+        )
+        response = await client.post(
+            API_BUDGETS, json=payload, headers=authenticated_user["headers"]
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["amount"] == payload["amount"]
+
+    async def test_create_budget_amount_over_max_error_code(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        created_category: CategoryData,
+    ):
+        payload = budget_payload(
+            amount=OVER_MAX_AMOUNT_VALUE,
+            currency_code=active_currency["code"],
+            category_id=created_category["id"],
+        )
+        response = await client.post(
+            API_BUDGETS, json=payload, headers=authenticated_user["headers"]
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "amount"], FieldErrorCode.LESS_THAN_EQUAL)
 
     async def test_create_budget_duplicate_fails(
         self,

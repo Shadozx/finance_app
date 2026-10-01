@@ -2,11 +2,16 @@ import pytest
 from fastapi import status
 from httpx import AsyncClient
 
-from app.core.error_codes import ErrorCode
+from app.core.error_codes import ErrorCode, FieldErrorCode
 from tests.integration.endpoints.helpers import (
+    MAX_AMOUNT_VALUE,
+    MIN_BALANCE_VALUE,
+    OVER_MAX_AMOUNT_VALUE,
+    UNDER_MIN_BALANCE_VALUE,
     account_payload,
     assert_field_error,
     assert_no_field_errors,
+    assert_validation_error,
     create_account,
     create_transaction,
     transaction_payload,
@@ -318,6 +323,55 @@ class TestCreateAccount:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["balance"] == "-2000.00"
+
+    @pytest.mark.parametrize("initial_balance", [MIN_BALANCE_VALUE, MAX_AMOUNT_VALUE])
+    async def test_create_account_initial_balance_at_bounds_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        initial_balance: str,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = initial_balance
+
+        response = await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["balance"] == initial_balance
+
+    @pytest.mark.parametrize(
+        "initial_balance, code",
+        [
+            ("NaN", FieldErrorCode.FINITE_NUMBER),
+            ("100.005", FieldErrorCode.DECIMAL_MAX_PLACES),
+            (UNDER_MIN_BALANCE_VALUE, FieldErrorCode.GREATER_THAN_EQUAL),
+            (OVER_MAX_AMOUNT_VALUE, FieldErrorCode.LESS_THAN_EQUAL),
+        ],
+    )
+    async def test_create_account_initial_balance_error_codes(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+        initial_balance: str,
+        code: FieldErrorCode,
+    ):
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = initial_balance
+
+        response = await client.post(
+            API_ACCOUNTS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "initial_balance"], code)
 
     async def test_create_account_existing_balance_excluded_from_statistics(
         self,
@@ -1405,6 +1459,61 @@ class TestReconcileAccount:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
         assert "detail" in response.json()
+
+    @pytest.mark.parametrize(
+        "actual_balance, code",
+        [
+            ("NaN", FieldErrorCode.FINITE_NUMBER),
+            ("100.005", FieldErrorCode.DECIMAL_MAX_PLACES),
+            (UNDER_MIN_BALANCE_VALUE, FieldErrorCode.GREATER_THAN_EQUAL),
+            (OVER_MAX_AMOUNT_VALUE, FieldErrorCode.LESS_THAN_EQUAL),
+        ],
+    )
+    async def test_reconcile_account_actual_balance_error_codes(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        actual_balance: str,
+        code: FieldErrorCode,
+    ):
+        response = await client.post(
+            f"{API_ACCOUNTS}/{created_account['id']}/reconcile",
+            json={"actual_balance": actual_balance},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "actual_balance"], code)
+
+    async def test_reconcile_account_difference_over_max_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        active_currency: CurrencyData,
+    ):
+        """Both balances are in bounds, but the adjustment between them is not."""
+        payload = account_payload(currency_code=active_currency["code"])
+        payload["initial_balance"] = MIN_BALANCE_VALUE
+        account = await create_account(client, payload, authenticated_user["headers"])
+
+        response = await client.post(
+            f"{API_ACCOUNTS}/{account['id']}/reconcile",
+            json={"actual_balance": MAX_AMOUNT_VALUE},
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(
+            response, ["body", "actual_balance"], FieldErrorCode.LESS_THAN_EQUAL
+        )
+
+        get_response = await client.get(
+            f"{API_ACCOUNTS}/{account['id']}",
+            headers=authenticated_user["headers"],
+        )
+
+        assert get_response.json()["balance"] == account["balance"]
 
     async def test_reconcile_account_invalid_id(
         self,
