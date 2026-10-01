@@ -30,9 +30,8 @@ from app.core.exception_handlers import (
 from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
 from app.core.logging_config import setup_logging
 from app.core.middleware import RequestIDMiddleware, UnhandledExceptionMiddleware
-from app.core.openapi import configure_openapi
+from app.core.openapi import configure_openapi, problem_response
 from app.core.rate_limiter import limiter
-from app.schemas.error import ErrorResponse
 
 is_prod = settings.ENVIRONMENT == Environment.PROD
 
@@ -43,15 +42,8 @@ app = FastAPI(
     redoc_url=None if is_prod else "/redoc",
     openapi_url=None if is_prod else "/openapi.json",
     responses={
-        422: {
-            "model": ErrorResponse,
-            "description": REQUEST_VALIDATION_FAILED_MESSAGE,
-            "content": {
-                "application/problem+json": {
-                    "schema": {"$ref": "#/components/schemas/ErrorResponse"}
-                }
-            },
-        }
+        422: problem_response(REQUEST_VALIDATION_FAILED_MESSAGE),
+        "default": problem_response("Error"),
     },
 )
 

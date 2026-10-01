@@ -302,8 +302,22 @@ def test_openapi_uses_error_response_for_validation():
     assert "HTTPValidationError" not in schema["components"]["schemas"]
 
 
+def test_openapi_uses_error_response_for_default():
+    schema = app.openapi()
+
+    for path_item in schema["paths"].values():
+        for operation in path_item.values():
+            response = operation["responses"]["default"]
+            assert set(response["content"]) == {"application/problem+json"}
+            assert response["content"]["application/problem+json"]["schema"] == {
+                "$ref": "#/components/schemas/ErrorResponse"
+            }
+
+
 @pytest.mark.parametrize("path", ["/api/v1/health", "/api/v1/health/ready"])
 def test_openapi_health_has_no_validation_response(path: str):
     schema = app.openapi()
 
-    assert "422" not in schema["paths"][path]["get"]["responses"]
+    responses = schema["paths"][path]["get"]["responses"]
+    assert "422" not in responses
+    assert "default" in responses
