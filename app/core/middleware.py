@@ -5,6 +5,8 @@ import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from app.core.exception_handlers import global_exception_handler
+
 logger = structlog.get_logger()
 
 
@@ -29,3 +31,12 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             structlog.contextvars.clear_contextvars()
+
+
+class UnhandledExceptionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            # Called inside except so the handler still sees the traceback for exc_info
+            return await global_exception_handler(request, exc)

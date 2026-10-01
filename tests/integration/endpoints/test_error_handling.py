@@ -1,5 +1,6 @@
+import structlog
 from fastapi import status
-from httpx import ASGITransport, AsyncClient, Response
+from httpx import AsyncClient, Response
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
@@ -141,9 +142,10 @@ class TestErrorHandling:
             side_effect=RuntimeError("Repository unavailable"),
         )
         payload = category_payload()
-        transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url=client.base_url) as error_client:
-            response = await error_client.post(
+
+        # capture_logs drops the configured processors, so request_id must be merged back in
+        with capture_logs(processors=[structlog.contextvars.merge_contextvars]) as logs:
+            response = await client.post(
                 API_CATEGORIES, json=payload, headers=authenticated_user["headers"]
             )
 
@@ -151,6 +153,11 @@ class TestErrorHandling:
             response, status.HTTP_500_INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR
         )
         assert response.json()["detail"] == "Internal server error"
+
+        # X-Request-ID is set inside CORSMiddleware: its presence means the 500 went through it
+        unhandled_logs = [log for log in logs if log["event"] == "unhandled_exception"]
+        assert len(unhandled_logs) == 1
+        assert unhandled_logs[0]["request_id"] == response.headers["X-Request-ID"]
 
     async def test_readiness_failure_response_format(
         self,

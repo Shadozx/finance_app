@@ -29,7 +29,7 @@ from app.core.exception_handlers import (
 )
 from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
 from app.core.logging_config import setup_logging
-from app.core.middleware import RequestIDMiddleware
+from app.core.middleware import RequestIDMiddleware, UnhandledExceptionMiddleware
 from app.core.openapi import configure_openapi
 from app.core.rate_limiter import limiter
 from app.schemas.error import ErrorResponse
@@ -60,6 +60,10 @@ setup_logging(settings)
 app.state.limiter = limiter
 
 app.add_middleware(SlowAPIMiddleware)
+
+# Inside RequestIDMiddleware and CORSMiddleware, so a 500 passes through both
+# and is logged before the request context is cleared
+app.add_middleware(UnhandledExceptionMiddleware)
 
 app.add_middleware(RequestIDMiddleware)
 
