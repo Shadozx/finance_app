@@ -7,7 +7,7 @@ from .account import (
     AccountUpdate,
     InitialBalanceKind,
 )
-from .auth import TokenResponse
+from .auth import RefreshTokenRequest, TokenResponse
 from .budget import (
     BudgetCreate,
     BudgetFilters,
@@ -79,6 +79,7 @@ __all__ = [
     "InitialBalanceKind",
     "Page",
     "PasswordUpdate",
+    "RefreshTokenRequest",
     "StatisticsFilters",
     "SummaryPeriod",
     "SummaryResponse",

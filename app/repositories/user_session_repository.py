@@ -38,6 +38,11 @@ class UserSessionRepository:
 
         return user_session
 
+    async def update(self, user_session: UserSession) -> UserSession:
+        await self.session.flush()
+
+        return user_session
+
     async def delete_expired_sessions(
         self,
         user_id: int,

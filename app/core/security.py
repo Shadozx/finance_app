@@ -1,4 +1,7 @@
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
@@ -12,6 +15,29 @@ ph = PasswordHasher()
 # either way. Computed once at import with the current hasher settings: a hardcoded hash
 # would keep the parameters it was made with and drift apart from the real one.
 DUMMY_PASSWORD_HASH = ph.hash("dummy-password-never-matched")
+
+
+def generate_refresh_secret() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def create_refresh_token(session_id: UUID, secret: str) -> str:
+    return f"{session_id}.{secret}"
+
+
+def parse_refresh_token(token: str) -> tuple[UUID, str] | None:
+    session_id, separator, secret = token.partition(".")
+    if not separator or not secret:
+        return None
+
+    try:
+        return UUID(session_id), secret
+    except ValueError:
+        return None
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

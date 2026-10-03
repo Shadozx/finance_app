@@ -4,12 +4,17 @@ from datetime import timedelta
 import pytest
 from fastapi import status
 from httpx import AsyncClient
+from pytest_mock import MockerFixture
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints.auth import REFRESH_REQUESTS_PER_MINUTE
 from app.core import create_access_token, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
+from app.core.rate_limiter import limiter
+from app.core.security import create_refresh_token, hash_refresh_secret, parse_refresh_token
 from app.models import UserSession
+from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
     assert_field_error,
@@ -23,12 +28,24 @@ from tests.integration.endpoints.types import AuthenticatedUser, UserData
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
 API_AUTH_LOGIN_URL = "/api/v1/auth/login"
+API_AUTH_REFRESH_URL = "/api/v1/auth/refresh"
+API_AUTH_LOGOUT_URL = "/api/v1/auth/logout"
 
 API_CATEGORIES_URL = "/api/v1/categories"
 
 API_USERS_ME_URL = "/api/v1/users/me"
 
 SESSION_TIME_OFFSET = timedelta(days=1)
+
+
+@pytest.fixture
+async def login_tokens(client: AsyncClient, registered_user: UserData) -> dict[str, str]:
+    response = await client.post(
+        API_AUTH_LOGIN_URL,
+        json={"email": registered_user["email"], "password": registered_user["password"]},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    return response.json()
 
 
 class TestRegister:
@@ -207,7 +224,9 @@ class TestLogin:
 
         body = response.json()
         assert "access_token" in body
+        assert "refresh_token" in body
         assert body["token_type"] == "bearer"
+        assert response.headers["Cache-Control"] == "no-store"
 
         payload = verify_token(body["access_token"])
 
@@ -221,6 +240,12 @@ class TestLogin:
         assert user_session is not None
         assert user_session.user_id == registered_user["id"]
         assert user_session.user_agent == user_agent
+        parsed_token = parse_refresh_token(body["refresh_token"])
+        assert parsed_token is not None
+        refresh_session_id, secret = parsed_token
+        assert refresh_session_id == session_id
+        assert user_session.refresh_token_hash == hash_refresh_secret(secret)
+        assert user_session.refresh_token_hash != secret
 
     async def test_login_wrong_password(
         self,
@@ -284,6 +309,187 @@ class TestLogin:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
 
         assert "detail" in response.json()
+
+
+class TestRefresh:
+    async def test_refresh_rotates_tokens_and_rejects_old_refresh_token(
+        self,
+        client: AsyncClient,
+        login_tokens: dict[str, str],
+    ):
+        response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["Cache-Control"] == "no-store"
+        tokens = response.json()
+        assert tokens["token_type"] == "bearer"
+        assert tokens["refresh_token"] != login_tokens["refresh_token"]
+        assert tokens["access_token"] != login_tokens["access_token"]
+
+        old_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert old_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        access_response = await client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
+        )
+        assert access_response.status_code == status.HTTP_200_OK
+
+        next_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert next_refresh_response.status_code == status.HTTP_200_OK
+        assert next_refresh_response.json()["refresh_token"] != tokens["refresh_token"]
+
+    @pytest.mark.parametrize("session_state", ["expired", "revoked", "unknown"])
+    async def test_refresh_rejects_inactive_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+        session_state: str,
+    ):
+        parsed_token = parse_refresh_token(login_tokens["refresh_token"])
+        assert parsed_token is not None
+        session_id, secret = parsed_token
+        refresh_token = login_tokens["refresh_token"]
+        if session_state == "unknown":
+            refresh_token = create_refresh_token(uuid.uuid4(), secret)
+        else:
+            now = utc_now()
+            changes = (
+                {"expires_at": now - SESSION_TIME_OFFSET}
+                if session_state == "expired"
+                else {"revoked_at": now}
+            )
+            await test_session.execute(
+                update(UserSession).where(UserSession.id == session_id).values(**changes)
+            )
+
+        response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": refresh_token})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.parametrize("refresh_token", ["", "malformed-token", "invalid-uuid.secret"])
+    async def test_refresh_rejects_malformed_token(self, client: AsyncClient, refresh_token: str):
+        response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": refresh_token})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.parametrize(
+        "payload",
+        [{}, {"refresh_token": "x" * (REFRESH_TOKEN_MAX_LENGTH + 1)}],
+        ids=["missing-field", "too-long"],
+    )
+    async def test_refresh_validates_request(self, client: AsyncClient, payload: dict[str, str]):
+        response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["errors"][0]["loc"] == ["body", "refresh_token"]
+
+    async def test_refresh_rate_limit(self, mocker: MockerFixture, client: AsyncClient):
+        invalid_token = "malformed-token"
+        limiter.reset()
+        mocker.patch.object(limiter, "enabled", True)
+
+        try:
+            for _ in range(REFRESH_REQUESTS_PER_MINUTE):
+                response = await client.post(
+                    API_AUTH_REFRESH_URL, json={"refresh_token": invalid_token}
+                )
+                assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+            response = await client.post(
+                API_AUTH_REFRESH_URL, json={"refresh_token": invalid_token}
+            )
+            assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        finally:
+            limiter.reset()
+
+
+class TestLogout:
+    async def test_logout_immediately_rejects_access_and_refresh_tokens(
+        self,
+        client: AsyncClient,
+        login_tokens: dict[str, str],
+    ):
+        payload = {"refresh_token": login_tokens["refresh_token"]}
+        headers = {"Authorization": f"Bearer {login_tokens['access_token']}"}
+        active_response = await client.get(API_USERS_ME_URL, headers=headers)
+        assert active_response.status_code == status.HTTP_200_OK
+
+        response = await client.post(API_AUTH_LOGOUT_URL, json=payload)
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.content == b""
+        refresh_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+        assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        access_response = await client.get(API_USERS_ME_URL, headers=headers)
+        assert access_response.status_code == status.HTTP_401_UNAUTHORIZED
+        repeated_logout_response = await client.post(API_AUTH_LOGOUT_URL, json=payload)
+        assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
+
+    @pytest.mark.parametrize(
+        "refresh_token",
+        [
+            "",
+            "malformed-token",
+            "invalid-uuid.secret",
+            f"{uuid.uuid4()}.",
+            f"{uuid.uuid4()}.secret",
+        ],
+        ids=["empty", "missing-separator", "invalid-uuid", "empty-secret", "unknown-session"],
+    )
+    async def test_logout_ignores_invalid_token(self, client: AsyncClient, refresh_token: str):
+        response = await client.post(API_AUTH_LOGOUT_URL, json={"refresh_token": refresh_token})
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert response.content == b""
+
+    async def test_logout_wrong_secret_does_not_revoke_session(
+        self,
+        client: AsyncClient,
+        login_tokens: dict[str, str],
+    ):
+        payload = verify_token(login_tokens["access_token"])
+        session_id = uuid.UUID(payload["sid"])
+        wrong_token = create_refresh_token(session_id, "wrong-refresh-secret")
+
+        response = await client.post(API_AUTH_LOGOUT_URL, json={"refresh_token": wrong_token})
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        access_response = await client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {login_tokens['access_token']}"}
+        )
+        assert access_response.status_code == status.HTTP_200_OK
+        refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert refresh_response.status_code == status.HTTP_200_OK
+
+    async def test_logout_old_refresh_token_does_not_revoke_rotated_session(
+        self,
+        client: AsyncClient,
+        login_tokens: dict[str, str],
+    ):
+        refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert refresh_response.status_code == status.HTTP_200_OK
+        current_tokens = refresh_response.json()
+
+        response = await client.post(
+            API_AUTH_LOGOUT_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        current_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        )
+        assert current_refresh_response.status_code == status.HTTP_200_OK
 
 
 class TestSessionToken:

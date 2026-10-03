@@ -1,4 +1,6 @@
+import hmac
 from datetime import timedelta
+from uuid import uuid4
 
 import structlog
 
@@ -8,12 +10,23 @@ from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
+    create_refresh_token,
+    generate_refresh_secret,
     hash_password,
+    hash_refresh_secret,
+    parse_refresh_token,
     verify_password,
 )
 from app.models import USER_AGENT_MAX_LENGTH, Category, User, UserSession
 from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
-from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
+from app.schemas import (
+    PasswordUpdate,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UsernameUpdate,
+    UserResponse,
+)
 from app.services import validators
 from app.services.default_categories import DEFAULT_CATEGORIES
 
@@ -58,7 +71,18 @@ class UserService:
 
         return UserResponse.model_validate(created_user)
 
-    async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> str:
+    def _issue_tokens(self, user_session: UserSession) -> TokenResponse:
+        secret = generate_refresh_secret()
+        user_session.refresh_token_hash = hash_refresh_secret(secret)
+
+        return TokenResponse(
+            access_token=create_access_token(
+                {"sub": str(user_session.user_id), "sid": str(user_session.id)}
+            ),
+            refresh_token=create_refresh_token(user_session.id, secret),
+        )
+
+    async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
         existing_user = await self.user_repository.get_by_email(user.email)
 
         hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
@@ -76,15 +100,17 @@ class UserService:
 
         await self.user_session_repository.delete_expired_sessions(existing_user.id, now)
 
-        user_session = await self.user_session_repository.add(
-            UserSession(
-                user_id=existing_user.id,
-                user_agent=user_agent[:USER_AGENT_MAX_LENGTH] if user_agent is not None else None,
-                created_at=now,
-                last_used_at=now,
-                expires_at=now + timedelta(days=settings.SESSION_IDLE_DAYS),
-            )
+        user_session = UserSession(
+            id=uuid4(),
+            user_id=existing_user.id,
+            user_agent=user_agent[:USER_AGENT_MAX_LENGTH] if user_agent is not None else None,
+            created_at=now,
+            last_used_at=now,
+            expires_at=now + timedelta(days=settings.SESSION_IDLE_DAYS),
         )
+        tokens = self._issue_tokens(user_session)
+
+        await self.user_session_repository.add(user_session)
 
         await self.unit_of_work.commit()
 
@@ -95,7 +121,58 @@ class UserService:
             session_id=user_session.id,
         )
 
-        return create_access_token({"sub": str(existing_user.id), "sid": str(user_session.id)})
+        return tokens
+
+    async def refresh_session(self, refresh_token: str) -> TokenResponse:
+        parsed_token = parse_refresh_token(refresh_token)
+        if parsed_token is None:
+            raise AuthenticationException()
+
+        session_id, secret = parsed_token
+        now = utc_now()
+        found = await self.user_session_repository.get_active_with_user(session_id, now)
+        if found is None:
+            raise AuthenticationException()
+
+        user_session, _ = found
+        if not hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+            raise AuthenticationException()
+
+        user_session.last_used_at = now
+        user_session.expires_at = min(
+            now + timedelta(days=settings.SESSION_IDLE_DAYS),
+            user_session.created_at + timedelta(days=settings.SESSION_MAX_DAYS),
+        )
+        tokens = self._issue_tokens(user_session)
+
+        await self.user_session_repository.update(user_session)
+        await self.unit_of_work.commit()
+
+        logger.info("user_session_refresh_success", session_id=session_id)
+
+        return tokens
+
+    async def logout(self, refresh_token: str) -> None:
+        parsed_token = parse_refresh_token(refresh_token)
+        if parsed_token is None:
+            return
+
+        session_id, secret = parsed_token
+        now = utc_now()
+        found = await self.user_session_repository.get_active_with_user(session_id, now)
+        if found is None:
+            return
+
+        user_session, _ = found
+        if not hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+            return
+
+        user_session.revoked_at = now
+
+        await self.user_session_repository.update(user_session)
+        await self.unit_of_work.commit()
+
+        logger.info("user_logout_success", session_id=session_id)
 
     async def update_username(self, data: UsernameUpdate, user_id: int) -> UserResponse:
         existing_user = await validators.validate_user(self.user_repository, user_id)

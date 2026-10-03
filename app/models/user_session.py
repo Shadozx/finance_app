@@ -21,6 +21,8 @@ class UserSession(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
 
+    refresh_token_hash: Mapped[str] = mapped_column(String(64))
+
     user_agent: Mapped[str | None] = mapped_column(String(USER_AGENT_MAX_LENGTH))
 
     created_at: Mapped[datetime] = mapped_column(

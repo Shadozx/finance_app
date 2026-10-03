@@ -5,10 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import utc_now
+from app.core.security import hash_refresh_secret
 from app.models import User, UserSession
 from app.repositories import UserRepository, UserSessionRepository
 
 SESSION_TIME_OFFSET = timedelta(days=1)
+REFRESH_TOKEN_HASH = hash_refresh_secret("repository-refresh-secret")
 
 
 class TestAdd:
@@ -18,11 +20,49 @@ class TestAdd:
         user: User,
     ):
         now = utc_now()
-        user_session = UserSession(user_id=user.id, expires_at=now + SESSION_TIME_OFFSET)
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         created_session = await user_session_repository.add(user_session)
 
         assert created_session.id is not None
+
+
+class TestUpdate:
+    async def test_update_persists_rotated_hash_and_expiration(
+        self,
+        test_session: AsyncSession,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        user_session = await user_session_repository.add(
+            UserSession(
+                user_id=user.id,
+                expires_at=now + SESSION_TIME_OFFSET,
+                refresh_token_hash=REFRESH_TOKEN_HASH,
+            )
+        )
+        session_id = user_session.id
+        rotated_hash = hash_refresh_secret("rotated-refresh-secret")
+        refreshed_at = now + SESSION_TIME_OFFSET
+        extended_expiration = refreshed_at + SESSION_TIME_OFFSET
+        user_session.refresh_token_hash = rotated_hash
+        user_session.last_used_at = refreshed_at
+        user_session.expires_at = extended_expiration
+
+        updated_session = await user_session_repository.update(user_session)
+        test_session.expunge_all()
+        persisted_session = await test_session.get(UserSession, session_id)
+
+        assert updated_session is user_session
+        assert persisted_session is not None
+        assert persisted_session.refresh_token_hash == rotated_hash
+        assert persisted_session.last_used_at == refreshed_at
+        assert persisted_session.expires_at == extended_expiration
 
 
 class TestGetActiveWithUser:
@@ -32,7 +72,11 @@ class TestGetActiveWithUser:
         user: User,
     ):
         now = utc_now()
-        user_session = UserSession(user_id=user.id, expires_at=now + SESSION_TIME_OFFSET)
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         created_session = await user_session_repository.add(user_session)
 
@@ -54,6 +98,7 @@ class TestGetActiveWithUser:
         now = utc_now()
         user_session = UserSession(
             user_id=user.id,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
             expires_at=now + SESSION_TIME_OFFSET,
             revoked_at=now,
         )
@@ -70,7 +115,11 @@ class TestGetActiveWithUser:
         user: User,
     ):
         now = utc_now()
-        user_session = UserSession(user_id=user.id, expires_at=now - SESSION_TIME_OFFSET)
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         created_session = await user_session_repository.add(user_session)
 
@@ -95,7 +144,11 @@ class TestGetActiveWithUser:
         user: User,
     ):
         now = utc_now()
-        user_session = UserSession(user_id=user.id, expires_at=now)
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         created_session = await user_session_repository.add(user_session)
 
@@ -112,7 +165,11 @@ class TestDeleteExpiredSessions:
         user: User,
     ):
         now = utc_now()
-        user_session = UserSession(user_id=user.id, expires_at=now - SESSION_TIME_OFFSET)
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         await user_session_repository.add(user_session)
 
@@ -129,8 +186,16 @@ class TestDeleteExpiredSessions:
         user: User,
     ):
         now = utc_now()
-        expired_session = UserSession(user_id=user.id, expires_at=now - SESSION_TIME_OFFSET)
-        active_session = UserSession(user_id=user.id, expires_at=now + SESSION_TIME_OFFSET)
+        expired_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+        active_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
 
         await user_session_repository.add(expired_session)
         await user_session_repository.add(active_session)
@@ -157,9 +222,14 @@ class TestDeleteExpiredSessions:
                 hashed_password=user.hashed_password,
             )
         )
-        expired_session = UserSession(user_id=user.id, expires_at=now - SESSION_TIME_OFFSET)
+        expired_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
         other_expired_session = UserSession(
             user_id=other_user.id,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
             expires_at=now - SESSION_TIME_OFFSET,
         )
 
@@ -180,9 +250,14 @@ class TestDeleteExpiredSessions:
         user: User,
     ):
         now = utc_now()
-        expired_session = UserSession(user_id=user.id, expires_at=now - SESSION_TIME_OFFSET)
+        expired_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
         revoked_session = UserSession(
             user_id=user.id,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
             expires_at=now + SESSION_TIME_OFFSET,
             revoked_at=now,
         )

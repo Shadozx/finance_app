@@ -1,4 +1,5 @@
 import enum
+import uuid
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -28,6 +29,7 @@ SETTLED_AMOUNT_REVISION = "ec935c6ee93e"
 TIMESTAMPS_REVISION = "fb292ab1bb42"
 PASSWORD_CHANGED_AT_REVISION = "d9da74d03578"
 CATEGORY_TYPE_REVISION = "a42e8b91c630"
+REFRESH_TOKEN_HASH_REVISION = "f90bd8d1e5b1"
 
 
 def before(revision: str) -> str:
@@ -465,6 +467,33 @@ class TestDataMigrations:
         )
 
         assert row.labels == expected_labels
+
+    async def test_refresh_token_hash_removes_existing_sessions(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(REFRESH_TOKEN_HASH_REVISION))
+        user_id = await self.insert_user_before_category_type(migrations_engine)
+        session_id = uuid.uuid4()
+        await insert(
+            migrations_engine,
+            "INSERT INTO user_sessions (id, user_id, created_at, last_used_at, expires_at)"
+            " VALUES (:session_id, :user_id, now(), now(), now() + INTERVAL '30 days')",
+            session_id=session_id,
+            user_id=user_id,
+        )
+        seeded_session = await fetch_row(migrations_engine, "SELECT id FROM user_sessions")
+        assert seeded_session.id == session_id
+
+        await upgrade(migrations_engine, alembic_config, REFRESH_TOKEN_HASH_REVISION)
+
+        row = await fetch_row(
+            migrations_engine, "SELECT EXISTS (SELECT 1 FROM user_sessions) AS has_sessions"
+        )
+        assert row.has_sessions is False
+        remaining_user = await fetch_row(migrations_engine, "SELECT id FROM users")
+        assert remaining_user.id == user_id
 
     async def test_password_changed_at_backfills_from_created_at(
         self,

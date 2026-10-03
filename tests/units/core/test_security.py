@@ -1,9 +1,45 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
 from app.core.config import settings
-from app.core.security import create_access_token, verify_token
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    generate_refresh_secret,
+    hash_refresh_secret,
+    parse_refresh_token,
+    verify_token,
+)
+
+
+class TestRefreshToken:
+    def test_create_refresh_token_round_trips_through_parser(self):
+        session_id = uuid4()
+        secret = generate_refresh_secret()
+
+        token = create_refresh_token(session_id, secret)
+
+        assert parse_refresh_token(token) == (session_id, secret)
+
+    @pytest.mark.parametrize(
+        "token",
+        ["", "no-separator", "not-a-uuid.secret", f"{uuid4()}.", ".secret"],
+        ids=["empty", "missing-separator", "invalid-uuid", "empty-secret", "empty-uuid"],
+    )
+    def test_parse_refresh_token_rejects_malformed_tokens(self, token: str):
+        assert parse_refresh_token(token) is None
+
+    def test_hash_refresh_secret_is_deterministic_and_does_not_store_secret(self):
+        secret = generate_refresh_secret()
+        sha256_hex_length = 64
+
+        hashed_secret = hash_refresh_secret(secret)
+
+        assert hashed_secret == hash_refresh_secret(secret)
+        assert hashed_secret != secret
+        assert len(hashed_secret) == sha256_hex_length
 
 
 class TestCreateAccessToken:
