@@ -1,11 +1,14 @@
+import uuid
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork
 from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import DUMMY_PASSWORD_HASH
-from app.models import User
-from app.repositories import CategoryRepository, UserRepository
+from app.models import USER_AGENT_MAX_LENGTH, User, UserSession
+from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
 from app.services.default_categories import DEFAULT_CATEGORIES
@@ -137,15 +140,33 @@ class TestAuthenticate:
             password=plain_existing_user_password,
         )
 
+    @pytest.mark.parametrize(
+        "user_agent",
+        ["unit-test-agent", None],
+        ids=["with_user_agent", "without_user_agent"],
+    )
     async def test_authenticate_success(
         self,
         mocker: MockerFixture,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserLogin,
+        user_agent: str | None,
     ):
         mocked_token = "mocked_token"
+        session_id = uuid.uuid4()
+        now = datetime.now(UTC)
+        session_idle_days = 7
+
+        mocker.patch("app.services.user_service.utc_now", return_value=now)
+        mocker.patch("app.services.user_service.settings.SESSION_IDLE_DAYS", session_idle_days)
+
+        def persist_user_session(user_session: UserSession) -> UserSession:
+            user_session.id = session_id
+            return user_session
 
         mock_password = mocker.patch("app.services.user_service.verify_password", return_value=True)
 
@@ -154,22 +175,78 @@ class TestAuthenticate:
         )
 
         user_repo_mock.get_by_email.return_value = existing_user
+        user_session_repo_mock.add.side_effect = persist_user_session
 
-        result = await user_service.authenticate(data)
+        result = await user_service.authenticate(data, user_agent=user_agent)
+
+        created_session = user_session_repo_mock.add.await_args.args[0]
 
         assert result == mocked_token
 
-        user_repo_mock.get_by_email.assert_called_once_with(data.email)
+        assert isinstance(created_session, UserSession)
+
+        assert_model_fields(
+            created_session,
+            id=session_id,
+            user_id=existing_user.id,
+            user_agent=user_agent,
+            created_at=now,
+            last_used_at=now,
+            expires_at=now + timedelta(days=session_idle_days),
+            revoked_at=None,
+        )
+
+        user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
 
-        mock_token.assert_called_once_with({"sub": str(existing_user.id)})
+        user_session_repo_mock.delete_expired_sessions.assert_awaited_once_with(
+            existing_user.id, now
+        )
+
+        user_session_repo_mock.add.assert_awaited_once_with(created_session)
+
+        unit_of_work_mock.commit.assert_awaited_once()
+
+        mock_token.assert_called_once_with({"sub": str(existing_user.id), "sid": str(session_id)})
+
+    async def test_authenticate_truncates_user_agent(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        mocked_token = "mocked_token"
+        expected_user_agent = "a" * USER_AGENT_MAX_LENGTH
+        user_agent = expected_user_agent + "b"
+        persisted_session = UserSession(id=uuid.uuid4(), user_id=existing_user.id)
+
+        mocker.patch("app.services.user_service.verify_password", return_value=True)
+        mocker.patch("app.services.user_service.create_access_token", return_value=mocked_token)
+
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_session_repo_mock.add.return_value = persisted_session
+
+        await user_service.authenticate(data, user_agent=user_agent)
+
+        created_session = user_session_repo_mock.add.await_args.args[0]
+
+        assert created_session.user_agent == expected_user_agent
+
+        assert len(created_session.user_agent) == USER_AGENT_MAX_LENGTH
+
+        user_session_repo_mock.add.assert_awaited_once_with(created_session)
 
     async def test_authenticate_not_found_user(
         self,
         mocker: MockerFixture,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
         data: UserLogin,
     ):
         mock_password = mocker.patch(
@@ -179,17 +256,23 @@ class TestAuthenticate:
         user_repo_mock.get_by_email.return_value = None
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
-            await user_service.authenticate(data)
+            await user_service.authenticate(data, user_agent=None)
 
         user_repo_mock.get_by_email.assert_called_once_with(data.email)
 
         mock_password.assert_called_once_with(data.password, DUMMY_PASSWORD_HASH)
+
+        user_session_repo_mock.add.assert_not_awaited()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_authenticate_wrong_password(
         self,
         mocker: MockerFixture,
         user_service: UserService,
         user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserLogin,
     ):
@@ -202,11 +285,15 @@ class TestAuthenticate:
         user_repo_mock.get_by_email.return_value = existing_user
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
-            await user_service.authenticate(data)
+            await user_service.authenticate(data, user_agent=None)
 
         user_repo_mock.get_by_email.assert_called_once_with(data.email)
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
+
+        user_session_repo_mock.add.assert_not_awaited()
+
+        unit_of_work_mock.commit.assert_not_awaited()
 
 
 class TestUpdateUsername:

@@ -23,6 +23,7 @@ from app.repositories import (
     TransactionTemplateRepository,
     TransactionTemplateSplitRepository,
     UserRepository,
+    UserSessionRepository,
 )
 from app.services import (
     AccountService,
@@ -77,6 +78,11 @@ def transaction_template_split_repo_mock(mocker: MockerFixture):
 @pytest.fixture
 def user_repo_mock(mocker: MockerFixture):
     return mocker.AsyncMock(spec=UserRepository)
+
+
+@pytest.fixture
+def user_session_repo_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=UserSessionRepository)
 
 
 @pytest.fixture
@@ -145,11 +151,13 @@ def user_service(
     user_repo_mock: UserRepository,
     unit_of_work_mock: UnitOfWork,
     category_repo_mock: CategoryRepository,
+    user_session_repo_mock: UserSessionRepository,
 ):
     return UserService(
         user_repository=user_repo_mock,
         unit_of_work=unit_of_work_mock,
         category_repository=category_repo_mock,
+        user_session_repository=user_session_repo_mock,
     )
 
 

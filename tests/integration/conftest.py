@@ -16,6 +16,7 @@ from app.repositories import (
     TransactionTemplateRepository,
     TransactionTemplateSplitRepository,
     UserRepository,
+    UserSessionRepository,
 )
 
 
@@ -195,6 +196,11 @@ def transaction_template_split_repository(test_session: AsyncSession):
 @pytest.fixture
 def user_repository(test_session):
     return UserRepository(test_session)
+
+
+@pytest.fixture
+def user_session_repository(test_session: AsyncSession):
+    return UserSessionRepository(test_session)
 
 
 @pytest.fixture

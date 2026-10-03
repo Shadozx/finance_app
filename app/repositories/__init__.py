@@ -7,6 +7,7 @@ from .transaction_split_repository import TransactionSplitRepository
 from .transaction_template_repository import TransactionTemplateRepository
 from .transaction_template_split_repository import TransactionTemplateSplitRepository
 from .user_repository import UserRepository
+from .user_session_repository import UserSessionRepository
 
 __all__ = [
     "AccountRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "TransactionTemplateRepository",
     "TransactionTemplateSplitRepository",
     "UserRepository",
+    "UserSessionRepository",
 ]

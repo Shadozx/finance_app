@@ -1,6 +1,8 @@
+from datetime import timedelta
+
 import structlog
 
-from app.core import UnitOfWork, utc_now
+from app.core import UnitOfWork, settings, utc_now
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
@@ -9,8 +11,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import Category, User
-from app.repositories import CategoryRepository, UserRepository
+from app.models import USER_AGENT_MAX_LENGTH, Category, User, UserSession
+from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import validators
 from app.services.default_categories import DEFAULT_CATEGORIES
@@ -22,10 +24,12 @@ class UserService:
     def __init__(
         self,
         user_repository: UserRepository,
+        user_session_repository: UserSessionRepository,
         unit_of_work: UnitOfWork,
         category_repository: CategoryRepository,
     ):
         self.user_repository = user_repository
+        self.user_session_repository = user_session_repository
         self.unit_of_work = unit_of_work
         self.category_repository = category_repository
 
@@ -54,7 +58,7 @@ class UserService:
 
         return UserResponse.model_validate(created_user)
 
-    async def authenticate(self, user: UserLogin) -> str:
+    async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> str:
         existing_user = await self.user_repository.get_by_email(user.email)
 
         hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
@@ -68,9 +72,30 @@ class UserService:
                 "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
             )
 
-        logger.info("user_authenticate_success", user_id=existing_user.id, email=user.email)
+        now = utc_now()
 
-        return create_access_token({"sub": str(existing_user.id)})
+        await self.user_session_repository.delete_expired_sessions(existing_user.id, now)
+
+        user_session = await self.user_session_repository.add(
+            UserSession(
+                user_id=existing_user.id,
+                user_agent=user_agent[:USER_AGENT_MAX_LENGTH] if user_agent is not None else None,
+                created_at=now,
+                last_used_at=now,
+                expires_at=now + timedelta(days=settings.SESSION_IDLE_DAYS),
+            )
+        )
+
+        await self.unit_of_work.commit()
+
+        logger.info(
+            "user_authenticate_success",
+            user_id=existing_user.id,
+            email=user.email,
+            session_id=user_session.id,
+        )
+
+        return create_access_token({"sub": str(existing_user.id), "sid": str(user_session.id)})
 
     async def update_username(self, data: UsernameUpdate, user_id: int) -> UserResponse:
         existing_user = await validators.validate_user(self.user_repository, user_id)

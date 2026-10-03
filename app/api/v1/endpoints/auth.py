@@ -23,6 +23,6 @@ async def register(
 async def login(
     request: Request, data: UserLogin, user_service: UserService = Depends(get_user_service)
 ):
-    token = await user_service.authenticate(data)
+    token = await user_service.authenticate(data, user_agent=request.headers.get("user-agent"))
 
     return TokenResponse(access_token=token)

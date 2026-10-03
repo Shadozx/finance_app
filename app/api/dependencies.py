@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 
 import structlog
@@ -5,7 +6,7 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import UnitOfWork, get_session, verify_token
+from app.core import UnitOfWork, get_session, utc_now, verify_token
 from app.core.exceptions import AuthenticationException
 from app.models import User
 from app.repositories import (
@@ -18,6 +19,7 @@ from app.repositories import (
     TransactionTemplateRepository,
     TransactionTemplateSplitRepository,
     UserRepository,
+    UserSessionRepository,
 )
 from app.services import (
     AccountService,
@@ -38,11 +40,13 @@ def get_user_service(
     user_repository = UserRepository(session)
     unit_of_work = UnitOfWork(session)
     category_repository = CategoryRepository(session)
+    user_session_repository = UserSessionRepository(session)
 
     return UserService(
         user_repository=user_repository,
         unit_of_work=unit_of_work,
         category_repository=category_repository,
+        user_session_repository=user_session_repository,
     )
 
 
@@ -172,14 +176,34 @@ async def get_current_user(
     except ValueError as err:
         raise AuthenticationException("Invalid or expired token") from err
 
-    user_id = int(payload["sub"])
+    sid = payload.get("sid")
 
-    user_repository = UserRepository(session)
+    if not isinstance(sid, str):
+        raise AuthenticationException("Invalid or expired token")
 
-    user = await user_repository.get_by_id(user_id)
+    try:
+        session_id = uuid.UUID(sid)
+    except ValueError as err:
+        raise AuthenticationException("Invalid or expired token") from err
 
-    if not user:
-        raise AuthenticationException("User no longer exists")
+    found = await UserSessionRepository(session).get_active_with_user(session_id, utc_now())
+
+    if found is None:
+        logger.warning("token_rejected_session_inactive", session_id=str(session_id))
+
+        raise AuthenticationException("Invalid or expired token")
+
+    user_session, user = found
+
+    if payload.get("sub") != str(user_session.user_id):
+        logger.warning(
+            "token_rejected_session_user_mismatch",
+            session_id=str(session_id),
+            user_id=user_session.user_id,
+            token_user_id=payload.get("sub"),
+        )
+
+        raise AuthenticationException("Invalid or expired token")
 
     issued_at = payload.get("iat")
 

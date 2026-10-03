@@ -1,20 +1,34 @@
+import uuid
+from datetime import timedelta
+
 import pytest
 from fastapi import status
 from httpx import AsyncClient
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import create_access_token, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
+from app.models import UserSession
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
     assert_field_error,
+    assert_no_field_errors,
     assert_validation_error,
     register_payload,
+    session_id_from_headers,
 )
+from tests.integration.endpoints.types import AuthenticatedUser, UserData
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
 API_AUTH_LOGIN_URL = "/api/v1/auth/login"
 
 API_CATEGORIES_URL = "/api/v1/categories"
+
+API_USERS_ME_URL = "/api/v1/users/me"
+
+SESSION_TIME_OFFSET = timedelta(days=1)
 
 
 class TestRegister:
@@ -175,14 +189,18 @@ class TestLogin:
     async def test_login_success(
         self,
         client: AsyncClient,
-        registered_user: dict[str, str],
+        test_session: AsyncSession,
+        registered_user: UserData,
     ):
+        user_agent = "integration-test-agent"
+
         response = await client.post(
             API_AUTH_LOGIN_URL,
             json={
                 "email": registered_user["email"],
                 "password": registered_user["password"],
             },
+            headers={"User-Agent": user_agent},
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -190,6 +208,19 @@ class TestLogin:
         body = response.json()
         assert "access_token" in body
         assert body["token_type"] == "bearer"
+
+        payload = verify_token(body["access_token"])
+
+        assert "sid" in payload
+
+        session_id = uuid.UUID(payload["sid"])
+        user_session = await test_session.scalar(
+            select(UserSession).where(UserSession.id == session_id)
+        )
+
+        assert user_session is not None
+        assert user_session.user_id == registered_user["id"]
+        assert user_session.user_agent == user_agent
 
     async def test_login_wrong_password(
         self,
@@ -253,3 +284,125 @@ class TestLogin:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
 
         assert "detail" in response.json()
+
+
+class TestSessionToken:
+    async def test_get_me_rejects_token_without_sid(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        token = create_access_token({"sub": str(authenticated_user["user"]["id"])})
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_with_invalid_sid(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        invalid_session_id = "not-a-uuid"
+        token = create_access_token(
+            {"sub": str(authenticated_user["user"]["id"]), "sid": invalid_session_id}
+        )
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_with_nonexistent_session(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        session_id = uuid.uuid4()
+        token = create_access_token(
+            {"sub": str(authenticated_user["user"]["id"]), "sid": str(session_id)}
+        )
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_with_revoked_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+    ):
+        active_response = await client.get(API_USERS_ME_URL, headers=authenticated_user["headers"])
+
+        assert active_response.status_code == status.HTTP_200_OK
+
+        session_id = session_id_from_headers(authenticated_user["headers"])
+        revoked_at = utc_now()
+
+        await test_session.execute(
+            update(UserSession).where(UserSession.id == session_id).values(revoked_at=revoked_at)
+        )
+
+        response = await client.get(API_USERS_ME_URL, headers=authenticated_user["headers"])
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_with_expired_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+    ):
+        active_response = await client.get(API_USERS_ME_URL, headers=authenticated_user["headers"])
+
+        assert active_response.status_code == status.HTTP_200_OK
+
+        session_id = session_id_from_headers(authenticated_user["headers"])
+        expires_at = utc_now() - SESSION_TIME_OFFSET
+
+        await test_session.execute(
+            update(UserSession).where(UserSession.id == session_id).values(expires_at=expires_at)
+        )
+
+        response = await client.get(API_USERS_ME_URL, headers=authenticated_user["headers"])
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_with_another_users_session(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        other_authenticated_user: AuthenticatedUser,
+    ):
+        other_session_id = session_id_from_headers(other_authenticated_user["headers"])
+        token = create_access_token(
+            {"sub": str(authenticated_user["user"]["id"]), "sid": str(other_session_id)}
+        )
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
