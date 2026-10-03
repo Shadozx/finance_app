@@ -1,5 +1,6 @@
 import hmac
-from datetime import timedelta
+from datetime import datetime, timedelta
+from enum import StrEnum
 from uuid import uuid4
 
 import structlog
@@ -31,6 +32,11 @@ from app.services import validators
 from app.services.default_categories import DEFAULT_CATEGORIES
 
 logger = structlog.get_logger()
+
+
+class RefreshTokenMatch(StrEnum):
+    CURRENT = "current"
+    MISMATCH = "mismatch"
 
 
 class UserService:
@@ -82,6 +88,27 @@ class UserService:
             refresh_token=create_refresh_token(user_session.id, secret),
         )
 
+    async def _resolve_refresh_token(
+        self, token: str, now: datetime
+    ) -> tuple[UserSession, RefreshTokenMatch] | None:
+        parsed_token = parse_refresh_token(token)
+        if parsed_token is None:
+            logger.warning("refresh_token_rejected_malformed")
+            return None
+
+        session_id, secret = parsed_token
+        found = await self.user_session_repository.get_active_with_user(session_id, now)
+        if found is None:
+            logger.warning("refresh_token_rejected_session_inactive", session_id=str(session_id))
+            return None
+
+        user_session, _ = found
+        if hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+            return user_session, RefreshTokenMatch.CURRENT
+
+        logger.warning("refresh_token_rejected_secret_mismatch", session_id=str(session_id))
+        return user_session, RefreshTokenMatch.MISMATCH
+
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
         existing_user = await self.user_repository.get_by_email(user.email)
 
@@ -118,25 +145,20 @@ class UserService:
             "user_authenticate_success",
             user_id=existing_user.id,
             email=user.email,
-            session_id=user_session.id,
+            session_id=str(user_session.id),
         )
 
         return tokens
 
     async def refresh_session(self, refresh_token: str) -> TokenResponse:
-        parsed_token = parse_refresh_token(refresh_token)
-        if parsed_token is None:
-            raise AuthenticationException()
-
-        session_id, secret = parsed_token
         now = utc_now()
-        found = await self.user_session_repository.get_active_with_user(session_id, now)
-        if found is None:
-            raise AuthenticationException()
+        resolved = await self._resolve_refresh_token(refresh_token, now)
+        if resolved is None:
+            raise AuthenticationException("Invalid or expired token")
 
-        user_session, _ = found
-        if not hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
-            raise AuthenticationException()
+        user_session, match = resolved
+        if match is not RefreshTokenMatch.CURRENT:
+            raise AuthenticationException("Invalid or expired token")
 
         user_session.last_used_at = now
         user_session.expires_at = min(
@@ -148,23 +170,18 @@ class UserService:
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()
 
-        logger.info("user_session_refresh_success", session_id=session_id)
+        logger.info("user_session_refresh_success", session_id=str(user_session.id))
 
         return tokens
 
     async def logout(self, refresh_token: str) -> None:
-        parsed_token = parse_refresh_token(refresh_token)
-        if parsed_token is None:
-            return
-
-        session_id, secret = parsed_token
         now = utc_now()
-        found = await self.user_session_repository.get_active_with_user(session_id, now)
-        if found is None:
+        resolved = await self._resolve_refresh_token(refresh_token, now)
+        if resolved is None:
             return
 
-        user_session, _ = found
-        if not hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+        user_session, match = resolved
+        if match is not RefreshTokenMatch.CURRENT:
             return
 
         user_session.revoked_at = now
@@ -172,7 +189,7 @@ class UserService:
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()
 
-        logger.info("user_logout_success", session_id=session_id)
+        logger.info("user_logout_success", session_id=str(user_session.id))
 
     async def update_username(self, data: UsernameUpdate, user_id: int) -> UserResponse:
         existing_user = await validators.validate_user(self.user_repository, user_id)

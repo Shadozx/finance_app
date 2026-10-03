@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pytest_mock import MockerFixture
+from structlog.testing import capture_logs
 
 from app.core import UnitOfWork, settings
 from app.core.exceptions import AuthenticationException, ValueExistsException
@@ -402,10 +403,14 @@ class TestRefreshSession:
         unit_of_work_mock: UnitOfWork,
         token: str,
     ):
-        with pytest.raises(AuthenticationException) as exc_info:
-            await user_service.refresh_session(token)
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match="Invalid or expired token"
+            ) as exc_info:
+                await user_service.refresh_session(token)
 
         assert exc_info.value.status_code == 401
+        assert logs == [{"event": "refresh_token_rejected_malformed", "log_level": "warning"}]
         user_session_repo_mock.get_active_with_user.assert_not_awaited()
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
@@ -422,8 +427,17 @@ class TestRefreshSession:
         refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
         user_session_repo_mock.get_active_with_user.return_value = None
 
-        with pytest.raises(AuthenticationException):
-            await user_service.refresh_session(refresh_token)
+        with capture_logs() as logs:
+            with pytest.raises(AuthenticationException, match="Invalid or expired token"):
+                await user_service.refresh_session(refresh_token)
+
+        assert logs == [
+            {
+                "event": "refresh_token_rejected_session_inactive",
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
 
         user_session_repo_mock.get_active_with_user.assert_awaited_once_with(
             active_user_session.id, session_now
@@ -449,8 +463,17 @@ class TestRefreshSession:
             existing_user,
         )
 
-        with pytest.raises(AuthenticationException):
-            await user_service.refresh_session(refresh_token)
+        with capture_logs() as logs:
+            with pytest.raises(AuthenticationException, match="Invalid or expired token"):
+                await user_service.refresh_session(refresh_token)
+
+        assert logs == [
+            {
+                "event": "refresh_token_rejected_secret_mismatch",
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
 
         assert active_user_session.refresh_token_hash == original_hash
         assert active_user_session.last_used_at == original_last_used_at
@@ -495,9 +518,11 @@ class TestLogout:
         unit_of_work_mock: UnitOfWork,
         token: str,
     ):
-        result = await user_service.logout(token)
+        with capture_logs() as logs:
+            result = await user_service.logout(token)
 
         assert result is None
+        assert logs == [{"event": "refresh_token_rejected_malformed", "log_level": "warning"}]
         user_session_repo_mock.get_active_with_user.assert_not_awaited()
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
@@ -519,10 +544,23 @@ class TestLogout:
         user_session_repo_mock.get_active_with_user.return_value = (
             (active_user_session, existing_user) if session_exists else None
         )
+        expected_event = (
+            "refresh_token_rejected_secret_mismatch"
+            if session_exists
+            else "refresh_token_rejected_session_inactive"
+        )
 
-        result = await user_service.logout(refresh_token)
+        with capture_logs() as logs:
+            result = await user_service.logout(refresh_token)
 
         assert result is None
+        assert logs == [
+            {
+                "event": expected_event,
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
         assert active_user_session.revoked_at is None
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
