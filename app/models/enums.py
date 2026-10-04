@@ -18,6 +18,13 @@ class CategoryType(str, enum.Enum):
     ANY = "ANY"
 
 
+class SessionRevocationReason(str, enum.Enum):
+    LOGOUT = "LOGOUT"
+    REUSE_DETECTED = "REUSE_DETECTED"
+    REVOKED_BY_USER = "REVOKED_BY_USER"
+    PASSWORD_CHANGED = "PASSWORD_CHANGED"
+
+
 USABLE_CATEGORY_TYPES: dict[TransactionType, tuple[CategoryType, ...]] = {
     TransactionType.EXPENSE: (CategoryType.EXPENSE, CategoryType.ANY),
     TransactionType.INCOME: (CategoryType.INCOME, CategoryType.ANY),

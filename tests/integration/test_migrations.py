@@ -13,7 +13,7 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 from app.core import Base
-from app.models import CategoryType, TransactionKind, TransactionType
+from app.models import CategoryType, SessionRevocationReason, TransactionKind, TransactionType
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 MIGRATIONS_DATABASE = "migrations_test"
@@ -30,6 +30,7 @@ TIMESTAMPS_REVISION = "fb292ab1bb42"
 PASSWORD_CHANGED_AT_REVISION = "d9da74d03578"
 CATEGORY_TYPE_REVISION = "a42e8b91c630"
 REFRESH_TOKEN_HASH_REVISION = "f90bd8d1e5b1"
+SESSION_REVOCATION_REVISION = "8ba7b4d10ebb"
 
 
 def before(revision: str) -> str:
@@ -165,6 +166,7 @@ class TestMigrations:
             ("categorytype", CategoryType),
             ("transactiontype", TransactionType),
             ("transactionkind", TransactionKind),
+            ("sessionrevocationreason", SessionRevocationReason),
         ],
     )
     async def test_enum_labels_and_their_order_match_models(
@@ -494,6 +496,64 @@ class TestDataMigrations:
         assert row.has_sessions is False
         remaining_user = await fetch_row(migrations_engine, "SELECT id FROM users")
         assert remaining_user.id == user_id
+
+    async def test_session_revocation_reason_backfills_logout_only_for_revoked_sessions(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(SESSION_REVOCATION_REVISION))
+        user_id = await self.insert_user_before_category_type(migrations_engine)
+        revoked_session_id = uuid.uuid4()
+        active_session_id = uuid.uuid4()
+        refresh_token_hash = "a" * 64
+        await insert(
+            migrations_engine,
+            "INSERT INTO user_sessions"
+            " (id, user_id, refresh_token_hash, created_at, last_used_at, expires_at, revoked_at)"
+            " VALUES (:session_id, :user_id, :refresh_token_hash,"
+            " now(), now(), now() + INTERVAL '30 days', now())",
+            session_id=revoked_session_id,
+            user_id=user_id,
+            refresh_token_hash=refresh_token_hash,
+        )
+        seeded_session = await fetch_row(
+            migrations_engine, "SELECT id, revoked_at FROM user_sessions"
+        )
+        assert seeded_session.id == revoked_session_id
+        assert seeded_session.revoked_at is not None
+
+        await insert(
+            migrations_engine,
+            "INSERT INTO user_sessions"
+            " (id, user_id, refresh_token_hash, created_at, last_used_at, expires_at)"
+            " VALUES (:session_id, :user_id, :refresh_token_hash,"
+            " now(), now(), now() + INTERVAL '30 days')",
+            session_id=active_session_id,
+            user_id=user_id,
+            refresh_token_hash=refresh_token_hash,
+        )
+
+        await upgrade(migrations_engine, alembic_config, SESSION_REVOCATION_REVISION)
+
+        async with migrations_engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    "SELECT id, revoked_at, revoked_reason, refresh_token_hash,"
+                    " previous_refresh_token_hash, rotated_at FROM user_sessions"
+                )
+            )
+            sessions = {row.id: row for row in result}
+
+        assert {session_id: row.revoked_reason for session_id, row in sessions.items()} == {
+            revoked_session_id: SessionRevocationReason.LOGOUT.value,
+            active_session_id: None,
+        }
+        row = sessions[revoked_session_id]
+        assert row.revoked_at == seeded_session.revoked_at
+        assert row.refresh_token_hash == refresh_token_hash
+        assert row.previous_refresh_token_hash is None
+        assert row.rotated_at is None
 
     async def test_password_changed_at_backfills_from_created_at(
         self,

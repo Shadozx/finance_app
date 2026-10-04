@@ -18,7 +18,7 @@ from app.core.security import (
     parse_refresh_token,
     verify_password,
 )
-from app.models import USER_AGENT_MAX_LENGTH, Category, User, UserSession
+from app.models import USER_AGENT_MAX_LENGTH, Category, SessionRevocationReason, User, UserSession
 from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
 from app.schemas import (
     PasswordUpdate,
@@ -36,6 +36,7 @@ logger = structlog.get_logger()
 
 class RefreshTokenMatch(StrEnum):
     CURRENT = "current"
+    PREVIOUS_IN_GRACE = "previous_in_grace"
     MISMATCH = "mismatch"
 
 
@@ -97,16 +98,36 @@ class UserService:
             return None
 
         session_id, secret = parsed_token
-        found = await self.user_session_repository.get_active_with_user(session_id, now)
-        if found is None:
-            logger.warning("refresh_token_rejected_session_inactive", session_id=str(session_id))
+        user_session = await self.user_session_repository.get_by_id_for_update(session_id)
+        if user_session is None:
+            logger.warning("refresh_token_rejected_session_not_found", session_id=str(session_id))
             return None
 
-        user_session, _ = found
-        if hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+        if user_session.revoked_at is not None:
+            logger.warning(
+                "refresh_token_used_on_revoked_session",
+                session_id=str(session_id),
+                revoked_reason=user_session.revoked_reason,
+            )
+            return None
+
+        if user_session.expires_at <= now:
+            logger.info("refresh_token_rejected_session_expired", session_id=str(session_id))
+            return None
+
+        secret_hash = hash_refresh_secret(secret)
+        if hmac.compare_digest(secret_hash, user_session.refresh_token_hash):
             return user_session, RefreshTokenMatch.CURRENT
 
-        logger.warning("refresh_token_rejected_secret_mismatch", session_id=str(session_id))
+        if (
+            user_session.previous_refresh_token_hash is not None
+            and user_session.rotated_at is not None
+            and hmac.compare_digest(secret_hash, user_session.previous_refresh_token_hash)
+            and now - user_session.rotated_at
+            <= timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+        ):
+            return user_session, RefreshTokenMatch.PREVIOUS_IN_GRACE
+
         return user_session, RefreshTokenMatch.MISMATCH
 
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
@@ -157,8 +178,22 @@ class UserService:
             raise AuthenticationException("Invalid or expired token")
 
         user_session, match = resolved
-        if match is not RefreshTokenMatch.CURRENT:
+        if match is RefreshTokenMatch.MISMATCH:
+            user_session.revoked_at = now
+            user_session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
+            await self.user_session_repository.update(user_session)
+            await self.unit_of_work.commit()
+
+            logger.warning(
+                "refresh_token_reuse_detected",
+                session_id=str(user_session.id),
+                user_id=user_session.user_id,
+            )
             raise AuthenticationException("Invalid or expired token")
+
+        if match is RefreshTokenMatch.CURRENT:
+            user_session.previous_refresh_token_hash = user_session.refresh_token_hash
+            user_session.rotated_at = now
 
         user_session.last_used_at = now
         user_session.expires_at = min(
@@ -170,7 +205,9 @@ class UserService:
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()
 
-        logger.info("user_session_refresh_success", session_id=str(user_session.id))
+        logger.info(
+            "user_session_refresh_success", session_id=str(user_session.id), match=match.value
+        )
 
         return tokens
 
@@ -182,9 +219,11 @@ class UserService:
 
         user_session, match = resolved
         if match is not RefreshTokenMatch.CURRENT:
+            logger.warning("logout_ignored_stale_refresh_token", session_id=str(user_session.id))
             return
 
         user_session.revoked_at = now
+        user_session.revoked_reason = SessionRevocationReason.LOGOUT
 
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()

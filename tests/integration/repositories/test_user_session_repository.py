@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import utc_now
 from app.core.security import hash_refresh_secret
-from app.models import User, UserSession
+from app.models import SessionRevocationReason, User, UserSession
 from app.repositories import UserRepository, UserSessionRepository
 
 SESSION_TIME_OFFSET = timedelta(days=1)
@@ -101,6 +101,7 @@ class TestGetActiveWithUser:
             refresh_token_hash=REFRESH_TOKEN_HASH,
             expires_at=now + SESSION_TIME_OFFSET,
             revoked_at=now,
+            revoked_reason=SessionRevocationReason.LOGOUT,
         )
 
         created_session = await user_session_repository.add(user_session)
@@ -153,6 +154,82 @@ class TestGetActiveWithUser:
         created_session = await user_session_repository.add(user_session)
 
         found = await user_session_repository.get_active_with_user(created_session.id, now)
+
+        assert found is None
+
+
+class TestGetByIdForUpdate:
+    async def test_get_by_id_for_update(
+        self,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+
+        created_session = await user_session_repository.add(user_session)
+
+        found = await user_session_repository.get_by_id_for_update(created_session.id)
+
+        assert found is not None
+        assert found.id == created_session.id
+        assert found.user_id == user.id
+
+    async def test_get_by_id_for_update_revoked(
+        self,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        user_session = UserSession(
+            user_id=user.id,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+            expires_at=now + SESSION_TIME_OFFSET,
+            revoked_at=now,
+            revoked_reason=SessionRevocationReason.LOGOUT,
+        )
+
+        created_session = await user_session_repository.add(user_session)
+
+        found = await user_session_repository.get_by_id_for_update(created_session.id)
+
+        assert found is not None
+        assert found.id == created_session.id
+        assert found.revoked_at == now
+        assert found.revoked_reason == SessionRevocationReason.LOGOUT
+
+    async def test_get_by_id_for_update_expired(
+        self,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        expires_at = now - SESSION_TIME_OFFSET
+        user_session = UserSession(
+            user_id=user.id,
+            expires_at=expires_at,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+
+        created_session = await user_session_repository.add(user_session)
+
+        found = await user_session_repository.get_by_id_for_update(created_session.id)
+
+        assert found is not None
+        assert found.id == created_session.id
+        assert found.expires_at == expires_at
+
+    async def test_get_by_id_for_update_not_found(
+        self,
+        user_session_repository: UserSessionRepository,
+    ):
+        session_id = uuid.uuid4()
+
+        found = await user_session_repository.get_by_id_for_update(session_id)
 
         assert found is None
 
@@ -260,6 +337,7 @@ class TestDeleteExpiredSessions:
             refresh_token_hash=REFRESH_TOKEN_HASH,
             expires_at=now + SESSION_TIME_OFFSET,
             revoked_at=now,
+            revoked_reason=SessionRevocationReason.LOGOUT,
         )
 
         await user_session_repository.add(expired_session)

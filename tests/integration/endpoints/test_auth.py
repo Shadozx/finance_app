@@ -9,11 +9,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.auth import REFRESH_REQUESTS_PER_MINUTE
-from app.core import create_access_token, utc_now, verify_token
+from app.core import create_access_token, settings, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.rate_limiter import limiter
 from app.core.security import create_refresh_token, hash_refresh_secret, parse_refresh_token
-from app.models import UserSession
+from app.models import SessionRevocationReason, UserSession
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
@@ -312,7 +312,7 @@ class TestLogin:
 
 
 class TestRefresh:
-    async def test_refresh_rotates_tokens_and_rejects_old_refresh_token(
+    async def test_refresh_rotates_tokens(
         self,
         client: AsyncClient,
         login_tokens: dict[str, str],
@@ -328,11 +328,6 @@ class TestRefresh:
         assert tokens["refresh_token"] != login_tokens["refresh_token"]
         assert tokens["access_token"] != login_tokens["access_token"]
 
-        old_refresh_response = await client.post(
-            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
-        )
-        assert old_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
-
         access_response = await client.get(
             API_USERS_ME_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
         )
@@ -343,6 +338,112 @@ class TestRefresh:
         )
         assert next_refresh_response.status_code == status.HTTP_200_OK
         assert next_refresh_response.json()["refresh_token"] != tokens["refresh_token"]
+
+    async def test_refresh_reuse_outside_grace_revokes_all_session_tokens(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        current_tokens = response.json()
+        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
+        grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+        rotated_at = utc_now() - grace_interval - SESSION_TIME_OFFSET
+        await test_session.execute(
+            update(UserSession).where(UserSession.id == session_id).values(rotated_at=rotated_at)
+        )
+
+        reuse_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
+        current_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        )
+        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        for tokens in (login_tokens, current_tokens):
+            access_response = await client.get(
+                API_USERS_ME_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
+            )
+            assert access_response.status_code == status.HTTP_401_UNAUTHORIZED
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        )
+        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
+
+    async def test_refresh_previous_token_in_grace_returns_usable_pair_without_extending_window(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        payload = {"refresh_token": login_tokens["refresh_token"]}
+        response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+        assert response.status_code == status.HTTP_200_OK
+        current_tokens = response.json()
+        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
+        rotation_query = select(
+            UserSession.previous_refresh_token_hash, UserSession.rotated_at, UserSession.revoked_at
+        ).where(UserSession.id == session_id)
+        original_rotation = (await test_session.execute(rotation_query)).one()
+
+        retry_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+
+        assert retry_response.status_code == status.HTTP_200_OK
+        assert retry_response.headers["Cache-Control"] == "no-store"
+        retry_tokens = retry_response.json()
+        assert retry_tokens["refresh_token"] != current_tokens["refresh_token"]
+        assert retry_tokens["refresh_token"] != login_tokens["refresh_token"]
+        preserved_rotation = (await test_session.execute(rotation_query)).one()
+        assert (
+            preserved_rotation.previous_refresh_token_hash
+            == original_rotation.previous_refresh_token_hash
+        )
+        assert preserved_rotation.rotated_at == original_rotation.rotated_at
+        assert preserved_rotation.revoked_at is None
+
+        access_response = await client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {retry_tokens['access_token']}"}
+        )
+        assert access_response.status_code == status.HTTP_200_OK
+        next_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": retry_tokens["refresh_token"]}
+        )
+        assert next_refresh_response.status_code == status.HTTP_200_OK
+
+    async def test_refresh_displaced_current_token_after_grace_rotation_revokes_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        payload = {"refresh_token": login_tokens["refresh_token"]}
+        response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+        assert response.status_code == status.HTTP_200_OK
+        displaced_tokens = response.json()
+        retry_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+        assert retry_response.status_code == status.HTTP_200_OK
+        current_tokens = retry_response.json()
+
+        reuse_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": displaced_tokens["refresh_token"]}
+        )
+
+        assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
+        current_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        )
+        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        )
+        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
 
     @pytest.mark.parametrize("session_state", ["expired", "revoked", "unknown"])
     async def test_refresh_rejects_inactive_session(
@@ -363,7 +464,7 @@ class TestRefresh:
             changes = (
                 {"expires_at": now - SESSION_TIME_OFFSET}
                 if session_state == "expired"
-                else {"revoked_at": now}
+                else {"revoked_at": now, "revoked_reason": SessionRevocationReason.LOGOUT}
             )
             await test_session.execute(
                 update(UserSession).where(UserSession.id == session_id).values(**changes)
@@ -414,6 +515,7 @@ class TestLogout:
     async def test_logout_immediately_rejects_access_and_refresh_tokens(
         self,
         client: AsyncClient,
+        test_session: AsyncSession,
         login_tokens: dict[str, str],
     ):
         payload = {"refresh_token": login_tokens["refresh_token"]}
@@ -425,6 +527,11 @@ class TestLogout:
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
+        session_id = uuid.UUID(verify_token(login_tokens["access_token"])["sid"])
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        )
+        assert revoked_reason == SessionRevocationReason.LOGOUT
         refresh_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
         assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
         access_response = await client.get(API_USERS_ME_URL, headers=headers)
@@ -561,7 +668,9 @@ class TestSessionToken:
         revoked_at = utc_now()
 
         await test_session.execute(
-            update(UserSession).where(UserSession.id == session_id).values(revoked_at=revoked_at)
+            update(UserSession)
+            .where(UserSession.id == session_id)
+            .values(revoked_at=revoked_at, revoked_reason=SessionRevocationReason.LOGOUT)
         )
 
         response = await client.get(API_USERS_ME_URL, headers=authenticated_user["headers"])

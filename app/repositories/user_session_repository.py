@@ -28,6 +28,17 @@ class UserSessionRepository:
             .one_or_none()
         )
 
+    async def get_by_id_for_update(self, session_id: uuid.UUID) -> UserSession | None:
+        # Locks last until the service commits or request cleanup rolls back the transaction.
+        return (
+            await self.session.execute(
+                select(UserSession)
+                .where(UserSession.id == session_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
     async def add(
         self,
         user_session: UserSession,
