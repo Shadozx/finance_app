@@ -1,7 +1,7 @@
 import hmac
 from datetime import datetime, timedelta
 from enum import StrEnum
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import structlog
 
@@ -251,7 +251,9 @@ class UserService:
 
         return UserResponse.model_validate(updated_user)
 
-    async def update_password(self, data: PasswordUpdate, user_id: int) -> None:
+    async def update_password(
+        self, data: PasswordUpdate, user_id: int, *, current_session_id: UUID
+    ) -> None:
         existing_user = await validators.validate_user(self.user_repository, user_id)
 
         if not verify_password(data.current_password, existing_user.hashed_password):
@@ -264,10 +266,19 @@ class UserService:
             )
 
         existing_user.hashed_password = hash_password(data.new_password)
-        existing_user.password_changed_at = utc_now()
+        now = utc_now()
+        existing_user.password_changed_at = now
 
         await self.user_repository.update(existing_user)
+        revoked_count = await self.user_session_repository.revoke_active_except(
+            user_id,
+            keep_session_id=current_session_id,
+            now=now,
+            reason=SessionRevocationReason.PASSWORD_CHANGED,
+        )
 
         await self.unit_of_work.commit()
 
-        logger.info("password_update_success", user_id=existing_user.id)
+        logger.info(
+            "password_update_success", user_id=existing_user.id, revoked_count=revoked_count
+        )

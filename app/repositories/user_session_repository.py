@@ -1,10 +1,11 @@
 import uuid
 from datetime import datetime
+from typing import cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User, UserSession
+from app.models import SessionRevocationReason, User, UserSession
 
 
 class UserSessionRepository:
@@ -27,6 +28,23 @@ class UserSessionRepository:
             .tuples()
             .one_or_none()
         )
+
+    async def get_active_by_user(
+        self, user_id: int, now: datetime, limit: int, offset: int
+    ) -> list[UserSession]:
+        query = (
+            select(UserSession)
+            .where(UserSession.user_id == user_id)
+            .where(UserSession.revoked_at.is_(None))
+            .where(UserSession.expires_at > now)
+            .order_by(UserSession.last_used_at.desc(), UserSession.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        result = await self.session.execute(query)
+
+        return list(result.scalars().all())
 
     async def get_by_id_for_update(self, session_id: uuid.UUID) -> UserSession | None:
         # Locks last until the service commits or request cleanup rolls back the transaction.
@@ -53,6 +71,27 @@ class UserSessionRepository:
         await self.session.flush()
 
         return user_session
+
+    async def revoke_active_except(
+        self,
+        user_id: int,
+        *,
+        keep_session_id: uuid.UUID,
+        now: datetime,
+        reason: SessionRevocationReason,
+    ) -> int:
+        query = (
+            update(UserSession)
+            .where(UserSession.user_id == user_id)
+            .where(UserSession.revoked_at.is_(None))
+            .where(UserSession.expires_at > now)
+            .where(UserSession.id != keep_session_id)
+            .values(revoked_at=now, revoked_reason=reason)
+        )
+
+        result = cast(CursorResult, await self.session.execute(query))
+
+        return result.rowcount
 
     async def delete_expired_sessions(
         self,

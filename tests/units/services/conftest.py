@@ -1,10 +1,12 @@
 import datetime
+import uuid
 from decimal import Decimal
 
 import pytest
 from pytest_mock import MockerFixture
 
-from app.core import UnitOfWork
+from app.core import UnitOfWork, settings
+from app.core.security import hash_refresh_secret
 from app.models import (
     Account,
     Category,
@@ -12,6 +14,7 @@ from app.models import (
     TransactionKind,
     TransactionType,
     User,
+    UserSession,
 )
 from app.repositories import (
     AccountRepository,
@@ -34,6 +37,7 @@ from app.services import (
     TransactionTemplateService,
     TransferService,
     UserService,
+    UserSessionService,
 )
 from tests.units.services.helpers import (
     make_account,
@@ -162,6 +166,17 @@ def user_service(
 
 
 @pytest.fixture
+def user_session_service(
+    user_session_repo_mock: UserSessionRepository,
+    unit_of_work_mock: UnitOfWork,
+):
+    return UserSessionService(
+        user_session_repository=user_session_repo_mock,
+        unit_of_work=unit_of_work_mock,
+    )
+
+
+@pytest.fixture
 def budget_service(
     budget_repo_mock: BudgetRepository,
     category_repo_mock: CategoryRepository,
@@ -275,6 +290,32 @@ def existing_user():
         id=1,
         email="user@test.com",
         username="user",
+    )
+
+
+@pytest.fixture
+def refresh_secret():
+    return "original-refresh-secret"
+
+
+@pytest.fixture
+def session_now(mocker: MockerFixture):
+    now = datetime.datetime.now(datetime.UTC)
+    mocker.patch("app.services.user_service.utc_now", return_value=now)
+    mocker.patch("app.services.user_session_service.utc_now", return_value=now)
+    return now
+
+
+@pytest.fixture
+def active_user_session(existing_user: User, refresh_secret: str, session_now: datetime.datetime):
+    session_age = datetime.timedelta(days=1)
+    return UserSession(
+        id=uuid.uuid4(),
+        user_id=existing_user.id,
+        refresh_token_hash=hash_refresh_secret(refresh_secret),
+        created_at=session_now - session_age,
+        last_used_at=session_now - session_age,
+        expires_at=session_now + datetime.timedelta(days=settings.SESSION_IDLE_DAYS) - session_age,
     )
 
 

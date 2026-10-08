@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from dataclasses import dataclass
 
 import structlog
 from fastapi import Depends
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import UnitOfWork, get_session, utc_now, verify_token
 from app.core.exceptions import AuthenticationException
-from app.models import User
+from app.models import User, UserSession
 from app.repositories import (
     AccountRepository,
     BudgetRepository,
@@ -31,6 +31,7 @@ from app.services import (
     TransactionTemplateService,
     TransferService,
     UserService,
+    UserSessionService,
 )
 
 
@@ -47,6 +48,18 @@ def get_user_service(
         unit_of_work=unit_of_work,
         category_repository=category_repository,
         user_session_repository=user_session_repository,
+    )
+
+
+def get_user_session_service(
+    session: AsyncSession = Depends(get_session),
+) -> UserSessionService:
+    user_session_repository = UserSessionRepository(session)
+    unit_of_work = UnitOfWork(session)
+
+    return UserSessionService(
+        user_session_repository=user_session_repository,
+        unit_of_work=unit_of_work,
     )
 
 
@@ -164,10 +177,16 @@ logger = structlog.get_logger()
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+@dataclass(frozen=True)
+class AuthContext:
+    user: User
+    user_session: UserSession
+
+
+async def get_auth_context(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     session: AsyncSession = Depends(get_session),
-) -> User:
+) -> AuthContext:
     if not credentials:
         raise AuthenticationException("Authorization header missing")
 
@@ -205,13 +224,8 @@ async def get_current_user(
 
         raise AuthenticationException("Invalid or expired token")
 
-    issued_at = payload.get("iat")
+    return AuthContext(user=user, user_session=user_session)
 
-    # A token with no iat predates this check and cannot be compared: rejected rather than
-    # trusted, so that there is no path through get_current_user that skips the comparison.
-    if issued_at is None or datetime.fromtimestamp(issued_at, UTC) < user.password_changed_at:
-        logger.warning("token_rejected_after_password_change", user_id=user.id)
 
-        raise AuthenticationException("Invalid or expired token")
-
-    return user
+async def get_current_user(context: AuthContext = Depends(get_auth_context)) -> User:
+    return context.user

@@ -7,6 +7,7 @@ from .transaction_service import TransactionService
 from .transaction_template_service import TransactionTemplateService
 from .transfer_service import TransferService
 from .user_service import UserService
+from .user_session_service import UserSessionService
 
 __all__ = [
     "AccountService",
@@ -18,4 +19,5 @@ __all__ = [
     "TransactionTemplateService",
     "TransferService",
     "UserService",
+    "UserSessionService",
 ]

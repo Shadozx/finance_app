@@ -10,4 +10,4 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(max_length=REFRESH_TOKEN_MAX_LENGTH)
+    refresh_token: str = Field(min_length=1, max_length=REFRESH_TOKEN_MAX_LENGTH)

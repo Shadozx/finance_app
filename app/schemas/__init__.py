@@ -53,6 +53,7 @@ from .user import (
     UsernameUpdate,
     UserResponse,
 )
+from .user_session import UserSessionResponse
 
 __all__ = [
     "AccountCreate",
@@ -104,4 +105,5 @@ __all__ = [
     "UserLogin",
     "UsernameUpdate",
     "UserResponse",
+    "UserSessionResponse",
 ]
