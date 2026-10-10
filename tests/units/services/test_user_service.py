@@ -20,6 +20,7 @@ from app.repositories import CategoryRepository, UserRepository, UserSessionRepo
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
 from app.services.default_categories import DEFAULT_CATEGORIES
+from app.services.validators import USER_NO_LONGER_EXISTS_MESSAGE
 from tests.units.services.helpers import (
     as_persisted,
     as_persisted_all,
@@ -956,7 +957,9 @@ class TestUpdatePassword:
         mock_hash = mocker.patch("app.services.user_service.hash_password")
         expected_status_code = 401
 
-        with pytest.raises(AuthenticationException, match="^User no longer exists$") as exc_info:
+        with pytest.raises(
+            AuthenticationException, match=f"^{USER_NO_LONGER_EXISTS_MESSAGE}$"
+        ) as exc_info:
             await user_service.update_password(
                 data, existing_user.id, current_session_id=active_user_session.id
             )

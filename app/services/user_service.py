@@ -278,9 +278,7 @@ class UserService:
     ) -> None:
         # Lock the user before checking the password to serialize password changes
         # with logins and other password changes.
-        existing_user = await self.user_repository.get_by_id_for_update(user_id)
-        if existing_user is None:
-            raise AuthenticationException("User no longer exists")
+        existing_user = await validators.validate_user_for_update(self.user_repository, user_id)
 
         if not verify_password(data.current_password, existing_user.hashed_password):
             logger.warning("password_update_failed", user_id=user_id)

@@ -38,6 +38,7 @@ logger = structlog.get_logger()
 CATEGORY_NOT_FOUND_MESSAGE = "Category not found"
 CATEGORY_ARCHIVED_MESSAGE = "Archived category is not allowed to use"
 CATEGORY_TYPE_MISMATCH_MESSAGE = "Category type is not compatible with this operation"
+USER_NO_LONGER_EXISTS_MESSAGE = "User no longer exists"
 
 
 async def validate_category(
@@ -338,7 +339,31 @@ async def validate_user(
     """
     user = await user_repository.get_by_id(user_id)
     if user is None:
-        raise AuthenticationException("User no longer exists")
+        raise AuthenticationException(USER_NO_LONGER_EXISTS_MESSAGE)
+    return user
+
+
+async def validate_user_for_update(
+    user_repository: UserRepository,
+    user_id: int,
+) -> User:
+    """
+    Validate that the user from the token still exists and lock its row.
+
+    Args:
+        user_repository: Repository to fetch user
+        user_id: User id taken from the JWT token
+
+    Returns:
+        Validated User instance, locked until the transaction ends
+
+    Raises:
+        AuthenticationException: User no longer exists. 401 for the same
+            reason as in validate_user.
+    """
+    user = await user_repository.get_by_id_for_update(user_id)
+    if user is None:
+        raise AuthenticationException(USER_NO_LONGER_EXISTS_MESSAGE)
     return user
 
 
