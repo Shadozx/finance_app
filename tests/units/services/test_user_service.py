@@ -188,7 +188,7 @@ class TestAuthenticate:
             "app.services.user_service.create_access_token", return_value=mocked_token
         )
 
-        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_email_for_update.return_value = existing_user
         user_session_repo_mock.add.side_effect = persist_user_session
 
         result = await user_service.authenticate(data, user_agent=user_agent)
@@ -213,7 +213,8 @@ class TestAuthenticate:
             refresh_token_hash=hash_refresh_secret(refresh_secret),
         )
 
-        user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_email.assert_not_awaited()
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
 
@@ -243,7 +244,7 @@ class TestAuthenticate:
         mocker.patch("app.services.user_service.verify_password", return_value=True)
         mocker.patch("app.services.user_service.create_access_token", return_value=mocked_token)
 
-        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_email_for_update.return_value = existing_user
 
         await user_service.authenticate(data, user_agent=user_agent)
 
@@ -268,12 +269,13 @@ class TestAuthenticate:
             "app.services.user_service.verify_password", return_value=False
         )
 
-        user_repo_mock.get_by_email.return_value = None
+        user_repo_mock.get_by_email_for_update.return_value = None
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
             await user_service.authenticate(data, user_agent=None)
 
-        user_repo_mock.get_by_email.assert_called_once_with(data.email)
+        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_email.assert_not_awaited()
 
         mock_password.assert_called_once_with(data.password, DUMMY_PASSWORD_HASH)
 
@@ -297,12 +299,13 @@ class TestAuthenticate:
 
         data.password = "wrong_password"
 
-        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_email_for_update.return_value = existing_user
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
             await user_service.authenticate(data, user_agent=None)
 
-        user_repo_mock.get_by_email.assert_called_once_with(data.email)
+        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_email.assert_not_awaited()
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
 
@@ -312,6 +315,36 @@ class TestAuthenticate:
 
 
 class TestRefreshSession:
+    async def test_refresh_session_reads_clock_after_acquiring_session_lock(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        active_user_session: UserSession,
+        refresh_secret: str,
+        session_now: datetime,
+    ):
+        events = []
+
+        async def acquire_session_lock(session_id: uuid.UUID):
+            events.append("lock")
+            return active_user_session
+
+        def read_clock():
+            events.append("clock")
+            return session_now
+
+        user_session_repo_mock.get_by_id_for_update.side_effect = acquire_session_lock
+        mocker.patch("app.services.user_service.utc_now", side_effect=read_clock)
+        refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
+
+        await user_service.refresh_session(refresh_token)
+
+        assert events == ["lock", "clock"]
+        assert active_user_session.rotated_at == session_now
+        assert active_user_session.last_used_at == session_now
+        user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
+
     @pytest.mark.parametrize(
         "session_age, expected_remaining_lifetime",
         [
@@ -602,6 +635,7 @@ class TestRefreshSession:
 class TestLogout:
     async def test_logout_revokes_session(
         self,
+        mocker: MockerFixture,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
@@ -609,11 +643,23 @@ class TestLogout:
         refresh_secret: str,
         session_now: datetime,
     ):
+        events = []
+
+        async def acquire_session_lock(session_id: uuid.UUID):
+            events.append("lock")
+            return active_user_session
+
+        def read_clock():
+            events.append("clock")
+            return session_now
+
+        user_session_repo_mock.get_by_id_for_update.side_effect = acquire_session_lock
+        mocker.patch("app.services.user_service.utc_now", side_effect=read_clock)
         refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
-        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
 
         result = await user_service.logout(refresh_token)
 
+        assert events == ["lock", "clock"]
         assert result is None
         assert active_user_session.revoked_at == session_now
         assert active_user_session.revoked_reason == SessionRevocationReason.LOGOUT
@@ -823,6 +869,46 @@ class TestUpdatePassword:
             current_password=plain_existing_user_password,
             new_password="Password1234!",
         )
+
+    async def test_update_password_updates_user_before_revoking_sessions(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        active_user_session: UserSession,
+        data: PasswordUpdate,
+    ):
+        events = []
+        hashed_password = "new-hashed-password"
+        revoked_count = 0
+
+        async def update_user(user: User):
+            events.append("user_update")
+            return user
+
+        async def revoke_sessions(
+            user_id: int,
+            *,
+            keep_session_id: uuid.UUID,
+            now: datetime,
+            reason: SessionRevocationReason,
+        ):
+            events.append("revoke")
+            return revoked_count
+
+        user_repo_mock.get_by_id.return_value = existing_user
+        user_repo_mock.update.side_effect = update_user
+        user_session_repo_mock.revoke_active_except.side_effect = revoke_sessions
+        mocker.patch("app.services.user_service.verify_password", return_value=True)
+        mocker.patch("app.services.user_service.hash_password", return_value=hashed_password)
+
+        await user_service.update_password(
+            data, existing_user.id, current_session_id=active_user_session.id
+        )
+
+        assert events == ["user_update", "revoke"]
 
     @pytest.mark.parametrize("revoked_count", [0, 2], ids=["no-other-sessions", "revoked"])
     async def test_update_password_success(

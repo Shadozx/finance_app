@@ -1,4 +1,5 @@
 import hmac
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -38,6 +39,13 @@ class RefreshTokenMatch(StrEnum):
     CURRENT = "current"
     PREVIOUS_IN_GRACE = "previous_in_grace"
     MISMATCH = "mismatch"
+
+
+@dataclass(frozen=True)
+class ResolvedRefreshToken:
+    user_session: UserSession
+    match: RefreshTokenMatch
+    now: datetime
 
 
 class UserService:
@@ -89,9 +97,7 @@ class UserService:
             refresh_token=create_refresh_token(user_session.id, secret),
         )
 
-    async def _resolve_refresh_token(
-        self, token: str, now: datetime
-    ) -> tuple[UserSession, RefreshTokenMatch] | None:
+    async def _resolve_refresh_token(self, token: str) -> ResolvedRefreshToken | None:
         parsed_token = parse_refresh_token(token)
         if parsed_token is None:
             logger.warning("refresh_token_rejected_malformed")
@@ -102,6 +108,8 @@ class UserService:
         if user_session is None:
             logger.warning("refresh_token_rejected_session_not_found", session_id=str(session_id))
             return None
+
+        now = utc_now()
 
         if user_session.revoked_at is not None:
             logger.warning(
@@ -117,7 +125,9 @@ class UserService:
 
         secret_hash = hash_refresh_secret(secret)
         if hmac.compare_digest(secret_hash, user_session.refresh_token_hash):
-            return user_session, RefreshTokenMatch.CURRENT
+            return ResolvedRefreshToken(
+                user_session=user_session, match=RefreshTokenMatch.CURRENT, now=now
+            )
 
         if (
             user_session.previous_refresh_token_hash is not None
@@ -126,12 +136,17 @@ class UserService:
             and now - user_session.rotated_at
             <= timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
         ):
-            return user_session, RefreshTokenMatch.PREVIOUS_IN_GRACE
+            return ResolvedRefreshToken(
+                user_session=user_session, match=RefreshTokenMatch.PREVIOUS_IN_GRACE, now=now
+            )
 
-        return user_session, RefreshTokenMatch.MISMATCH
+        return ResolvedRefreshToken(
+            user_session=user_session, match=RefreshTokenMatch.MISMATCH, now=now
+        )
 
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
-        existing_user = await self.user_repository.get_by_email(user.email)
+        # Lock the user before checking the password to serialize login with password changes.
+        existing_user = await self.user_repository.get_by_email_for_update(user.email)
 
         hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
 
@@ -172,12 +187,13 @@ class UserService:
         return tokens
 
     async def refresh_session(self, refresh_token: str) -> TokenResponse:
-        now = utc_now()
-        resolved = await self._resolve_refresh_token(refresh_token, now)
+        resolved = await self._resolve_refresh_token(refresh_token)
         if resolved is None:
             raise AuthenticationException("Invalid or expired token")
 
-        user_session, match = resolved
+        user_session = resolved.user_session
+        match = resolved.match
+        now = resolved.now
         if match is RefreshTokenMatch.MISMATCH:
             user_session.revoked_at = now
             user_session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
@@ -212,12 +228,13 @@ class UserService:
         return tokens
 
     async def logout(self, refresh_token: str) -> None:
-        now = utc_now()
-        resolved = await self._resolve_refresh_token(refresh_token, now)
+        resolved = await self._resolve_refresh_token(refresh_token)
         if resolved is None:
             return
 
-        user_session, match = resolved
+        user_session = resolved.user_session
+        match = resolved.match
+        now = resolved.now
         if match is not RefreshTokenMatch.CURRENT:
             logger.warning("logout_ignored_stale_refresh_token", session_id=str(user_session.id))
             return
@@ -269,6 +286,7 @@ class UserService:
         now = utc_now()
         existing_user.password_changed_at = now
 
+        # Flush the user update first to wait for concurrent logins before revoking their sessions.
         await self.user_repository.update(existing_user)
         revoked_count = await self.user_session_repository.revoke_active_except(
             user_id,
