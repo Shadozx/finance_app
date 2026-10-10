@@ -107,22 +107,6 @@ class TestGetByEmail:
         assert found_user is None
 
 
-class TestGetByEmailForUpdate:
-    async def test_get_by_email_for_update(self, user_repository: UserRepository, user: User):
-        found_user = await user_repository.get_by_email_for_update(user.email)
-
-        assert found_user is not None
-        assert found_user.id == user.id
-        assert found_user.email == user.email
-
-    async def test_get_by_email_for_update_not_found(self, user_repository: UserRepository):
-        unknown_email = "unknown-user@test.com"
-
-        found_user = await user_repository.get_by_email_for_update(unknown_email)
-
-        assert found_user is None
-
-
 class TestGetByUsername:
     async def test_get_by_username(self, user_repository: UserRepository, user: User):
         found_user = await user_repository.get_by_username(user.username)

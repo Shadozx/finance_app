@@ -150,8 +150,7 @@ class UserService:
         )
 
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
-        # Lock the user before checking the password to serialize login with password changes.
-        existing_user = await self.user_repository.get_by_email_for_update(user.email)
+        existing_user = await self.user_repository.get_by_email(user.email)
 
         hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
 
@@ -159,6 +158,36 @@ class UserService:
 
         if not existing_user or not is_password_valid:
             logger.warning("user_authenticate_failed", email=user.email)
+
+            raise AuthenticationException(
+                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+            )
+
+        # The password is verified without a lock so the slow hash check does not hold
+        # the user row. The verified hash is kept in its own variable because the locked
+        # re-read uses populate_existing and overwrites the same User object in place.
+        # The re-read takes the lock to serialize login with password changes: if the
+        # hash changed after verification, the password used here is no longer valid.
+        verified_hash = existing_user.hashed_password
+        locked_user = await self.user_repository.get_by_id_for_update(existing_user.id)
+
+        if locked_user is None:
+            logger.warning(
+                "user_authenticate_rejected_user_deleted",
+                user_id=existing_user.id,
+                email=user.email,
+            )
+
+            raise AuthenticationException(
+                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+            )
+
+        if locked_user.hashed_password != verified_hash:
+            logger.warning(
+                "user_authenticate_rejected_password_changed",
+                user_id=existing_user.id,
+                email=user.email,
+            )
 
             raise AuthenticationException(
                 "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS

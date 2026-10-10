@@ -6,6 +6,7 @@ from pytest_mock import MockerFixture
 from structlog.testing import capture_logs
 
 from app.core import UnitOfWork, settings
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
@@ -190,7 +191,8 @@ class TestAuthenticate:
             "app.services.user_service.create_access_token", return_value=mocked_token
         )
 
-        user_repo_mock.get_by_email_for_update.return_value = existing_user
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
         user_session_repo_mock.add.side_effect = persist_user_session
 
         result = await user_service.authenticate(data, user_agent=user_agent)
@@ -218,8 +220,8 @@ class TestAuthenticate:
             refresh_token_hash=hash_refresh_secret(refresh_secret),
         )
 
-        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
-        user_repo_mock.get_by_email.assert_not_awaited()
+        user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
 
@@ -249,7 +251,8 @@ class TestAuthenticate:
         mocker.patch("app.services.user_service.verify_password", return_value=True)
         mocker.patch("app.services.user_service.create_access_token", return_value=mocked_token)
 
-        user_repo_mock.get_by_email_for_update.return_value = existing_user
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
 
         await user_service.authenticate(data, user_agent=user_agent)
 
@@ -274,13 +277,13 @@ class TestAuthenticate:
             "app.services.user_service.verify_password", return_value=False
         )
 
-        user_repo_mock.get_by_email_for_update.return_value = None
+        user_repo_mock.get_by_email.return_value = None
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
             await user_service.authenticate(data, user_agent=None)
 
-        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
-        user_repo_mock.get_by_email.assert_not_awaited()
+        user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
 
         mock_password.assert_called_once_with(data.password, DUMMY_PASSWORD_HASH)
 
@@ -304,18 +307,98 @@ class TestAuthenticate:
 
         data.password = "wrong_password"
 
-        user_repo_mock.get_by_email_for_update.return_value = existing_user
+        user_repo_mock.get_by_email.return_value = existing_user
 
         with pytest.raises(AuthenticationException, match="Invalid email or password"):
             await user_service.authenticate(data, user_agent=None)
 
-        user_repo_mock.get_by_email_for_update.assert_awaited_once_with(data.email)
-        user_repo_mock.get_by_email.assert_not_awaited()
+        user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
 
         mock_password.assert_called_once_with(data.password, existing_user.hashed_password)
 
         user_session_repo_mock.add.assert_not_awaited()
 
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_authenticate_rejects_password_changed_after_verification(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        verified_hashed_password = existing_user.hashed_password
+        changed_hashed_password = "changed-hashed-password"
+
+        mocker.patch("app.services.user_service.verify_password", return_value=True)
+
+        def lock_user_with_changed_password(user_id: int) -> User:
+            # Mimic populate_existing: the locked re-read overwrites the same object.
+            existing_user.hashed_password = changed_hashed_password
+            return existing_user
+
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.side_effect = lock_user_with_changed_password
+
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match="Invalid email or password"
+            ) as exc_info:
+                await user_service.authenticate(data, user_agent=None)
+
+        assert exc_info.value.code == ErrorCode.INVALID_CREDENTIALS
+        assert existing_user.hashed_password != verified_hashed_password
+        assert logs == [
+            {
+                "event": "user_authenticate_rejected_password_changed",
+                "user_id": existing_user.id,
+                "email": data.email,
+                "log_level": "warning",
+            }
+        ]
+
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        user_session_repo_mock.delete_expired_sessions.assert_not_awaited()
+        user_session_repo_mock.add.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_authenticate_rejects_user_deleted_after_verification(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        mocker.patch("app.services.user_service.verify_password", return_value=True)
+
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = None
+
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match="Invalid email or password"
+            ) as exc_info:
+                await user_service.authenticate(data, user_agent=None)
+
+        assert exc_info.value.code == ErrorCode.INVALID_CREDENTIALS
+        assert logs == [
+            {
+                "event": "user_authenticate_rejected_user_deleted",
+                "user_id": existing_user.id,
+                "email": data.email,
+                "log_level": "warning",
+            }
+        ]
+
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
 
