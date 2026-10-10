@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -25,19 +26,31 @@ def hash_refresh_secret(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
+def _sign_refresh_token(session_id: UUID, secret: str) -> str:
+    message = f"refresh-token:{session_id}.{secret}"
+    return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 def create_refresh_token(session_id: UUID, secret: str) -> str:
-    return f"{session_id}.{secret}"
+    signature = _sign_refresh_token(session_id, secret)
+    return f"{session_id}.{secret}.{signature}"
 
 
-def parse_refresh_token(token: str) -> tuple[UUID, str] | None:
-    session_id, separator, secret = token.partition(".")
-    if not separator or not secret:
+def parse_refresh_token(token: str) -> tuple[UUID, str, str] | None:
+    parts = token.split(".")
+    if len(parts) != 3 or not all(parts):
         return None
 
+    session_id, secret, signature = parts
     try:
-        return UUID(session_id), secret
+        return UUID(session_id), secret, signature
     except ValueError:
         return None
+
+
+def verify_refresh_token_signature(session_id: UUID, secret: str, signature: str) -> bool:
+    expected_signature = _sign_refresh_token(session_id, secret)
+    return hmac.compare_digest(expected_signature.encode(), signature.encode())
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

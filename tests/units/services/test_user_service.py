@@ -12,6 +12,7 @@ from app.core.security import (
     create_refresh_token,
     hash_refresh_secret,
     parse_refresh_token,
+    verify_refresh_token_signature,
     verify_token,
 )
 from app.models import USER_AGENT_MAX_LENGTH, SessionRevocationReason, User, UserSession
@@ -196,7 +197,10 @@ class TestAuthenticate:
         created_session = user_session_repo_mock.add.await_args.args[0]
 
         assert result.access_token == mocked_token
-        assert parse_refresh_token(result.refresh_token) == (session_id, refresh_secret)
+        parsed_token = parse_refresh_token(result.refresh_token)
+        assert parsed_token is not None
+        assert parsed_token[:2] == (session_id, refresh_secret)
+        assert verify_refresh_token_signature(*parsed_token)
         assert created_session.refresh_token_hash != refresh_secret
 
         assert isinstance(created_session, UserSession)
@@ -383,7 +387,8 @@ class TestRefreshSession:
 
         parsed_token = parse_refresh_token(result.refresh_token)
         assert parsed_token is not None
-        session_id, new_secret = parsed_token
+        session_id, new_secret, signature = parsed_token
+        assert verify_refresh_token_signature(session_id, new_secret, signature)
         assert session_id == active_user_session.id
         assert new_secret != refresh_secret
         assert active_user_session.refresh_token_hash != original_hash
@@ -401,7 +406,7 @@ class TestRefreshSession:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret"])
+    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret.signature"])
     async def test_refresh_session_rejects_malformed_token(
         self,
         user_service: UserService,
@@ -417,6 +422,38 @@ class TestRefreshSession:
 
         assert exc_info.value.status_code == 401
         assert logs == [{"event": "refresh_token_rejected_malformed", "log_level": "warning"}]
+        user_session_repo_mock.get_by_id_for_update.assert_not_awaited()
+        user_session_repo_mock.update.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "signature", ["forged-signature", "підроблений-підпис"], ids=["ascii", "non-ascii"]
+    )
+    async def test_refresh_session_rejects_invalid_signature_without_accessing_repository(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        active_user_session: UserSession,
+        refresh_secret: str,
+        signature: str,
+    ):
+        forged_token = f"{active_user_session.id}.{refresh_secret}.{signature}"
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+
+        with capture_logs() as logs:
+            with pytest.raises(AuthenticationException, match="Invalid or expired token"):
+                await user_service.refresh_session(forged_token)
+
+        assert logs == [
+            {
+                "event": "refresh_token_rejected_invalid_signature",
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
+        assert active_user_session.revoked_at is None
+        assert active_user_session.revoked_reason is None
         user_session_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
@@ -548,7 +585,8 @@ class TestRefreshSession:
 
         parsed_token = parse_refresh_token(result.refresh_token)
         assert parsed_token is not None
-        session_id, new_secret = parsed_token
+        session_id, new_secret, signature = parsed_token
+        assert verify_refresh_token_signature(session_id, new_secret, signature)
         assert session_id == active_user_session.id
         assert active_user_session.refresh_token_hash == hash_refresh_secret(new_secret)
         assert active_user_session.refresh_token_hash != current_hash
@@ -668,7 +706,7 @@ class TestLogout:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret"])
+    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret.signature"])
     async def test_logout_ignores_malformed_token(
         self,
         user_service: UserService,
@@ -681,6 +719,38 @@ class TestLogout:
 
         assert result is None
         assert logs == [{"event": "refresh_token_rejected_malformed", "log_level": "warning"}]
+        user_session_repo_mock.get_by_id_for_update.assert_not_awaited()
+        user_session_repo_mock.update.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "signature", ["forged-signature", "підроблений-підпис"], ids=["ascii", "non-ascii"]
+    )
+    async def test_logout_ignores_invalid_signature_without_accessing_repository(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        active_user_session: UserSession,
+        refresh_secret: str,
+        signature: str,
+    ):
+        forged_token = f"{active_user_session.id}.{refresh_secret}.{signature}"
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+
+        with capture_logs() as logs:
+            result = await user_service.logout(forged_token)
+
+        assert result is None
+        assert logs == [
+            {
+                "event": "refresh_token_rejected_invalid_signature",
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
+        assert active_user_session.revoked_at is None
+        assert active_user_session.revoked_reason is None
         user_session_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()

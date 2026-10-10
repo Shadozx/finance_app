@@ -18,6 +18,7 @@ from app.core.security import (
     hash_refresh_secret,
     parse_refresh_token,
     verify_password,
+    verify_refresh_token_signature,
 )
 from app.models import USER_AGENT_MAX_LENGTH, Category, SessionRevocationReason, User, UserSession
 from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
@@ -103,7 +104,11 @@ class UserService:
             logger.warning("refresh_token_rejected_malformed")
             return None
 
-        session_id, secret = parsed_token
+        session_id, secret, signature = parsed_token
+        if not verify_refresh_token_signature(session_id, secret, signature):
+            logger.warning("refresh_token_rejected_invalid_signature", session_id=str(session_id))
+            return None
+
         user_session = await self.user_session_repository.get_by_id_for_update(session_id)
         if user_session is None:
             logger.warning("refresh_token_rejected_session_not_found", session_id=str(session_id))
