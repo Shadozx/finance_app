@@ -35,6 +35,8 @@ from app.services.default_categories import DEFAULT_CATEGORIES
 
 logger = structlog.get_logger()
 
+INVALID_CREDENTIALS_MESSAGE = "Invalid email or password"
+
 
 class RefreshTokenMatch(StrEnum):
     CURRENT = "current"
@@ -160,7 +162,7 @@ class UserService:
             logger.warning("user_authenticate_failed", email=user.email)
 
             raise AuthenticationException(
-                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+                INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
         # The password is verified without a lock so the slow hash check does not hold
@@ -179,7 +181,7 @@ class UserService:
             )
 
             raise AuthenticationException(
-                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+                INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
         if locked_user.hashed_password != verified_hash:
@@ -190,7 +192,7 @@ class UserService:
             )
 
             raise AuthenticationException(
-                "Invalid email or password", code=ErrorCode.INVALID_CREDENTIALS
+                INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
         now = utc_now()

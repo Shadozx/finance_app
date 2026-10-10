@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 from uuid import UUID
 
 from argon2 import PasswordHasher
@@ -16,6 +17,12 @@ ph = PasswordHasher()
 # either way. Computed once at import with the current hasher settings: a hardcoded hash
 # would keep the parameters it was made with and drift apart from the real one.
 DUMMY_PASSWORD_HASH = ph.hash("dummy-password-never-matched")
+
+
+class ParsedRefreshToken(NamedTuple):
+    session_id: UUID
+    secret: str
+    signature: str
 
 
 def generate_refresh_secret() -> str:
@@ -36,14 +43,14 @@ def create_refresh_token(session_id: UUID, secret: str) -> str:
     return f"{session_id}.{secret}.{signature}"
 
 
-def parse_refresh_token(token: str) -> tuple[UUID, str, str] | None:
+def parse_refresh_token(token: str) -> ParsedRefreshToken | None:
     parts = token.split(".")
     if len(parts) != 3 or not all(parts):
         return None
 
     session_id, secret, signature = parts
     try:
-        return UUID(session_id), secret, signature
+        return ParsedRefreshToken(UUID(session_id), secret, signature)
     except ValueError:
         return None
 

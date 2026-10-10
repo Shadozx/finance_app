@@ -1,7 +1,9 @@
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi import status
 from pytest_mock import MockerFixture
 from structlog.testing import capture_logs
 
@@ -21,11 +23,13 @@ from app.repositories import CategoryRepository, UserRepository, UserSessionRepo
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
 from app.services.default_categories import DEFAULT_CATEGORIES
+from app.services.user_service import INVALID_CREDENTIALS_MESSAGE
 from app.services.validators import USER_NO_LONGER_EXISTS_MESSAGE
 from tests.units.services.helpers import (
     as_persisted,
     as_persisted_all,
     assert_model_fields,
+    forge_refresh_token,
     make_user,
 )
 
@@ -202,7 +206,8 @@ class TestAuthenticate:
         assert result.access_token == mocked_token
         parsed_token = parse_refresh_token(result.refresh_token)
         assert parsed_token is not None
-        assert parsed_token[:2] == (session_id, refresh_secret)
+        assert parsed_token.session_id == session_id
+        assert parsed_token.secret == refresh_secret
         assert verify_refresh_token_signature(*parsed_token)
         assert created_session.refresh_token_hash != refresh_secret
 
@@ -279,7 +284,7 @@ class TestAuthenticate:
 
         user_repo_mock.get_by_email.return_value = None
 
-        with pytest.raises(AuthenticationException, match="Invalid email or password"):
+        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
             await user_service.authenticate(data, user_agent=None)
 
         user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
@@ -309,7 +314,7 @@ class TestAuthenticate:
 
         user_repo_mock.get_by_email.return_value = existing_user
 
-        with pytest.raises(AuthenticationException, match="Invalid email or password"):
+        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
             await user_service.authenticate(data, user_agent=None)
 
         user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
@@ -346,7 +351,7 @@ class TestAuthenticate:
 
         with capture_logs() as logs:
             with pytest.raises(
-                AuthenticationException, match="Invalid email or password"
+                AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)
             ) as exc_info:
                 await user_service.authenticate(data, user_agent=None)
 
@@ -383,7 +388,7 @@ class TestAuthenticate:
 
         with capture_logs() as logs:
             with pytest.raises(
-                AuthenticationException, match="Invalid email or password"
+                AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)
             ) as exc_info:
                 await user_service.authenticate(data, user_agent=None)
 
@@ -504,7 +509,7 @@ class TestRefreshSession:
             ) as exc_info:
                 await user_service.refresh_session(token)
 
-        assert exc_info.value.status_code == 401
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert logs == [{"event": "refresh_token_rejected_malformed", "log_level": "warning"}]
         user_session_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_session_repo_mock.update.assert_not_awaited()
@@ -522,7 +527,7 @@ class TestRefreshSession:
         refresh_secret: str,
         signature: str,
     ):
-        forged_token = f"{active_user_session.id}.{refresh_secret}.{signature}"
+        forged_token = forge_refresh_token(active_user_session.id, refresh_secret, signature)
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
 
         with capture_logs() as logs:
@@ -819,7 +824,7 @@ class TestLogout:
         refresh_secret: str,
         signature: str,
     ):
-        forged_token = f"{active_user_session.id}.{refresh_secret}.{signature}"
+        forged_token = forge_refresh_token(active_user_session.id, refresh_secret, signature)
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
 
         with capture_logs() as logs:
@@ -1038,16 +1043,15 @@ class TestUpdatePassword:
         user_repo_mock.get_by_id_for_update.return_value = None
         mock_password = mocker.patch("app.services.user_service.verify_password")
         mock_hash = mocker.patch("app.services.user_service.hash_password")
-        expected_status_code = 401
 
         with pytest.raises(
-            AuthenticationException, match=f"^{USER_NO_LONGER_EXISTS_MESSAGE}$"
+            AuthenticationException, match=f"^{re.escape(USER_NO_LONGER_EXISTS_MESSAGE)}$"
         ) as exc_info:
             await user_service.update_password(
                 data, existing_user.id, current_session_id=active_user_session.id
             )
 
-        assert exc_info.value.status_code == expected_status_code
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         user_repo_mock.get_by_id.assert_not_awaited()
         mock_password.assert_not_called()

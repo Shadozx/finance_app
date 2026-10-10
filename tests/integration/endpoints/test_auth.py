@@ -27,6 +27,7 @@ from tests.integration.endpoints.helpers import (
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
+    forge_refresh_token,
     register_payload,
     session_id_from_headers,
 )
@@ -399,6 +400,42 @@ class TestRefresh:
         )
         assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
 
+    async def test_refresh_token_two_generations_old_revokes_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        first_refresh_token = login_tokens["refresh_token"]
+        second_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": first_refresh_token}
+        )
+        assert second_response.status_code == status.HTTP_200_OK
+        second_tokens = second_response.json()
+        third_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": second_tokens["refresh_token"]}
+        )
+        assert third_response.status_code == status.HTTP_200_OK
+        third_tokens = third_response.json()
+        session_id = uuid.UUID(verify_token(third_tokens["access_token"])["sid"])
+        parsed_token = parse_refresh_token(first_refresh_token)
+        assert parsed_token is not None
+        assert verify_refresh_token_signature(*parsed_token)
+
+        reuse_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": first_refresh_token}
+        )
+
+        assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        )
+        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
+        current_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": third_tokens["refresh_token"]}
+        )
+        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
     async def test_refresh_previous_token_in_grace_returns_usable_pair_without_extending_window(
         self,
         client: AsyncClient,
@@ -445,6 +482,12 @@ class TestRefresh:
         test_session: AsyncSession,
         login_tokens: dict[str, str],
     ):
+        # A retry in the grace window displaces the pair issued by the first refresh, and
+        # later use of that pair is treated as reuse. This is acceptable only if the client
+        # serializes refresh calls with a mutex: then it retries only when the first
+        # response never arrived, so it never holds the displaced pair. Without the mutex,
+        # two parallel refreshes can leave the client with the displaced pair, and its next
+        # refresh revokes the session.
         payload = {"refresh_token": login_tokens["refresh_token"]}
         response = await client.post(API_AUTH_REFRESH_URL, json=payload)
         assert response.status_code == status.HTTP_200_OK
@@ -592,7 +635,7 @@ class TestRefresh:
         headers = {"Authorization": f"Bearer {login_tokens['access_token']}"}
         session_id = session_id_from_headers(headers)
         forged_secret = "forged-refresh-secret"
-        forged_token = f"{session_id}.{forged_secret}.{signature}"
+        forged_token = forge_refresh_token(session_id, forged_secret, signature)
 
         response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": forged_token})
 
@@ -633,7 +676,7 @@ class TestRefresh:
         assert parsed_token is not None
         session_id, secret, signature = parsed_token
         assert session_id != other_session_id
-        forged_token = f"{other_session_id}.{secret}.{signature}"
+        forged_token = forge_refresh_token(other_session_id, secret, signature)
 
         response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": forged_token})
 
@@ -713,7 +756,7 @@ class TestRefresh:
         ).one()
         parsed_token = parse_refresh_token(login_tokens["refresh_token"])
         assert parsed_token is not None
-        assert rotation.previous_refresh_token_hash == hash_refresh_secret(parsed_token[1])
+        assert rotation.previous_refresh_token_hash == hash_refresh_secret(parsed_token.secret)
         assert rotation.rotated_at == now
 
         revoke_response = await client.delete(
@@ -854,7 +897,7 @@ class TestLogout:
         session_id = session_id_from_headers(headers)
         forged_secret = "forged-refresh-secret"
         forged_signature = "forged-signature"
-        forged_token = f"{session_id}.{forged_secret}.{forged_signature}"
+        forged_token = forge_refresh_token(session_id, forged_secret, forged_signature)
 
         response = await client.post(API_AUTH_LOGOUT_URL, json={"refresh_token": forged_token})
 
@@ -948,7 +991,7 @@ class TestTokenLogging:
             )
             assert failed_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
             session_id = uuid.UUID(verify_token(rotated_tokens["access_token"])["sid"])
-            forged_refresh_token = f"{session_id}.{forged_secret}.{forged_signature}"
+            forged_refresh_token = forge_refresh_token(session_id, forged_secret, forged_signature)
             forged_refresh_response = await client.post(
                 API_AUTH_REFRESH_URL, json={"refresh_token": forged_refresh_token}
             )
@@ -1002,7 +1045,12 @@ class TestTokenLogging:
             parsed_token = parse_refresh_token(tokens["refresh_token"])
             assert parsed_token is not None
             sensitive_values.extend(
-                [tokens["access_token"], tokens["refresh_token"], parsed_token[1], parsed_token[2]]
+                [
+                    tokens["access_token"],
+                    tokens["refresh_token"],
+                    parsed_token.secret,
+                    parsed_token.signature,
+                ]
             )
         serialized_logs = json.dumps(logs, default=str)
         for sensitive_value in sensitive_values:

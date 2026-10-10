@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import TypeVar
+from uuid import UUID
 
 from app.models import (
     Account,
@@ -58,6 +59,11 @@ def as_persisted_all(objects: list[T], start_id: int = 1) -> list[T]:
     Ids are sequential, mirroring how the database assigns them.
     """
     return [as_persisted(obj, start_id + index) for index, obj in enumerate(objects)]
+
+
+def forge_refresh_token(session_id: UUID, secret: str, signature: str) -> str:
+    """Refresh token assembled from raw parts, signed or not."""
+    return f"{session_id}.{secret}.{signature}"
 
 
 def make_transaction(**kwargs) -> Transaction:

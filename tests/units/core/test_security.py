@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from jose import jwt
 
 from app.core.config import settings
 from app.core.security import (
@@ -38,7 +39,7 @@ class TestRefreshToken:
         secret = generate_refresh_secret()
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
-        signature = parsed_token[2]
+        signature = parsed_token.signature
         replacement_character = "A" if secret[0] != "A" else "B"
         changed_secret = replacement_character + secret[1:]
 
@@ -50,7 +51,7 @@ class TestRefreshToken:
         secret = generate_refresh_secret()
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
-        signature = parsed_token[2]
+        signature = parsed_token.signature
 
         assert not verify_refresh_token_signature(other_session_id, secret, signature)
 
@@ -60,7 +61,7 @@ class TestRefreshToken:
         secret = generate_refresh_secret()
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
-        signature = parsed_token[2]
+        signature = parsed_token.signature
         replacement_character = "0" if signature[0] != "0" else "1"
         if signature_kind == "non-ascii":
             replacement_character = "é"
@@ -160,8 +161,15 @@ class TestVerifyToken:
     def data(self):
         return {"sub": "1"}
 
-    def test_verify_token_rejects_a_token_it_did_not_sign(self):
-        foreign_token = "not-a-token"
+    def test_verify_token_rejects_a_token_it_did_not_sign(self, data: dict):
+        foreign_secret_key = f"{settings.SECRET_KEY}-foreign"
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        foreign_token = jwt.encode(
+            {**data, "exp": expires_at.timestamp()},
+            foreign_secret_key,
+            algorithm=settings.ALGORITHM,
+        )
+        assert jwt.get_unverified_claims(foreign_token)["sub"] == data["sub"]
 
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(foreign_token)

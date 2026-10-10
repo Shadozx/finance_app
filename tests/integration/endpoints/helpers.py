@@ -31,6 +31,10 @@ def session_id_from_headers(headers: dict[str, str]) -> uuid.UUID:
     return uuid.UUID(verify_token(token)["sid"])
 
 
+def forge_refresh_token(session_id: uuid.UUID, secret: str, signature: str) -> str:
+    return f"{session_id}.{secret}.{signature}"
+
+
 def assert_field_error(
     response: Response,
     code: ErrorCode,

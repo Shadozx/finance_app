@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import utc_now
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import SessionRevocationReason, UserSession
+from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 from tests.integration.endpoints.helpers import (
     assert_field_error,
     assert_no_field_errors,
@@ -246,7 +247,7 @@ class TestRevokeSession:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["detail"] == "Session not found"
+        assert response.json()["detail"] == SESSION_NOT_FOUND_MESSAGE
         assert_no_field_errors(response, ErrorCode.NOT_FOUND)
         other_response = await client.get(API_USERS_ME, headers=other_authenticated_user["headers"])
         assert other_response.status_code == status.HTTP_200_OK
@@ -286,7 +287,7 @@ class TestRevokeSession:
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["detail"] == "Session not found"
+        assert response.json()["detail"] == SESSION_NOT_FOUND_MESSAGE
         assert_no_field_errors(response, ErrorCode.NOT_FOUND)
         assert (await test_session.execute(state_query)).one_or_none() == original_state
 

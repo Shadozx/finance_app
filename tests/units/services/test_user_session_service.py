@@ -9,9 +9,9 @@ from app.core.exceptions import NotFoundException
 from app.models import SessionRevocationReason, User, UserSession
 from app.repositories import UserSessionRepository
 from app.services import UserSessionService
+from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 
 SESSION_TIME_OFFSET = timedelta(days=1)
-NOT_FOUND_MESSAGE = "Session not found"
 
 
 class TestListSessions:
@@ -208,7 +208,7 @@ class TestRevokeSession:
             with pytest.raises(NotFoundException) as exc_info:
                 await user_session_service.revoke_session(existing_user.id, active_user_session.id)
 
-        assert exc_info.value.message == NOT_FOUND_MESSAGE
+        assert exc_info.value.message == SESSION_NOT_FOUND_MESSAGE
         assert exc_info.value.errors == []
         assert active_user_session.revoked_at == original_revoked_at
         assert active_user_session.revoked_reason == original_reason
