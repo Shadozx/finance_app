@@ -1,5 +1,7 @@
 import pytest
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
 from app.repositories import UserRepository
@@ -52,6 +54,44 @@ class TestGetById:
         found_user = await user_repository.get_by_id(999)
 
         assert found_user is None
+
+
+class TestGetByIdForUpdate:
+    async def test_get_by_id_for_update(self, user_repository: UserRepository, user: User):
+        found_user = await user_repository.get_by_id_for_update(user.id)
+
+        assert found_user is not None
+        assert found_user.id == user.id
+        assert found_user.username == user.username
+        assert found_user.email == user.email
+
+    async def test_get_by_id_for_update_not_found(self, user_repository: UserRepository):
+        unknown_user_id = 999
+
+        found_user = await user_repository.get_by_id_for_update(unknown_user_id)
+
+        assert found_user is None
+
+    async def test_get_by_id_for_update_refreshes_cached_password_hash(
+        self,
+        user_repository: UserRepository,
+        test_session: AsyncSession,
+        user: User,
+    ):
+        original_hashed_password = user.hashed_password
+        updated_hashed_password = "updated-hashed-password"
+        await test_session.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(hashed_password=updated_hashed_password)
+            .execution_options(synchronize_session=False)
+        )
+        assert user.hashed_password == original_hashed_password
+
+        found_user = await user_repository.get_by_id_for_update(user.id)
+
+        assert found_user is user
+        assert found_user.hashed_password == updated_hashed_password
 
 
 class TestGetByEmail:

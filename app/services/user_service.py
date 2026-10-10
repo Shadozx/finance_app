@@ -276,7 +276,11 @@ class UserService:
     async def update_password(
         self, data: PasswordUpdate, user_id: int, *, current_session_id: UUID
     ) -> None:
-        existing_user = await validators.validate_user(self.user_repository, user_id)
+        # Lock the user before checking the password to serialize password changes
+        # with logins and other password changes.
+        existing_user = await self.user_repository.get_by_id_for_update(user_id)
+        if existing_user is None:
+            raise AuthenticationException("User no longer exists")
 
         if not verify_password(data.current_password, existing_user.hashed_password):
             logger.warning("password_update_failed", user_id=user_id)
@@ -291,7 +295,6 @@ class UserService:
         now = utc_now()
         existing_user.password_changed_at = now
 
-        # Flush the user update first to wait for concurrent logins before revoking their sessions.
         await self.user_repository.update(existing_user)
         revoked_count = await self.user_session_repository.revoke_active_except(
             user_id,
