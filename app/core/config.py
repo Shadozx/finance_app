@@ -1,11 +1,20 @@
 import os
 from enum import Enum
 
-from pydantic import AnyHttpUrl, PostgresDsn, ValidationInfo, computed_field, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    PostgresDsn,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _FORBIDDEN_SECRETS = {"", "changeme", "secret"}
 _MIN_SECRET_LENGTH = 32
+
+SESSION_IDLE_EXCEEDS_MAX_MESSAGE = "SESSION_IDLE_DAYS must not exceed SESSION_MAX_DAYS."
 
 
 class Environment(str, Enum):
@@ -32,10 +41,10 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    SESSION_IDLE_DAYS: int = 30
-    SESSION_MAX_DAYS: int = 90
-    REFRESH_TOKEN_REUSE_GRACE_SECONDS: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(15, gt=0)
+    SESSION_IDLE_DAYS: int = Field(30, gt=0)
+    SESSION_MAX_DAYS: int = Field(90, gt=0)
+    REFRESH_TOKEN_REUSE_GRACE_SECONDS: int = Field(30, ge=0)
 
     model_config = SettingsConfigDict(
         env_file=(".env", f".env.{os.getenv('ENVIRONMENT', 'dev')}"),
@@ -51,6 +60,16 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY is a placeholder or empty.")
         if len(v) < _MIN_SECRET_LENGTH:
             raise ValueError(f"SECRET_KEY must be ≥ {_MIN_SECRET_LENGTH} chars.")
+        return v
+
+    @field_validator("SESSION_MAX_DAYS")
+    @classmethod
+    def session_max_days_must_cover_idle_days(cls, v: int, info: ValidationInfo) -> int:
+        # SESSION_IDLE_DAYS is missing here when it failed its own constraint,
+        # which already reports the error.
+        idle_days = info.data.get("SESSION_IDLE_DAYS")
+        if idle_days is not None and idle_days > v:
+            raise ValueError(SESSION_IDLE_EXCEEDS_MAX_MESSAGE)
         return v
 
     @field_validator("DATABASE_URL", mode="before")
