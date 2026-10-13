@@ -2,11 +2,16 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, ValidationInfo, field_validator
 
+from app.core.email_policy import normalize_email
 from app.core.error_codes import FieldErrorCode
-from app.schemas.validators import field_error, password_validator, username_validator
+from app.schemas.validators import (
+    email_address_validator,
+    field_error,
+    password_validator,
+    username_validator,
+)
 
 
-# --- Pydantic-схеми ---
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
@@ -18,6 +23,11 @@ class UserCreate(BaseModel):
     def validate_username(cls, v: str) -> str:
         return username_validator(v)
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return email_address_validator(v)
+
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
@@ -27,6 +37,12 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        # Normalize only: a stricter rule for new addresses must not lock out existing users
+        return normalize_email(v)
 
 
 class UsernameUpdate(BaseModel):

@@ -7,6 +7,7 @@ from typing import Any, LiteralString, cast
 from pydantic import ValidationInfo
 from pydantic_core import PydanticCustomError
 
+from app.core.email_policy import is_supported_email, normalize_email
 from app.core.error_codes import FieldErrorCode
 
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
@@ -64,6 +65,19 @@ def password_validator(password: str) -> str:
         )
 
     return password
+
+
+def email_address_validator(email: str) -> str:
+    # Runs after EmailStr has checked the syntax; this narrows it to what the users table stores
+    email = normalize_email(email)
+
+    if not is_supported_email(email):
+        raise field_error(
+            FieldErrorCode.INVALID_FORMAT,
+            "Email address must contain only ASCII letters, digits and symbols",
+        )
+
+    return email
 
 
 def username_validator(username: str) -> str:

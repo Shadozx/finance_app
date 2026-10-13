@@ -10,6 +10,7 @@ from app.schemas.validators import (
     amount_validator,
     balance_validator,
     currency_code_validator,
+    email_address_validator,
     name_validator,
     password_validator,
     username_validator,
@@ -70,6 +71,29 @@ class TestPasswordValidator:
     def test_password_without_letter_rejected(self):
         with pytest.raises(ValueError, match="Password must contain at least one letter"):
             password_validator("12345678")
+
+
+class TestEmailAddressValidator:
+    def test_valid_email_returned_as_is(self):
+        assert email_address_validator("alice@example.com") == "alice@example.com"
+
+    def test_email_lowercased(self):
+        """The whole address is lower-cased, not only the domain EmailStr touches."""
+        assert email_address_validator("Alice@example.com") == "alice@example.com"
+
+    def test_email_stripped(self):
+        assert email_address_validator("  alice@example.com  ") == "alice@example.com"
+
+    @pytest.mark.parametrize(
+        "email", ["o'connor@example.com", "user+tag@example.com", "a!#$%&*/=?^{|}~@example.com"]
+    )
+    def test_email_with_special_symbols_allowed(self, email: str):
+        assert email_address_validator(email) == email
+
+    @pytest.mark.parametrize("email", ["користувач@example.com", "user@münchen.de"])
+    def test_non_ascii_email_rejected(self, email: str):
+        with pytest.raises(ValueError, match="must contain only ASCII"):
+            email_address_validator(email)
 
 
 class TestUsernameValidator:

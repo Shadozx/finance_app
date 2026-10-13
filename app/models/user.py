@@ -1,10 +1,10 @@
-import re
 from datetime import datetime
 
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core import Base, utc_now
+from app.core.email_policy import is_supported_email, normalize_email
 
 
 class User(Base):
@@ -33,9 +33,9 @@ class User(Base):
         if not value:
             raise ValueError("Email is required")
 
-        normalized = value.lower().strip()
+        normalized = normalize_email(value)
 
-        if not re.match(r"^[a-z0-9_.+-]+@[a-z0-9-]+\.[a-z0-9-.]+$", normalized):
+        if not is_supported_email(normalized):
             raise ValueError("Invalid email address")
 
         return normalized

@@ -46,6 +46,9 @@ API_USERS_ME_SESSIONS_URL = "/api/v1/users/me/sessions"
 
 SESSION_TIME_OFFSET = timedelta(days=1)
 
+# Valid for EmailStr, outside what the users table stores
+NON_ASCII_EMAIL = "користувач@test.com"
+
 
 @pytest.fixture
 async def login_tokens(client: AsyncClient, registered_user: UserData) -> dict[str, str]:
@@ -81,6 +84,11 @@ class TestRegister:
                 register_payload(username="invalid name"),
                 FieldErrorCode.STRING_PATTERN_MISMATCH,
                 "username",
+            ),
+            (
+                register_payload(email=NON_ASCII_EMAIL),
+                FieldErrorCode.INVALID_FORMAT,
+                "email",
             ),
             (
                 register_payload(password="PasswordWithoutDigit"),
@@ -186,6 +194,34 @@ class TestRegister:
             field for field in ("email", "username") if duplicate[field] == payload[field]
         )
         assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", duplicate_field])
+
+    async def test_register_duplicate_email_ignores_case(self, client: AsyncClient):
+        payload = register_payload()
+        duplicate = register_payload(email=payload["email"].upper(), username="otheruser")
+
+        await client.post(API_AUTH_REGISTER_URL, json=payload)
+
+        response = await client.post(API_AUTH_REGISTER_URL, json=duplicate)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "email"])
+
+    async def test_register_lowercases_email(self, client: AsyncClient):
+        payload = register_payload(email="User@Test.com")
+
+        response = await client.post(API_AUTH_REGISTER_URL, json=payload)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["email"] == payload["email"].lower()
+
+    async def test_register_accepts_email_with_apostrophe(self, client: AsyncClient):
+        """EmailStr accepts it, so the model must store it rather than fail with a 500."""
+        payload = register_payload(email="o'connor@test.com")
+
+        response = await client.post(API_AUTH_REGISTER_URL, json=payload)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["email"] == payload["email"]
 
     @pytest.mark.parametrize(
         "payload, reason",
@@ -300,6 +336,34 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
+
+    async def test_login_ignores_email_case(
+        self,
+        client: AsyncClient,
+        registered_user: UserData,
+    ):
+        response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={
+                "email": registered_user["email"].upper(),
+                "password": registered_user["password"],
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    async def test_login_treats_non_ascii_email_as_unknown(
+        self,
+        client: AsyncClient,
+        registered_user: UserData,
+    ):
+        """Login only normalizes: an address registration would reject is simply unknown."""
+        response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={"email": NON_ASCII_EMAIL, "password": registered_user["password"]},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     @pytest.mark.parametrize(
         "payload, reason",
