@@ -9,6 +9,7 @@ from app.models.enums import TransactionKind, TransactionType
 from app.schemas.pagination import RecordPagination
 from app.schemas.validators import (
     MAX_DESCRIPTION_LENGTH,
+    MAX_SPLITS,
     amount_validator,
     currency_code_validator,
     field_error,
@@ -55,7 +56,7 @@ class TransactionCreate(BaseModel):
 
     date: date
 
-    splits: list[TransactionSplitCreate] | None = Field(None, min_length=2, max_length=50)
+    splits: list[TransactionSplitCreate] | None = Field(None, min_length=2, max_length=MAX_SPLITS)
 
     @model_validator(mode="after")
     def validate_splits(self):

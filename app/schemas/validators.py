@@ -18,6 +18,9 @@ MAX_DESCRIPTION_LENGTH = 1024
 
 MAX_NAME_LENGTH = 100
 
+# Shared by transactions and templates so the two limits cannot drift apart
+MAX_SPLITS = 50
+
 # Largest value a NUMERIC(15, 2) money column can hold; keep in sync with the column precision
 MAX_AMOUNT = Decimal("9999999999999.99")
 

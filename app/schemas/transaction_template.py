@@ -7,6 +7,7 @@ from app.core.error_codes import FieldErrorCode
 from app.models.enums import TransactionType
 from app.schemas.validators import (
     MAX_DESCRIPTION_LENGTH,
+    MAX_SPLITS,
     amount_validator,
     currency_code_validator,
     field_error,
@@ -52,7 +53,9 @@ class TransactionTemplateCreate(BaseModel):
 
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
 
-    splits: list[TransactionTemplateSplitCreate] | None = Field(None, min_length=2, max_length=50)
+    splits: list[TransactionTemplateSplitCreate] | None = Field(
+        None, min_length=2, max_length=MAX_SPLITS
+    )
 
     @model_validator(mode="after")
     def validate_splits(self):

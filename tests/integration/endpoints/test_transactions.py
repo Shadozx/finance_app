@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from fastapi import status
@@ -7,7 +8,7 @@ from httpx import AsyncClient
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
 from app.schemas.pagination import MAX_RECORD_PAGE_SIZE
-from app.schemas.validators import MAX_DATE_RANGE_DAYS
+from app.schemas.validators import MAX_DATE_RANGE_DAYS, MAX_SPLITS
 from tests.integration.endpoints.helpers import (
     MAX_AMOUNT_VALUE,
     OVER_MAX_AMOUNT_VALUE,
@@ -1062,6 +1063,60 @@ class TestCreateTransaction:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert "detail" in response.json()
+
+    async def test_create_transaction_max_splits_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        split_amount = Decimal("10.00")
+        payload = transaction_payload(
+            amount=str(split_amount * MAX_SPLITS),
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            splits=[split_payload(created_category["id"], str(split_amount))] * MAX_SPLITS,
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert len(response.json()["splits"]) == MAX_SPLITS
+
+    async def test_create_transaction_too_many_splits_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_account: AccountData,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        split_amount = Decimal("10.00")
+        split_count = MAX_SPLITS + 1
+        payload = transaction_payload(
+            amount=str(split_amount * split_count),
+            currency_code=active_currency["code"],
+            account_id=created_account["id"],
+            splits=[split_payload(created_category["id"], str(split_amount))] * split_count,
+        )
+
+        response = await client.post(
+            API_TRANSACTIONS,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        errors = response.json()["errors"]
+
+        assert any(error["code"] == "too_long" for error in errors)
 
     async def test_create_transaction_zero_amount_with_splits_fails(
         self,

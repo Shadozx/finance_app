@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
+from app.schemas.validators import MAX_SPLITS
 from tests.integration.endpoints.helpers import (
     MAX_AMOUNT_VALUE,
     OVER_MAX_AMOUNT_VALUE,
@@ -493,6 +494,58 @@ class TestCreateTransactionTemplate:
         errors = response.json()["errors"]
 
         assert any(error["code"] == "too_short" for error in errors)
+
+    async def test_create_template_max_splits_success(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        split_amount = Decimal("10.00")
+        payload = transaction_template_payload(
+            amount=str(split_amount * MAX_SPLITS),
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[split_payload(created_category["id"], str(split_amount))] * MAX_SPLITS,
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert len(response.json()["splits"]) == MAX_SPLITS
+
+    async def test_create_template_too_many_splits_fails(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+        created_category: CategoryData,
+        active_currency: CurrencyData,
+    ):
+        split_amount = Decimal("10.00")
+        split_count = MAX_SPLITS + 1
+        payload = transaction_template_payload(
+            amount=str(split_amount * split_count),
+            currency_code=active_currency["code"],
+            category_id=None,
+            splits=[split_payload(created_category["id"], str(split_amount))] * split_count,
+        )
+
+        response = await client.post(
+            API_TRANSACTION_TEMPLATES,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+        errors = response.json()["errors"]
+
+        assert any(error["code"] == "too_long" for error in errors)
 
     async def test_create_template_split_amount_too_many_decimals_fails(
         self,
