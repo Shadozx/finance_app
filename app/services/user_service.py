@@ -156,11 +156,15 @@ class UserService:
 
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
         existing_user = await self.user_repository.get_by_email(user.email)
+        # Kept apart from existing_user: the locked re-read below uses populate_existing
+        # and overwrites that object in place.
+        verified_hash = existing_user.hashed_password if existing_user else None
 
-        if existing_user:
-            is_password_valid = await self.password_hasher.verify(
-                user.password, existing_user.hashed_password
-            )
+        # Release the read transaction's connection before waiting for Argon2.
+        await self.unit_of_work.commit()
+
+        if verified_hash is not None:
+            is_password_valid = await self.password_hasher.verify(user.password, verified_hash)
         else:
             is_password_valid = await self.password_hasher.verify_dummy(user.password)
 
@@ -172,11 +176,9 @@ class UserService:
             )
 
         # The password is verified without a lock so the slow hash check does not hold
-        # the user row. The verified hash is kept in its own variable because the locked
-        # re-read uses populate_existing and overwrites the same User object in place.
+        # the user row.
         # The re-read takes the lock to serialize login with password changes: if the
         # hash changed after verification, the password used here is no longer valid.
-        verified_hash = existing_user.hashed_password
         locked_user = await self.user_repository.get_by_id_for_update(existing_user.id)
 
         if locked_user is None:

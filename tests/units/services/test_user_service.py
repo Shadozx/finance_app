@@ -202,6 +202,7 @@ class TestAuthenticate:
         now = datetime.now(UTC)
         session_idle_days = 7
         refresh_secret = "login-refresh-secret"
+        expected_commit_count = 2
 
         mocker.patch("app.services.user_service.utc_now", return_value=now)
         mocker.patch("app.services.user_service.settings.SESSION_IDLE_DAYS", session_idle_days)
@@ -262,9 +263,42 @@ class TestAuthenticate:
 
         user_session_repo_mock.add.assert_awaited_once_with(created_session)
 
-        unit_of_work_mock.commit.assert_awaited_once()
+        assert unit_of_work_mock.commit.await_count == expected_commit_count
 
         mock_token.assert_called_once_with({"sub": str(existing_user.id), "sid": str(session_id)})
+
+    @pytest.mark.parametrize("known_user", [True, False], ids=["known-email", "unknown-email"])
+    async def test_authenticate_commits_before_verifying_password(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: UserLogin,
+        known_user: bool,
+    ):
+        user_repo_mock.get_by_email.return_value = existing_user if known_user else None
+        mock_password = (
+            password_hasher_mock.verify if known_user else password_hasher_mock.verify_dummy
+        )
+        expected_args = (
+            (data.password, existing_user.hashed_password) if known_user else (data.password,)
+        )
+
+        async def verify_password(*args) -> bool:
+            user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+            unit_of_work_mock.commit.assert_awaited_once_with()
+            user_repo_mock.get_by_id_for_update.assert_not_awaited()
+            return False
+
+        mock_password.side_effect = verify_password
+
+        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
+            await user_service.authenticate(data, user_agent=None)
+
+        mock_password.assert_awaited_once_with(*expected_args)
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_authenticate_truncates_user_agent(
         self,
@@ -326,7 +360,7 @@ class TestAuthenticate:
         mock_password.assert_awaited_once_with(*expected_args)
         user_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_session_repo_mock.add.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_authenticate_not_found_user(
         self,
@@ -353,7 +387,7 @@ class TestAuthenticate:
 
         user_session_repo_mock.add.assert_not_awaited()
 
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_authenticate_wrong_password(
         self,
@@ -382,7 +416,7 @@ class TestAuthenticate:
 
         user_session_repo_mock.add.assert_not_awaited()
 
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_authenticate_rejects_password_changed_after_verification(
         self,
@@ -427,7 +461,7 @@ class TestAuthenticate:
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         user_session_repo_mock.delete_expired_sessions.assert_not_awaited()
         user_session_repo_mock.add.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_authenticate_rejects_user_deleted_after_verification(
         self,
@@ -462,7 +496,7 @@ class TestAuthenticate:
 
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         user_session_repo_mock.add.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
 
 class TestRefreshSession:
