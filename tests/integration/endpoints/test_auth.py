@@ -24,6 +24,7 @@ from app.models import SessionRevocationReason, UserSession
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
+    OVER_MAX_PASSWORD,
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
@@ -89,6 +90,11 @@ class TestRegister:
                 register_payload(email=NON_ASCII_EMAIL),
                 FieldErrorCode.INVALID_FORMAT,
                 "email",
+            ),
+            (
+                register_payload(password=OVER_MAX_PASSWORD),
+                FieldErrorCode.STRING_TOO_LONG,
+                "password",
             ),
             (
                 register_payload(password="PasswordWithoutDigit"),
@@ -364,6 +370,20 @@ class TestLogin:
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_login_rejects_too_long_password(
+        self,
+        client: AsyncClient,
+        registered_user: UserData,
+    ):
+        """Rejected by the schema, before any Argon2 run: 422, not 401."""
+        response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={"email": registered_user["email"], "password": OVER_MAX_PASSWORD},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", "password"], FieldErrorCode.STRING_TOO_LONG)
 
     @pytest.mark.parametrize(
         "payload, reason",

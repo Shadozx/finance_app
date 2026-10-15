@@ -7,7 +7,7 @@ from httpx import AsyncClient, Response
 from app.core import verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import CategoryType
-from app.schemas.validators import MAX_AMOUNT
+from app.schemas.validators import MAX_AMOUNT, MAX_PASSWORD_LENGTH
 from tests.integration.endpoints.types import (
     AccountData,
     CategoryData,
@@ -23,6 +23,9 @@ MAX_AMOUNT_VALUE = str(MAX_AMOUNT)
 OVER_MAX_AMOUNT_VALUE = str(MAX_AMOUNT + CENT)
 MIN_BALANCE_VALUE = str(-MAX_AMOUNT)
 UNDER_MIN_BALANCE_VALUE = str(-MAX_AMOUNT - CENT)
+
+# Passes every strength rule, so only the length can reject it
+OVER_MAX_PASSWORD = ("a1" * MAX_PASSWORD_LENGTH)[: MAX_PASSWORD_LENGTH + 1]
 
 
 def session_id_from_headers(headers: dict[str, str]) -> uuid.UUID:

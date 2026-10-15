@@ -12,6 +12,7 @@ from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.models import SessionRevocationReason, UserSession
 from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 from tests.integration.endpoints.helpers import (
+    OVER_MAX_PASSWORD,
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
@@ -598,6 +599,25 @@ class TestUpdatePassword:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert_validation_error(response, ["body", "new_password"], FieldErrorCode.SAME_AS_CURRENT)
+
+    @pytest.mark.parametrize("field", ["current_password", "new_password"])
+    async def test_update_password_too_long(
+        self, client: AsyncClient, authenticated_user: AuthenticatedUser, field: str
+    ):
+        payload = {
+            "current_password": authenticated_user["user"]["password"],
+            "new_password": "NewPassword1234",
+        }
+        payload[field] = OVER_MAX_PASSWORD
+
+        response = await client.put(
+            API_USERS_ME_UPDATE_PASSWORD,
+            json=payload,
+            headers=authenticated_user["headers"],
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert_validation_error(response, ["body", field], FieldErrorCode.STRING_TOO_LONG)
 
     @pytest.mark.parametrize(
         "payload, reason",

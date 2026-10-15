@@ -7,11 +7,13 @@ from app.schemas.validators import (
     MAX_AMOUNT,
     MAX_DATE_RANGE_DAYS,
     MAX_NAME_LENGTH,
+    MAX_PASSWORD_LENGTH,
     amount_validator,
     balance_validator,
     currency_code_validator,
     email_address_validator,
     name_validator,
+    password_max_length_validator,
     password_validator,
     username_validator,
     validate_date_range,
@@ -71,6 +73,34 @@ class TestPasswordValidator:
     def test_password_without_letter_rejected(self):
         with pytest.raises(ValueError, match="Password must contain at least one letter"):
             password_validator("12345678")
+
+    def test_password_at_max_length_allowed(self):
+        password = "a1" * (MAX_PASSWORD_LENGTH // 2)
+
+        assert password_validator(password) == password
+
+    def test_long_password_rejected(self):
+        """It has no digit either: the length error proves length is checked first."""
+        with pytest.raises(ValueError, match="Password must be at most"):
+            password_validator("a" * (MAX_PASSWORD_LENGTH + 1))
+
+
+class TestPasswordMaxLengthValidator:
+    def test_valid_password_returned_as_is(self):
+        assert password_max_length_validator("Password1") == "Password1"
+
+    def test_weak_password_allowed(self):
+        """Strength rules apply only when a password is set, not when it is checked."""
+        assert password_max_length_validator("short") == "short"
+
+    def test_password_at_max_length_allowed(self):
+        password = "a" * MAX_PASSWORD_LENGTH
+
+        assert password_max_length_validator(password) == password
+
+    def test_long_password_rejected(self):
+        with pytest.raises(ValueError, match="Password must be at most"):
+            password_max_length_validator("a" * (MAX_PASSWORD_LENGTH + 1))
 
 
 class TestEmailAddressValidator:

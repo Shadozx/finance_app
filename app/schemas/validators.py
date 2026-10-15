@@ -18,6 +18,9 @@ MAX_DESCRIPTION_LENGTH = 1024
 
 MAX_NAME_LENGTH = 100
 
+# Long enough for passphrases and generated passwords
+MAX_PASSWORD_LENGTH = 128
+
 # Shared by transactions and templates so the two limits cannot drift apart
 MAX_SPLITS = 50
 
@@ -54,7 +57,23 @@ def name_validator(name: str, entity: str) -> str:
     return name
 
 
+def password_max_length_validator(password: str) -> str:
+    # The only rule for a password being checked rather than set: strength rules
+    # may tighten later and must not lock out existing users
+    if len(password) > MAX_PASSWORD_LENGTH:
+        raise field_error(
+            FieldErrorCode.STRING_TOO_LONG,
+            "Password must be at most {max_length} characters",
+            {"max_length": MAX_PASSWORD_LENGTH},
+        )
+
+    return password
+
+
 def password_validator(password: str) -> str:
+    # Length goes first, so the strength checks below never scan an oversized string
+    password_max_length_validator(password)
+
     if len(password) < 8:
         raise field_error(FieldErrorCode.STRING_TOO_SHORT, "Password must be at least 8 characters")
 

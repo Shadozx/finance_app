@@ -7,6 +7,7 @@ from app.core.error_codes import FieldErrorCode
 from app.schemas.validators import (
     email_address_validator,
     field_error,
+    password_max_length_validator,
     password_validator,
     username_validator,
 )
@@ -44,6 +45,11 @@ class UserLogin(BaseModel):
         # Normalize only: a stricter rule for new addresses must not lock out existing users
         return normalize_email(v)
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return password_max_length_validator(v)
+
 
 class UsernameUpdate(BaseModel):
     new_username: str
@@ -57,6 +63,11 @@ class UsernameUpdate(BaseModel):
 class PasswordUpdate(BaseModel):
     current_password: str
     new_password: str
+
+    @field_validator("current_password")
+    @classmethod
+    def validate_current_password(cls, v: str) -> str:
+        return password_max_length_validator(v)
 
     @field_validator("new_password")
     @classmethod
