@@ -14,6 +14,7 @@ class ErrorCode(StrEnum):
     VALIDATION_FAILED = "validation_failed"
     METHOD_NOT_ALLOWED = "method_not_allowed"
     RATE_LIMITED = "rate_limited"
+    CONTENT_TOO_LARGE = "content_too_large"
     UNAVAILABLE = "unavailable"
     INTERNAL_ERROR = "internal_error"
 

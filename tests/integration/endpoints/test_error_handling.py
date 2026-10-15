@@ -1,3 +1,6 @@
+import json
+from collections.abc import AsyncIterator
+
 import structlog
 from fastapi import status
 from httpx import AsyncClient, Response
@@ -8,6 +11,7 @@ from structlog.testing import capture_logs
 from app.api.v1.endpoints.auth import LOGIN_REQUESTS_PER_MINUTE
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
+from app.core.middleware import MAX_REQUEST_BODY_BYTES
 from app.main import app
 from app.repositories import CategoryRepository
 from tests.integration.endpoints.helpers import (
@@ -206,3 +210,54 @@ class TestIntegrityErrorHandler:
             "code": ErrorCode.ALREADY_EXISTS,
             "detail": "Resource with these values already exists",
         }
+
+
+class TestRequestBodyLimit:
+    async def test_oversized_body_response_format(self, client: AsyncClient):
+        """Content-Length alone is enough to reject: the body is never read."""
+        response = await client.post(
+            API_LOGIN,
+            content=b"a" * (MAX_REQUEST_BODY_BYTES + 1),
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert_error_response(
+            response, status.HTTP_413_CONTENT_TOO_LARGE, ErrorCode.CONTENT_TOO_LARGE
+        )
+        assert "X-Request-ID" in response.headers
+
+    async def test_oversized_chunked_body_response_format(self, client: AsyncClient):
+        """Without Content-Length the bytes are counted as they arrive."""
+        chunk = b"a" * (MAX_REQUEST_BODY_BYTES // 2 + 1)
+
+        async def chunked_body() -> AsyncIterator[bytes]:
+            yield chunk
+            yield chunk
+
+        response = await client.post(
+            API_LOGIN,
+            content=chunked_body(),
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert "Content-Length" not in response.request.headers
+        assert_error_response(
+            response, status.HTTP_413_CONTENT_TOO_LARGE, ErrorCode.CONTENT_TOO_LARGE
+        )
+        assert "X-Request-ID" in response.headers
+
+    async def test_body_at_limit_accepted(self, client: AsyncClient):
+        """The schema ignores the padding field, so the request reaches the login check."""
+        credentials = {"email": "unknownemail@test.com", "password": "Password123"}
+        padding_size = MAX_REQUEST_BODY_BYTES - len(json.dumps({**credentials, "padding": ""}))
+        body = json.dumps({**credentials, "padding": "a" * padding_size}).encode()
+
+        assert len(body) == MAX_REQUEST_BODY_BYTES
+
+        response = await client.post(
+            API_LOGIN,
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

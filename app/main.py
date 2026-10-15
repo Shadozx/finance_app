@@ -29,7 +29,12 @@ from app.core.exception_handlers import (
 )
 from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
 from app.core.logging_config import setup_logging
-from app.core.middleware import RequestIDMiddleware, UnhandledExceptionMiddleware
+from app.core.middleware import (
+    MAX_REQUEST_BODY_BYTES,
+    RequestBodyLimitMiddleware,
+    RequestIDMiddleware,
+    UnhandledExceptionMiddleware,
+)
 from app.core.openapi import configure_openapi, problem_response
 from app.core.rate_limiter import limiter
 
@@ -50,6 +55,11 @@ app = FastAPI(
 setup_logging(settings)
 
 app.state.limiter = limiter
+
+# Innermost: BaseHTTPMiddleware calls receive inside an anyio task group, which would wrap
+# the 413 raised from receive into an ExceptionGroup that FastAPI turns into a 400.
+# Still inside RequestIDMiddleware, so a 413 is logged and carries X-Request-ID
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_REQUEST_BODY_BYTES)
 
 app.add_middleware(SlowAPIMiddleware)
 
