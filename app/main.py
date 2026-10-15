@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -25,6 +28,7 @@ from app.core.exception_handlers import (
     global_exception_handler,
     http_exception_handler,
     integrity_error_handler,
+    password_hash_queue_full_handler,
     request_validation_handler,
 )
 from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
@@ -37,12 +41,23 @@ from app.core.middleware import (
 )
 from app.core.openapi import configure_openapi, problem_response
 from app.core.rate_limiter import limiter
+from app.core.security import PasswordHashQueueFullError, password_hasher
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        yield
+    finally:
+        password_hasher.shutdown()
+
 
 is_prod = settings.ENVIRONMENT == Environment.PROD
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
+    lifespan=lifespan,
     docs_url=None if is_prod else "/docs",
     redoc_url=None if is_prod else "/redoc",
     openapi_url=None if is_prod else "/openapi.json",
@@ -96,6 +111,7 @@ app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore
 # Starlette types handler as (Request, Exception); ours narrows to AppException —
 # safe, Starlette only dispatches matching type
 app.add_exception_handler(AppException, app_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(PasswordHashQueueFullError, password_hash_queue_full_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, global_exception_handler)
 
 

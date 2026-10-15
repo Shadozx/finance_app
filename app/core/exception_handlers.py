@@ -10,12 +10,18 @@ from starlette.exceptions import HTTPException
 
 from app.core.config import settings
 from app.core.error_codes import ErrorCode
-from app.core.exceptions import REQUEST_VALIDATION_FAILED_MESSAGE, AppException
+from app.core.exceptions import (
+    REQUEST_VALIDATION_FAILED_MESSAGE,
+    AppException,
+    ServiceUnavailableException,
+)
+from app.core.security import PasswordHashQueueFullError
 from app.schemas.error import ErrorItem, ErrorResponse
 
 logger = structlog.get_logger()
 
 UNIQUE_VIOLATION = "23505"
+PASSWORD_HASH_RETRY_AFTER_SECONDS = 1
 HTTP_ERROR_CODES = {
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.METHOD_NOT_ALLOWED,
@@ -69,7 +75,21 @@ async def app_exception_handler(request: Request, exc: AppException) -> JSONResp
         ErrorItem(loc=["body", *error.loc], code=error.code, detail=error.detail)
         for error in exc.errors
     ]
-    return build_error_response(exc.status_code, exc.code, exc.message, errors=errors or None)
+    return build_error_response(
+        exc.status_code, exc.code, exc.message, errors=errors or None, headers=exc.headers
+    )
+
+
+async def password_hash_queue_full_handler(
+    request: Request, exc: PasswordHashQueueFullError
+) -> JSONResponse:
+    logger.warning("password_hash_queue_full", pending_count=exc.pending_count)
+    return await app_exception_handler(
+        request,
+        ServiceUnavailableException(
+            headers={"Retry-After": str(PASSWORD_HASH_RETRY_AFTER_SECONDS)}
+        ),
+    )
 
 
 async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

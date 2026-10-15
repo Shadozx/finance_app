@@ -18,6 +18,8 @@ def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     # Keep the tests independent of variables exported on the machine running them.
     for name in TOKEN_LIFETIME_SETTING_NAMES:
         monkeypatch.delenv(name, raising=False)
+    for name in ("PASSWORD_HASH_CONCURRENCY", "PASSWORD_HASH_MAX_QUEUE"):
+        monkeypatch.delenv(name, raising=False)
 
     return {
         "POSTGRES_USER": "test-user",
@@ -30,6 +32,43 @@ def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 
 def make_settings(base_settings: dict[str, str], **overrides: int) -> Settings:
     return Settings(_env_file=None, **base_settings, **overrides)  # type: ignore[arg-type, call-arg]
+
+
+class TestPasswordHashSettings:
+    def test_defaults_are_valid(self, base_settings: dict[str, str]):
+        default_concurrency = 2
+        default_max_queue = 20
+
+        settings = make_settings(base_settings)
+
+        assert settings.PASSWORD_HASH_CONCURRENCY == default_concurrency
+        assert settings.PASSWORD_HASH_MAX_QUEUE == default_max_queue
+
+    @pytest.mark.parametrize("concurrency", [0, -1], ids=["zero", "negative"])
+    def test_concurrency_rejects_non_positive_value(
+        self, base_settings: dict[str, str], concurrency: int
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, PASSWORD_HASH_CONCURRENCY=concurrency)
+
+        assert exc_info.value.errors()[0]["loc"] == ("PASSWORD_HASH_CONCURRENCY",)
+        assert exc_info.value.errors()[0]["type"] == "greater_than"
+
+    def test_max_queue_accepts_zero(self, base_settings: dict[str, str]):
+        no_queue = 0
+
+        settings = make_settings(base_settings, PASSWORD_HASH_MAX_QUEUE=no_queue)
+
+        assert settings.PASSWORD_HASH_MAX_QUEUE == no_queue
+
+    def test_max_queue_rejects_negative_value(self, base_settings: dict[str, str]):
+        negative_max_queue = -1
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, PASSWORD_HASH_MAX_QUEUE=negative_max_queue)
+
+        assert exc_info.value.errors()[0]["loc"] == ("PASSWORD_HASH_MAX_QUEUE",)
+        assert exc_info.value.errors()[0]["type"] == "greater_than_equal"
 
 
 class TestTokenLifetimeSettings:

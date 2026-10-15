@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -25,6 +26,7 @@ class AppException(Exception):
         code: ErrorCode | None = None,
         loc: tuple[str | int, ...] | None = None,
         errors: list[FieldError] | None = None,
+        headers: Mapping[str, str] | None = None,
     ):
         if loc is not None and errors is not None:
             raise TypeError("loc and errors cannot be provided together")
@@ -35,6 +37,7 @@ class AppException(Exception):
 
         self.message = self.default_message if message is None else message
         self.code = resolved_code
+        self.headers = dict(headers) if headers is not None else None
         self.errors = (
             [FieldError(loc=loc, code=resolved_code, detail=self.message)]
             if loc is not None
@@ -67,8 +70,9 @@ class NotAllowedActionException(AppException):
         code: ErrorCode,
         loc: tuple[str | int, ...] | None = None,
         errors: list[FieldError] | None = None,
+        headers: Mapping[str, str] | None = None,
     ):
-        super().__init__(message, code=code, loc=loc, errors=errors)
+        super().__init__(message, code=code, loc=loc, errors=errors, headers=headers)
 
 
 class AuthenticationException(AppException):
@@ -81,3 +85,9 @@ class ValidationException(AppException):
     status_code = 422
     default_code = ErrorCode.VALIDATION_FAILED
     default_message = REQUEST_VALIDATION_FAILED_MESSAGE
+
+
+class ServiceUnavailableException(AppException):
+    status_code = 503
+    default_code = ErrorCode.UNAVAILABLE
+    default_message = "Service temporarily unavailable"

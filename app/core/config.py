@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     SESSION_IDLE_DAYS: int = Field(30, gt=0)
     SESSION_MAX_DAYS: int = Field(90, gt=0)
     REFRESH_TOKEN_REUSE_GRACE_SECONDS: int = Field(30, ge=0)
+    PASSWORD_HASH_CONCURRENCY: int = Field(2, gt=0)
+    PASSWORD_HASH_MAX_QUEUE: int = Field(20, ge=0)
 
     model_config = SettingsConfigDict(
         env_file=(".env", f".env.{os.getenv('ENVIRONMENT', 'dev')}"),

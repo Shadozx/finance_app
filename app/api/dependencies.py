@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import UnitOfWork, get_session, utc_now, verify_token
 from app.core.exceptions import AuthenticationException
+from app.core.security import password_hasher
 from app.models import User, UserSession
 from app.repositories import (
     AccountRepository,
@@ -48,6 +49,7 @@ def get_user_service(
         unit_of_work=unit_of_work,
         category_repository=category_repository,
         user_session_repository=user_session_repository,
+        password_hasher=password_hasher,
     )
 
 

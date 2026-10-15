@@ -1,13 +1,20 @@
+import asyncio
 import hashlib
 import hmac
+from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
+from threading import Event, Lock, get_ident
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from jose import jwt
+from pytest_mock import MockerFixture
 
 from app.core.config import settings
 from app.core.security import (
+    Argon2Hasher,
+    PasswordHashQueueFullError,
     create_access_token,
     create_refresh_token,
     generate_refresh_secret,
@@ -16,6 +23,255 @@ from app.core.security import (
     verify_refresh_token_signature,
     verify_token,
 )
+
+WORKER_TIMEOUT_SECONDS = 5
+TEST_PASSWORD = "test-password"
+TEST_PASSWORD_HASH = "test-password-hash"
+WRONG_PASSWORD = "wrong-password"
+INVALID_PASSWORD_HASH = "invalid-hash"
+
+
+class BlockingPasswordBackend:
+    def __init__(self, concurrency: int):
+        self.concurrency = concurrency
+        self.release = Event()
+        self.started = Event()
+        self.lock = Lock()
+        self.passwords = []
+        self.thread_ids = []
+        self.active = 0
+        self.max_active = 0
+
+    def hash(self, password: str) -> str:
+        with self.lock:
+            self.passwords.append(password)
+            self.thread_ids.append(get_ident())
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            if self.active == self.concurrency:
+                self.started.set()
+        try:
+            if not self.release.wait(WORKER_TIMEOUT_SECONDS):
+                raise TimeoutError("Test did not release the password worker")
+            return TEST_PASSWORD_HASH
+        finally:
+            with self.lock:
+                self.active -= 1
+
+    def verify(self, hashed_password: str, plain_password: str) -> bool:
+        return self.hash(plain_password) == hashed_password
+
+
+@pytest.fixture
+def make_hasher():
+    hashers = []
+
+    def factory(*, concurrency=1, max_queue=0, backend=None):
+        if isinstance(backend, BlockingPasswordBackend):
+            with patch.object(backend, "hash", return_value=TEST_PASSWORD_HASH):
+                hasher = Argon2Hasher(concurrency=concurrency, max_queue=max_queue, backend=backend)
+        else:
+            hasher = Argon2Hasher(concurrency=concurrency, max_queue=max_queue, backend=backend)
+        hashers.append((hasher, backend))
+        return hasher
+
+    yield factory
+
+    for hasher, backend in hashers:
+        if isinstance(backend, BlockingPasswordBackend):
+            backend.release.set()
+        hasher.shutdown()
+
+
+async def wait_for_workers(backend: BlockingPasswordBackend) -> None:
+    assert await asyncio.to_thread(backend.started.wait, WORKER_TIMEOUT_SECONDS)
+
+
+class TestArgon2Hasher:
+    async def test_hash_and_verify_round_trip(self, make_hasher):
+        hasher = make_hasher()
+
+        hashed_password = await hasher.hash(TEST_PASSWORD)
+
+        assert hashed_password != TEST_PASSWORD
+        assert await hasher.verify(TEST_PASSWORD, hashed_password)
+        assert not await hasher.verify(WRONG_PASSWORD, hashed_password)
+        assert not await hasher.verify(TEST_PASSWORD, INVALID_PASSWORD_HASH)
+
+    async def test_verify_dummy_rejects_password(self, make_hasher):
+        hasher = make_hasher()
+
+        assert not await hasher.verify_dummy(TEST_PASSWORD)
+
+    async def test_verify_dummy_uses_hash_generated_by_its_backend(
+        self, make_hasher, mocker: MockerFixture
+    ):
+        backend = mocker.Mock()
+        backend.hash.return_value = TEST_PASSWORD_HASH
+        backend.verify.return_value = False
+        hasher = make_hasher(backend=backend)
+
+        assert not await hasher.verify_dummy(TEST_PASSWORD)
+
+        backend.hash.assert_called_once()
+        backend.verify.assert_called_once_with(TEST_PASSWORD_HASH, TEST_PASSWORD)
+
+    @pytest.mark.parametrize("operation", ["hash", "verify", "verify_dummy"])
+    async def test_operation_propagates_unexpected_error_and_releases_slot(
+        self, make_hasher, mocker: MockerFixture, operation: str
+    ):
+        backend = mocker.Mock()
+        error = RuntimeError("Backend failed")
+        hasher = make_hasher(backend=backend)
+        backend_method = getattr(backend, "verify" if operation == "verify_dummy" else operation)
+        backend_method.side_effect = error
+        args = (TEST_PASSWORD, TEST_PASSWORD_HASH) if operation == "verify" else (TEST_PASSWORD,)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await getattr(hasher, operation)(*args)
+
+        assert exc_info.value is error
+        backend_method.side_effect = None
+        expected_result = TEST_PASSWORD_HASH if operation == "hash" else True
+        backend_method.return_value = expected_result
+        assert await getattr(hasher, operation)(*args) == expected_result
+
+    @pytest.mark.parametrize("max_queue", [0, 2], ids=["no-queue", "queued"])
+    @pytest.mark.parametrize("operation", ["hash", "verify_dummy"])
+    async def test_operation_rejects_overflow_without_blocking_event_loop(
+        self, make_hasher, max_queue, operation
+    ):
+        concurrency = 2
+        capacity = concurrency + max_queue
+        backend = BlockingPasswordBackend(concurrency)
+        hasher = make_hasher(concurrency=concurrency, max_queue=max_queue, backend=backend)
+        tasks = [asyncio.create_task(hasher.hash(TEST_PASSWORD)) for _ in range(concurrency)]
+        try:
+            await wait_for_workers(backend)
+            tasks.extend(
+                asyncio.create_task(hasher.verify(TEST_PASSWORD, TEST_PASSWORD_HASH))
+                for _ in range(max_queue)
+            )
+            await asyncio.sleep(0)
+
+            with pytest.raises(PasswordHashQueueFullError) as exc_info:
+                await getattr(hasher, operation)(TEST_PASSWORD)
+
+            assert exc_info.value.pending_count == capacity
+            assert backend.max_active == concurrency
+            assert get_ident() not in backend.thread_ids
+            assert not backend.release.is_set()
+        finally:
+            backend.release.set()
+            results = await asyncio.gather(*tasks)
+
+        assert results == [TEST_PASSWORD_HASH] * concurrency + [True] * max_queue
+
+    async def test_hash_cancelled_running_work_keeps_capacity_until_finished(self, make_hasher):
+        concurrency = 2
+        max_queue = 1
+        capacity = concurrency + max_queue
+        backend = BlockingPasswordBackend(concurrency)
+        hasher = make_hasher(concurrency=concurrency, max_queue=max_queue, backend=backend)
+        tasks = [asyncio.create_task(hasher.hash(TEST_PASSWORD)) for _ in range(concurrency)]
+        try:
+            await wait_for_workers(backend)
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+            replacement = asyncio.create_task(hasher.hash(TEST_PASSWORD))
+            tasks.append(replacement)
+            await asyncio.sleep(0)
+            with pytest.raises(PasswordHashQueueFullError) as exc_info:
+                await hasher.hash(TEST_PASSWORD)
+            assert exc_info.value.pending_count == capacity
+            assert len(backend.passwords) == concurrency
+        finally:
+            backend.release.set()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        assert backend.max_active == concurrency
+        assert await hasher.hash(TEST_PASSWORD) == TEST_PASSWORD_HASH
+
+    async def test_hash_cancelled_queue_entry_releases_slot_before_yielding(self, make_hasher):
+        concurrency = 1
+        max_queue = 1
+        cancelled_password = "cancelled-password"
+        replacement_password = "replacement-password"
+        backend = BlockingPasswordBackend(concurrency)
+        hasher = make_hasher(concurrency=concurrency, max_queue=max_queue, backend=backend)
+        running = asyncio.create_task(hasher.hash(TEST_PASSWORD))
+        replacement = None
+        queued = hasher.hash(cancelled_password)
+        try:
+            await wait_for_workers(backend)
+            # Drive cancellation without yielding to wrap_future's scheduled callbacks.
+            queued.send(None)
+            with pytest.raises(asyncio.CancelledError):
+                queued.throw(asyncio.CancelledError())
+
+            assert hasher._pending_count == concurrency
+            replacement = asyncio.create_task(hasher.hash(replacement_password))
+            await asyncio.sleep(0)
+            assert not replacement.done()
+        finally:
+            queued.close()
+            backend.release.set()
+            await running
+            if replacement is not None:
+                assert await replacement == TEST_PASSWORD_HASH
+
+        assert backend.passwords == [TEST_PASSWORD, replacement_password]
+        assert backend.max_active == concurrency
+
+    async def test_hash_registers_completed_future_callback_outside_lock(
+        self, make_hasher, mocker: MockerFixture
+    ):
+        hasher = make_hasher()
+
+        class CompletedFuture(Future):
+            def add_done_callback(self, callback):
+                # Fail immediately instead of hanging the test if registration holds the lock.
+                assert not hasher._lock.locked()
+                super().add_done_callback(callback)
+
+        completed = CompletedFuture()
+        completed.set_result(TEST_PASSWORD_HASH)
+        mocker.patch.object(hasher._executor, "submit", return_value=completed)
+
+        assert await hasher.hash(TEST_PASSWORD) == TEST_PASSWORD_HASH
+        assert hasher._pending_count == 0
+        assert await hasher.hash(TEST_PASSWORD) == TEST_PASSWORD_HASH
+
+    async def test_hash_returns_reservation_when_submit_fails(self, make_hasher, mocker):
+        hasher = make_hasher()
+        submit_error = RuntimeError("Submission failed")
+        mocked_submit = mocker.patch.object(hasher._executor, "submit", side_effect=submit_error)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await hasher.hash(TEST_PASSWORD)
+
+        assert exc_info.value is submit_error
+        assert hasher._pending_count == 0
+        mocker.stop(mocked_submit)
+        assert await hasher.verify(TEST_PASSWORD, await hasher.hash(TEST_PASSWORD))
+
+    async def test_hash_returns_reservation_after_shutdown(self, make_hasher):
+        hasher = make_hasher()
+        hasher.shutdown()
+
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="cannot schedule new futures after shutdown"):
+                await hasher.hash(TEST_PASSWORD)
+            assert hasher._pending_count == 0
+
+    @pytest.mark.parametrize(("concurrency", "max_queue"), [(0, 0), (-1, 0), (1, -1)])
+    def test_constructor_rejects_invalid_limits(self, concurrency, max_queue):
+        with pytest.raises(ValueError):
+            Argon2Hasher(concurrency=concurrency, max_queue=max_queue)
 
 
 class TestRefreshToken:

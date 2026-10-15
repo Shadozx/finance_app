@@ -6,7 +6,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.core import UnitOfWork, settings
-from app.core.security import hash_refresh_secret
+from app.core.security import Argon2Hasher, hash_refresh_secret
 from app.models import (
     Account,
     Category,
@@ -151,17 +151,24 @@ def currency_service(currency_repo_mock: CurrencyRepository):
 
 
 @pytest.fixture
+def password_hasher_mock(mocker: MockerFixture):
+    return mocker.AsyncMock(spec=Argon2Hasher)
+
+
+@pytest.fixture
 def user_service(
     user_repo_mock: UserRepository,
     unit_of_work_mock: UnitOfWork,
     category_repo_mock: CategoryRepository,
     user_session_repo_mock: UserSessionRepository,
+    password_hasher_mock: Argon2Hasher,
 ):
     return UserService(
         user_repository=user_repo_mock,
         unit_of_work=unit_of_work_mock,
         category_repository=category_repo_mock,
         user_session_repository=user_session_repo_mock,
+        password_hasher=password_hasher_mock,
     )
 
 

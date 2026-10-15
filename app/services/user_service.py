@@ -10,14 +10,12 @@ from app.core import UnitOfWork, settings, utc_now
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
-    DUMMY_PASSWORD_HASH,
+    Argon2Hasher,
     create_access_token,
     create_refresh_token,
     generate_refresh_secret,
-    hash_password,
     hash_refresh_secret,
     parse_refresh_token,
-    verify_password,
     verify_refresh_token_signature,
 )
 from app.models import USER_AGENT_MAX_LENGTH, Category, SessionRevocationReason, User, UserSession
@@ -58,11 +56,14 @@ class UserService:
         user_session_repository: UserSessionRepository,
         unit_of_work: UnitOfWork,
         category_repository: CategoryRepository,
+        *,
+        password_hasher: Argon2Hasher,
     ):
         self.user_repository = user_repository
         self.user_session_repository = user_session_repository
         self.unit_of_work = unit_of_work
         self.category_repository = category_repository
+        self.password_hasher = password_hasher
 
     async def register_user(self, user: UserCreate) -> UserResponse:
         if await self.user_repository.get_by_email(user.email):
@@ -72,7 +73,9 @@ class UserService:
             raise ValueExistsException("User with this username already exists", loc=("username",))
 
         new_user = User(
-            username=user.username, email=user.email, hashed_password=hash_password(user.password)
+            username=user.username,
+            email=user.email,
+            hashed_password=await self.password_hasher.hash(user.password),
         )
 
         created_user = await self.user_repository.add(new_user)
@@ -154,9 +157,12 @@ class UserService:
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
         existing_user = await self.user_repository.get_by_email(user.email)
 
-        hashed_password = existing_user.hashed_password if existing_user else DUMMY_PASSWORD_HASH
-
-        is_password_valid = verify_password(user.password, hashed_password)
+        if existing_user:
+            is_password_valid = await self.password_hasher.verify(
+                user.password, existing_user.hashed_password
+            )
+        else:
+            is_password_valid = await self.password_hasher.verify_dummy(user.password)
 
         if not existing_user or not is_password_valid:
             logger.warning("user_authenticate_failed", email=user.email)
@@ -311,7 +317,9 @@ class UserService:
         # with logins and other password changes.
         existing_user = await validators.validate_user_for_update(self.user_repository, user_id)
 
-        if not verify_password(data.current_password, existing_user.hashed_password):
+        if not await self.password_hasher.verify(
+            data.current_password, existing_user.hashed_password
+        ):
             logger.warning("password_update_failed", user_id=user_id)
 
             raise AuthenticationException(
@@ -320,7 +328,7 @@ class UserService:
                 loc=("current_password",),
             )
 
-        existing_user.hashed_password = hash_password(data.new_password)
+        existing_user.hashed_password = await self.password_hasher.hash(data.new_password)
         now = utc_now()
         existing_user.password_changed_at = now
 

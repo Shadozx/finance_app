@@ -16,6 +16,7 @@ from structlog.testing import capture_logs
 from app.core.config import settings
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.exception_handlers import (
+    PASSWORD_HASH_RETRY_AFTER_SECONDS,
     app_exception_handler,
     global_exception_handler,
     http_exception_handler,
@@ -26,16 +27,62 @@ from app.core.exceptions import (
     AppException,
     AuthenticationException,
     FieldError,
+    NotAllowedActionException,
     NotFoundException,
+    ServiceUnavailableException,
     ValidationException,
     ValueExistsException,
 )
+from app.core.security import PasswordHashQueueFullError
 from app.main import app
 
 
 @pytest.fixture
 def http_request():
     return Request({"type": "http", "path": "/test", "headers": []})
+
+
+@pytest.mark.parametrize("exception_type", [AppException, NotAllowedActionException])
+async def test_app_exception_handler_preserves_headers(http_request: Request, exception_type):
+    header_name = "X-Test-Header"
+    header_value = "test-value"
+    exception = exception_type(code=ErrorCode.UNAVAILABLE, headers={header_name: header_value})
+
+    response = await app_exception_handler(http_request, exception)
+
+    assert response.headers[header_name] == header_value
+
+
+async def test_password_hash_queue_full_handler_returns_unavailable_and_logs_count():
+    pending_count = 22
+    exception = PasswordHashQueueFullError(pending_count)
+    overloaded_path = "/overloaded"
+    test_app = FastAPI(exception_handlers=app.exception_handlers)
+
+    async def overloaded_endpoint():
+        raise exception
+
+    test_app.add_api_route(overloaded_path, overloaded_endpoint, methods=["GET"])
+    transport = ASGITransport(app=test_app)
+    with capture_logs() as logs:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(overloaded_path)
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["Retry-After"] == str(PASSWORD_HASH_RETRY_AFTER_SECONDS)
+    assert response.json() == {
+        "status": response.status_code,
+        "code": ErrorCode.UNAVAILABLE,
+        "detail": ServiceUnavailableException.default_message,
+    }
+    assert logs == [
+        {
+            "event": "password_hash_queue_full",
+            "pending_count": pending_count,
+            "log_level": "warning",
+        }
+    ]
 
 
 async def test_app_exception_handler_inherits_status_and_code(http_request: Request):
