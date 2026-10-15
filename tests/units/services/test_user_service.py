@@ -203,9 +203,16 @@ class TestAuthenticate:
         session_idle_days = 7
         refresh_secret = "login-refresh-secret"
         expected_commit_count = 2
+        access_token_expire_minutes = 7
+        access_lifetime = timedelta(minutes=access_token_expire_minutes)
+        expected_expires_in = int(access_lifetime.total_seconds())
 
         mocker.patch("app.services.user_service.utc_now", return_value=now)
         mocker.patch("app.services.user_service.settings.SESSION_IDLE_DAYS", session_idle_days)
+        mocker.patch(
+            "app.services.user_service.settings.ACCESS_TOKEN_EXPIRE_MINUTES",
+            access_token_expire_minutes,
+        )
         mocker.patch("app.services.user_service.uuid4", return_value=session_id)
         mocker.patch(
             "app.services.user_service.generate_refresh_secret", return_value=refresh_secret
@@ -231,6 +238,7 @@ class TestAuthenticate:
         created_session = user_session_repo_mock.add.await_args.args[0]
 
         assert result.access_token == mocked_token
+        assert result.expires_in == expected_expires_in
         parsed_token = parse_refresh_token(result.refresh_token)
         assert parsed_token is not None
         assert parsed_token.session_id == session_id
@@ -265,7 +273,10 @@ class TestAuthenticate:
 
         assert unit_of_work_mock.commit.await_count == expected_commit_count
 
-        mock_token.assert_called_once_with({"sub": str(existing_user.id), "sid": str(session_id)})
+        mock_token.assert_called_once_with(
+            {"sub": str(existing_user.id), "sid": str(session_id)},
+            expires_delta=access_lifetime,
+        )
 
     @pytest.mark.parametrize("known_user", [True, False], ids=["known-email", "unknown-email"])
     async def test_authenticate_commits_before_verifying_password(
@@ -547,6 +558,7 @@ class TestRefreshSession:
     )
     async def test_refresh_session_rotates_tokens_and_extends_expiration(
         self,
+        mocker: MockerFixture,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
@@ -557,6 +569,13 @@ class TestRefreshSession:
         session_age: timedelta,
         expected_remaining_lifetime: timedelta,
     ):
+        access_token_expire_minutes = 11
+        access_lifetime = timedelta(minutes=access_token_expire_minutes)
+        expected_expires_in = int(access_lifetime.total_seconds())
+        mocker.patch(
+            "app.services.user_service.settings.ACCESS_TOKEN_EXPIRE_MINUTES",
+            access_token_expire_minutes,
+        )
         active_user_session.created_at = session_now - session_age
         original_hash = active_user_session.refresh_token_hash
         original_created_at = active_user_session.created_at
@@ -579,6 +598,7 @@ class TestRefreshSession:
         assert active_user_session.last_used_at == session_now
         assert active_user_session.created_at == original_created_at
         assert active_user_session.expires_at == expected_expiration
+        assert result.expires_in == expected_expires_in
         payload = verify_token(result.access_token)
         assert payload["sub"] == str(existing_user.id)
         assert payload["sid"] == str(session_id)

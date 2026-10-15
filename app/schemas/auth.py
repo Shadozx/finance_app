@@ -6,6 +6,7 @@ REFRESH_TOKEN_MAX_LENGTH = 512
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
+    expires_in: int
     token_type: str = "bearer"
 
 

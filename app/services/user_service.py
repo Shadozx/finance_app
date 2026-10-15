@@ -95,12 +95,15 @@ class UserService:
     def _issue_tokens(self, user_session: UserSession) -> TokenResponse:
         secret = generate_refresh_secret()
         user_session.refresh_token_hash = hash_refresh_secret(secret)
+        expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
         return TokenResponse(
             access_token=create_access_token(
-                {"sub": str(user_session.user_id), "sid": str(user_session.id)}
+                {"sub": str(user_session.user_id), "sid": str(user_session.id)},
+                expires_delta=timedelta(seconds=expires_in),
             ),
             refresh_token=create_refresh_token(user_session.id, secret),
+            expires_in=expires_in,
         )
 
     async def _resolve_refresh_token(self, token: str) -> ResolvedRefreshToken | None:

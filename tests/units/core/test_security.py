@@ -411,6 +411,14 @@ class TestCreateAccessToken:
 
         assert expires_at - issued_at == custom_lifetime
 
+    def test_create_access_token_honours_a_zero_lifetime(self, data: dict):
+        zero_lifetime = timedelta(0)
+
+        token = create_access_token(data, expires_delta=zero_lifetime)
+        payload = jwt.get_unverified_claims(token)
+
+        assert payload["exp"] == payload["iat"]
+
 
 class TestVerifyToken:
     @pytest.fixture
@@ -429,6 +437,12 @@ class TestVerifyToken:
 
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(foreign_token)
+
+    def test_verify_token_rejects_a_token_without_exp(self, data: dict):
+        token = jwt.encode(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
 
     def test_verify_token_rejects_an_expired_token(self, data: dict):
         already_elapsed = timedelta(minutes=-5)

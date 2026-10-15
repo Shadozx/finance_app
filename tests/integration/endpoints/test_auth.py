@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi import status
 from httpx import AsyncClient
+from jose import jwt
 from pytest_mock import MockerFixture
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -295,6 +296,8 @@ class TestLogin:
 
         payload = verify_token(body["access_token"])
 
+        assert type(body["expires_in"]) is int
+        assert payload["exp"] - payload["iat"] == body["expires_in"]
         assert "sid" in payload
 
         session_id = uuid.UUID(payload["sid"])
@@ -435,6 +438,10 @@ class TestRefresh:
         assert tokens["token_type"] == "bearer"
         assert tokens["refresh_token"] != login_tokens["refresh_token"]
         assert tokens["access_token"] != login_tokens["access_token"]
+
+        payload = verify_token(tokens["access_token"])
+        assert type(tokens["expires_in"]) is int
+        assert payload["exp"] - payload["iat"] == tokens["expires_in"]
 
         access_response = await client.get(
             API_USERS_ME_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"}
@@ -1142,6 +1149,44 @@ class TestTokenLogging:
 
 
 class TestSessionToken:
+    async def test_get_me_rejects_token_without_exp(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        session_id = session_id_from_headers(authenticated_user["headers"])
+        token = jwt.encode(
+            {"sub": str(authenticated_user["user"]["id"]), "sid": str(session_id)},
+            settings.SECRET_KEY,
+            algorithm=settings.ALGORITHM,
+        )
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    async def test_get_me_rejects_token_without_sub(
+        self,
+        client: AsyncClient,
+        authenticated_user: AuthenticatedUser,
+    ):
+        session_id = session_id_from_headers(authenticated_user["headers"])
+        token = create_access_token({"sid": str(session_id)})
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
     async def test_get_me_rejects_refresh_token_as_bearer(
         self,
         client: AsyncClient,
