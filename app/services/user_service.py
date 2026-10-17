@@ -13,6 +13,7 @@ from app.core.security import (
     Argon2Hasher,
     create_access_token,
     create_refresh_token,
+    fingerprint_email,
     generate_refresh_secret,
     hash_refresh_secret,
     parse_refresh_token,
@@ -172,7 +173,12 @@ class UserService:
             is_password_valid = await self.password_hasher.verify_dummy(user.password)
 
         if not existing_user or not is_password_valid:
-            logger.warning("user_authenticate_failed", email=user.email)
+            log_fields = (
+                {"user_id": existing_user.id}
+                if existing_user
+                else {"email_fingerprint": fingerprint_email(user.email)}
+            )
+            logger.warning("user_authenticate_failed", **log_fields)
 
             raise AuthenticationException(
                 INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
@@ -188,7 +194,6 @@ class UserService:
             logger.warning(
                 "user_authenticate_rejected_user_deleted",
                 user_id=existing_user.id,
-                email=user.email,
             )
 
             raise AuthenticationException(
@@ -199,7 +204,6 @@ class UserService:
             logger.warning(
                 "user_authenticate_rejected_password_changed",
                 user_id=existing_user.id,
-                email=user.email,
             )
 
             raise AuthenticationException(
@@ -227,7 +231,6 @@ class UserService:
         logger.info(
             "user_authenticate_success",
             user_id=existing_user.id,
-            email=user.email,
             session_id=str(user_session.id),
         )
 

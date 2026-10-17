@@ -14,6 +14,7 @@ from app.core.security import (
     Argon2Hasher,
     PasswordHashQueueFullError,
     create_refresh_token,
+    fingerprint_email,
     hash_refresh_secret,
     parse_refresh_token,
     verify_refresh_token_signature,
@@ -373,6 +374,7 @@ class TestAuthenticate:
         user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
+    @pytest.mark.parametrize("mixed_case", [False, True], ids=["lowercase", "mixed-case"])
     async def test_authenticate_not_found_user(
         self,
         user_service: UserService,
@@ -381,14 +383,31 @@ class TestAuthenticate:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         data: UserLogin,
+        mixed_case: bool,
     ):
+        login_data = UserLogin(
+            email=data.email.title() if mixed_case else data.email,
+            password=data.password,
+        )
+        expected_fingerprint = fingerprint_email(data.email)
         mock_password = password_hasher_mock.verify_dummy
         mock_password.return_value = False
 
         user_repo_mock.get_by_email.return_value = None
 
-        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
-            await user_service.authenticate(data, user_agent=None)
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)
+            ):
+                await user_service.authenticate(login_data, user_agent=None)
+
+        assert logs == [
+            {
+                "event": "user_authenticate_failed",
+                "email_fingerprint": expected_fingerprint,
+                "log_level": "warning",
+            }
+        ]
 
         user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
         user_repo_mock.get_by_id_for_update.assert_not_awaited()
@@ -417,8 +436,19 @@ class TestAuthenticate:
 
         user_repo_mock.get_by_email.return_value = existing_user
 
-        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
-            await user_service.authenticate(data, user_agent=None)
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)
+            ):
+                await user_service.authenticate(data, user_agent=None)
+
+        assert logs == [
+            {
+                "event": "user_authenticate_failed",
+                "user_id": existing_user.id,
+                "log_level": "warning",
+            }
+        ]
 
         user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
         user_repo_mock.get_by_id_for_update.assert_not_awaited()
@@ -464,7 +494,6 @@ class TestAuthenticate:
             {
                 "event": "user_authenticate_rejected_password_changed",
                 "user_id": existing_user.id,
-                "email": data.email,
                 "log_level": "warning",
             }
         ]
@@ -500,7 +529,6 @@ class TestAuthenticate:
             {
                 "event": "user_authenticate_rejected_user_deleted",
                 "user_id": existing_user.id,
-                "email": data.email,
                 "log_level": "warning",
             }
         ]

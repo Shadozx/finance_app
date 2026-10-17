@@ -15,6 +15,7 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from jose import JWTError, jwt
 
 from app.core import settings
+from app.core.email_policy import normalize_email
 
 T = TypeVar("T")
 
@@ -127,6 +128,12 @@ def hash_refresh_secret(secret: str) -> str:
 def _sign_refresh_token(session_id: UUID, secret: str) -> str:
     message = f"refresh-token:{session_id}.{secret}"
     return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+# Keyed, because emails have little entropy: a plain hash is reversed with a list of known addresses.
+def fingerprint_email(email: str) -> str:
+    message = f"log-email:{normalize_email(email)}"
+    return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def create_refresh_token(session_id: UUID, secret: str) -> str:

@@ -1054,6 +1054,40 @@ class TestLogout:
 
 
 class TestTokenLogging:
+    async def test_authentication_does_not_log_email_addresses(
+        self,
+        client: AsyncClient,
+        registered_user: UserData,
+    ):
+        unknown_email = "unknown-login@example.com"
+        wrong_password = "wrong-password"
+        login_attempts = [
+            (registered_user["email"], registered_user["password"], status.HTTP_200_OK),
+            (registered_user["email"], wrong_password, status.HTTP_401_UNAUTHORIZED),
+            (unknown_email, wrong_password, status.HTTP_401_UNAUTHORIZED),
+        ]
+
+        with capture_logs() as logs:
+            for email, password, expected_status in login_attempts:
+                response = await client.post(
+                    API_AUTH_LOGIN_URL,
+                    json={"email": email, "password": password},
+                )
+                assert response.status_code == expected_status
+
+        expected_events = [
+            "user_authenticate_success",
+            "user_authenticate_failed",
+            "user_authenticate_failed",
+        ]
+        assert [
+            entry["event"] for entry in logs if entry["event"].startswith("user_authenticate_")
+        ] == expected_events
+        sensitive_values = [registered_user["email"], unknown_email]
+        serialized_logs = json.dumps(logs, default=str)
+        for sensitive_value in sensitive_values:
+            assert sensitive_value not in serialized_logs
+
     async def test_authentication_does_not_log_tokens_or_refresh_secrets(
         self,
         client: AsyncClient,

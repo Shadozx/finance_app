@@ -17,6 +17,7 @@ from app.core.security import (
     PasswordHashQueueFullError,
     create_access_token,
     create_refresh_token,
+    fingerprint_email,
     generate_refresh_secret,
     hash_refresh_secret,
     parse_refresh_token,
@@ -272,6 +273,45 @@ class TestArgon2Hasher:
     def test_constructor_rejects_invalid_limits(self, concurrency, max_queue):
         with pytest.raises(ValueError):
             Argon2Hasher(concurrency=concurrency, max_queue=max_queue)
+
+
+class TestFingerprintEmail:
+    @pytest.fixture
+    def email(self):
+        return "user@example.com"
+
+    def test_fingerprint_email_is_deterministic_and_uses_domain_separated_hmac(self, email: str):
+        fingerprint_hex_length = 16
+        message = f"log-email:{email}"
+        expected_fingerprint = hmac.new(
+            settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256
+        ).hexdigest()[:fingerprint_hex_length]
+
+        fingerprint = fingerprint_email(email)
+
+        assert fingerprint == fingerprint_email(email)
+        assert fingerprint == expected_fingerprint
+        assert len(fingerprint) == fingerprint_hex_length
+        assert email not in fingerprint
+
+    def test_fingerprint_email_ignores_email_case(self, email: str):
+        mixed_case_email = email.title()
+
+        assert fingerprint_email(mixed_case_email) == fingerprint_email(email)
+
+    def test_fingerprint_email_differs_for_different_addresses(self, email: str):
+        other_email = f"other-{email}"
+
+        assert fingerprint_email(email) != fingerprint_email(other_email)
+
+    def test_fingerprint_email_changes_when_secret_key_changes(
+        self, email: str, mocker: MockerFixture
+    ):
+        original_fingerprint = fingerprint_email(email)
+        rotated_key = f"{settings.SECRET_KEY}-rotated"
+        mocker.patch("app.core.security.settings.SECRET_KEY", rotated_key)
+
+        assert fingerprint_email(email) != original_fingerprint
 
 
 class TestRefreshToken:
