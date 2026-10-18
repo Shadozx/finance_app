@@ -1,16 +1,18 @@
+import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta
 
 import pytest
 from fastapi import status
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from pytest_mock import MockerFixture
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import capture_logs
 
+from app.api.dependencies import get_session
 from app.api.v1.endpoints.auth import REFRESH_REQUESTS_PER_MINUTE
 from app.core import create_access_token, settings, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
@@ -19,9 +21,11 @@ from app.core.security import (
     create_refresh_token,
     hash_refresh_secret,
     parse_refresh_token,
+    password_hasher,
     verify_refresh_token_signature,
 )
-from app.models import SessionRevocationReason, UserSession
+from app.main import app
+from app.models import Category, SessionRevocationReason, User, UserSession
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
@@ -212,6 +216,99 @@ class TestRegister:
 
         assert response.status_code == status.HTTP_409_CONFLICT
         assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "email"])
+
+    @pytest.mark.parametrize("duplicate_fields", ["both", "email", "username"])
+    async def test_register_concurrent_duplicates_return_conflict(
+        self,
+        test_engine: AsyncEngine,
+        mocker: MockerFixture,
+        duplicate_fields: str,
+    ):
+        suffix = uuid.uuid4().hex
+        payload = register_payload(email=f"race_{suffix}@test.com", username=f"race_{suffix}")
+        duplicate = register_payload(
+            email=payload["email"]
+            if duplicate_fields != "username"
+            else f"other_{suffix}@test.com",
+            username=payload["username"] if duplicate_fields != "email" else f"other_{suffix}",
+        )
+        payloads = [payload, duplicate]
+        participant_count = len(payloads)
+        timeout_seconds = 10
+        hashed_password = "hashed"
+        barrier = asyncio.Barrier(participant_count)
+        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        matching_users = or_(
+            User.email.in_({item["email"] for item in payloads}),
+            User.username.in_({item["username"] for item in payloads}),
+        )
+
+        async def override_get_session():
+            async with session_factory() as session:
+                yield session
+
+        async def hash_password(password: str) -> str:
+            # Both requests must pass the real duplicate checks before either can insert.
+            await asyncio.wait_for(barrier.wait(), timeout=timeout_seconds)
+            return hashed_password
+
+        mock_hash = mocker.patch.object(password_hasher, "hash", side_effect=hash_password)
+        previous_override = app.dependency_overrides.get(get_session)
+        app.dependency_overrides[get_session] = override_get_session
+        tasks = []
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                tasks = [
+                    asyncio.create_task(client.post(API_AUTH_REGISTER_URL, json=item))
+                    for item in payloads
+                ]
+                responses = await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout_seconds)
+
+            expected_status_codes = [status.HTTP_201_CREATED, status.HTTP_409_CONFLICT]
+            assert sorted(response.status_code for response in responses) == expected_status_codes
+            assert mock_hash.await_count == participant_count
+            conflict = next(
+                response
+                for response in responses
+                if response.status_code == status.HTTP_409_CONFLICT
+            )
+            assert conflict.headers["content-type"] == "application/problem+json"
+            assert conflict.json() == {
+                "status": status.HTTP_409_CONFLICT,
+                "code": ErrorCode.ALREADY_EXISTS,
+                "detail": "Resource with these values already exists",
+            }
+
+            async with session_factory() as session:
+                created_user = (await session.scalars(select(User).where(matching_users))).one()
+                success = next(
+                    response
+                    for response in responses
+                    if response.status_code == status.HTTP_201_CREATED
+                )
+                assert created_user.id == success.json()["id"]
+                categories = (
+                    await session.scalars(
+                        select(Category).where(Category.user_id == created_user.id)
+                    )
+                ).all()
+                assert len(categories) == len(DEFAULT_CATEGORIES)
+                assert {(category.name, category.type) for category in categories} == set(
+                    DEFAULT_CATEGORIES
+                )
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if previous_override is None:
+                app.dependency_overrides.pop(get_session, None)
+            else:
+                app.dependency_overrides[get_session] = previous_override
+            async with session_factory.begin() as session:
+                await session.execute(delete(User).where(matching_users))
 
     async def test_register_lowercases_email(self, client: AsyncClient):
         payload = register_payload(email="User@Test.com")

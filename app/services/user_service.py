@@ -73,6 +73,9 @@ class UserService:
         if await self.user_repository.get_by_username(user.username):
             raise ValueExistsException("User with this username already exists", loc=("username",))
 
+        # Release the read transaction's connection before waiting for Argon2.
+        await self.unit_of_work.commit()
+
         new_user = User(
             username=user.username,
             email=user.email,

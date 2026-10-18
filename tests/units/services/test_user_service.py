@@ -61,6 +61,7 @@ class TestRegister:
         data: UserCreate,
     ):
         hashed_password = "hashed"
+        expected_commit_count = 2
 
         mock_hash = password_hasher_mock.hash
         password_hasher_mock.hash.return_value = hashed_password
@@ -97,7 +98,41 @@ class TestRegister:
 
         category_repo_mock.add_all.assert_awaited_once()
 
-        unit_of_work_mock.commit.assert_awaited_once()
+        assert unit_of_work_mock.commit.await_count == expected_commit_count
+
+    async def test_register_commits_before_hashing_password(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        category_repo_mock: CategoryRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: UserCreate,
+    ):
+        hashed_password = "hashed"
+        expected_commit_count = 2
+        user_repo_mock.get_by_email.return_value = None
+        user_repo_mock.get_by_username.return_value = None
+        user_repo_mock.add.side_effect = as_persisted
+        category_repo_mock.add_all.side_effect = as_persisted_all
+
+        async def hash_password(password: str) -> str:
+            user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+            user_repo_mock.get_by_username.assert_awaited_once_with(data.username)
+            unit_of_work_mock.commit.assert_awaited_once_with()
+            user_repo_mock.add.assert_not_awaited()
+            category_repo_mock.add_all.assert_not_awaited()
+            return hashed_password
+
+        password_hasher_mock.hash.side_effect = hash_password
+
+        result = await user_service.register_user(data)
+
+        created_user = user_repo_mock.add.call_args[0][0]
+        assert result == UserResponse.model_validate(created_user)
+        assert created_user.hashed_password == hashed_password
+        password_hasher_mock.hash.assert_awaited_once_with(data.password)
+        assert unit_of_work_mock.commit.await_count == expected_commit_count
 
     async def test_register_propagates_password_hash_queue_full(
         self,
@@ -121,11 +156,12 @@ class TestRegister:
         password_hasher_mock.hash.assert_awaited_once_with(data.password)
         user_repo_mock.add.assert_not_awaited()
         category_repo_mock.add_all.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_register_existing_email(
         self,
         user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
         user_repo_mock: UserRepository,
         category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
@@ -139,6 +175,8 @@ class TestRegister:
 
         user_repo_mock.get_by_email.assert_called_once_with(data.email)
 
+        password_hasher_mock.hash.assert_not_called()
+
         user_repo_mock.add.assert_not_called()
 
         category_repo_mock.add_all.assert_not_awaited()
@@ -148,6 +186,7 @@ class TestRegister:
     async def test_register_existing_username(
         self,
         user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
         user_repo_mock: UserRepository,
         category_repo_mock: CategoryRepository,
         unit_of_work_mock: UnitOfWork,
@@ -161,6 +200,8 @@ class TestRegister:
             await user_service.register_user(data)
 
         user_repo_mock.get_by_username.assert_called_once_with(data.username)
+
+        password_hasher_mock.hash.assert_not_called()
 
         user_repo_mock.add.assert_not_called()
 
