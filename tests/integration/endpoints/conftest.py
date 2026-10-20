@@ -3,12 +3,15 @@ from collections.abc import AsyncGenerator
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.dependencies import get_session
+from app.core import Base
 from app.main import app
 from app.models import Currency
 from tests.integration.endpoints.helpers import (
+    CLEANUP_LOCK_TIMEOUT_SECONDS,
     account_payload,
     archive_account,
     archive_category,
@@ -40,6 +43,57 @@ async def client(test_session: AsyncSession) -> AsyncGenerator[AsyncClient, None
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def independent_session_factory(
+    request: pytest.FixtureRequest,
+    test_engine: AsyncEngine,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Sessions on their own connections, committing for real, for concurrency tests.
+
+    Unlike test_session, nothing is rolled back, so all tables are truncated after the test.
+    Never combine it with client or test_session: their data sits in an uncommitted
+    transaction that these sessions cannot see and whose locks would block the cleanup.
+    """
+    if "test_session" in request.fixturenames:
+        pytest.fail("independent_session_factory cannot be combined with client or test_session")
+
+    yield async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    preparer = test_engine.dialect.identifier_preparer
+    table_names = ", ".join(preparer.format_table(table) for table in Base.metadata.sorted_tables)
+
+    # The lock timeout is local to this transaction: a session left open by a cancelled
+    # request fails the cleanup loudly instead of hanging it
+    async with test_engine.begin() as connection:
+        await connection.execute(
+            text("SELECT set_config('lock_timeout', :value, true)"),
+            {"value": f"{CLEANUP_LOCK_TIMEOUT_SECONDS}s"},
+        )
+        await connection.execute(text(f"TRUNCATE {table_names} CASCADE"))
+
+
+@pytest.fixture
+async def independent_client(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncClient, None]:
+    """Client whose every request gets its own session, as in production."""
+
+    async def override_get_session():
+        async with independent_session_factory() as session:
+            yield session
+
+    previous_override = app.dependency_overrides.get(get_session)
+    app.dependency_overrides[get_session] = override_get_session
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+
+    if previous_override is None:
+        app.dependency_overrides.pop(get_session, None)
+    else:
+        app.dependency_overrides[get_session] = previous_override
 
 
 @pytest.fixture(autouse=True)

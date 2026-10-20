@@ -5,14 +5,13 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi import status
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from jose import jwt
 from pytest_mock import MockerFixture
-from sqlalchemy import delete, or_, select, update
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy import or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from structlog.testing import capture_logs
 
-from app.api.dependencies import get_session
 from app.api.v1.endpoints.auth import REFRESH_REQUESTS_PER_MINUTE
 from app.core import create_access_token, settings, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
@@ -24,17 +23,18 @@ from app.core.security import (
     password_hasher,
     verify_refresh_token_signature,
 )
-from app.main import app
 from app.models import Category, SessionRevocationReason, User, UserSession
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
+    CONCURRENCY_TIMEOUT_SECONDS,
     OVER_MAX_PASSWORD,
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
     forge_refresh_token,
     register_payload,
+    run_concurrently,
     session_id_from_headers,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
@@ -54,6 +54,10 @@ SESSION_TIME_OFFSET = timedelta(days=1)
 
 # Valid for EmailStr, outside what the users table stores
 NON_ASCII_EMAIL = "користувач@test.com"
+
+# The second racing registration, differing from the default payload in the named fields
+OTHER_EMAIL = "otheruser@test.com"
+OTHER_USERNAME = "otheruser"
 
 
 @pytest.fixture
@@ -220,95 +224,64 @@ class TestRegister:
     @pytest.mark.parametrize("duplicate_fields", ["both", "email", "username"])
     async def test_register_concurrent_duplicates_return_conflict(
         self,
-        test_engine: AsyncEngine,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
         mocker: MockerFixture,
         duplicate_fields: str,
     ):
-        suffix = uuid.uuid4().hex
-        payload = register_payload(email=f"race_{suffix}@test.com", username=f"race_{suffix}")
+        payload = register_payload()
         duplicate = register_payload(
-            email=payload["email"]
-            if duplicate_fields != "username"
-            else f"other_{suffix}@test.com",
-            username=payload["username"] if duplicate_fields != "email" else f"other_{suffix}",
+            email=payload["email"] if duplicate_fields != "username" else OTHER_EMAIL,
+            username=payload["username"] if duplicate_fields != "email" else OTHER_USERNAME,
         )
         payloads = [payload, duplicate]
         participant_count = len(payloads)
-        timeout_seconds = 10
         hashed_password = "hashed"
         barrier = asyncio.Barrier(participant_count)
-        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         matching_users = or_(
             User.email.in_({item["email"] for item in payloads}),
             User.username.in_({item["username"] for item in payloads}),
         )
 
-        async def override_get_session():
-            async with session_factory() as session:
-                yield session
-
         async def hash_password(password: str) -> str:
             # Both requests must pass the real duplicate checks before either can insert.
-            await asyncio.wait_for(barrier.wait(), timeout=timeout_seconds)
+            await asyncio.wait_for(barrier.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
             return hashed_password
 
         mock_hash = mocker.patch.object(password_hasher, "hash", side_effect=hash_password)
-        previous_override = app.dependency_overrides.get(get_session)
-        app.dependency_overrides[get_session] = override_get_session
-        tasks = []
-        try:
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                tasks = [
-                    asyncio.create_task(client.post(API_AUTH_REGISTER_URL, json=item))
-                    for item in payloads
-                ]
-                responses = await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout_seconds)
 
-            expected_status_codes = [status.HTTP_201_CREATED, status.HTTP_409_CONFLICT]
-            assert sorted(response.status_code for response in responses) == expected_status_codes
-            assert mock_hash.await_count == participant_count
-            conflict = next(
+        responses = await run_concurrently(
+            *(independent_client.post(API_AUTH_REGISTER_URL, json=item) for item in payloads)
+        )
+
+        expected_status_codes = [status.HTTP_201_CREATED, status.HTTP_409_CONFLICT]
+        assert sorted(response.status_code for response in responses) == expected_status_codes
+        assert mock_hash.await_count == participant_count
+        conflict = next(
+            response for response in responses if response.status_code == status.HTTP_409_CONFLICT
+        )
+        assert conflict.headers["content-type"] == "application/problem+json"
+        assert conflict.json() == {
+            "status": status.HTTP_409_CONFLICT,
+            "code": ErrorCode.ALREADY_EXISTS,
+            "detail": "Resource with these values already exists",
+        }
+
+        async with independent_session_factory() as session:
+            created_user = (await session.scalars(select(User).where(matching_users))).one()
+            success = next(
                 response
                 for response in responses
-                if response.status_code == status.HTTP_409_CONFLICT
+                if response.status_code == status.HTTP_201_CREATED
             )
-            assert conflict.headers["content-type"] == "application/problem+json"
-            assert conflict.json() == {
-                "status": status.HTTP_409_CONFLICT,
-                "code": ErrorCode.ALREADY_EXISTS,
-                "detail": "Resource with these values already exists",
-            }
-
-            async with session_factory() as session:
-                created_user = (await session.scalars(select(User).where(matching_users))).one()
-                success = next(
-                    response
-                    for response in responses
-                    if response.status_code == status.HTTP_201_CREATED
-                )
-                assert created_user.id == success.json()["id"]
-                categories = (
-                    await session.scalars(
-                        select(Category).where(Category.user_id == created_user.id)
-                    )
-                ).all()
-                assert len(categories) == len(DEFAULT_CATEGORIES)
-                assert {(category.name, category.type) for category in categories} == set(
-                    DEFAULT_CATEGORIES
-                )
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if previous_override is None:
-                app.dependency_overrides.pop(get_session, None)
-            else:
-                app.dependency_overrides[get_session] = previous_override
-            async with session_factory.begin() as session:
-                await session.execute(delete(User).where(matching_users))
+            assert created_user.id == success.json()["id"]
+            categories = (
+                await session.scalars(select(Category).where(Category.user_id == created_user.id))
+            ).all()
+            assert len(categories) == len(DEFAULT_CATEGORIES)
+            assert {(category.name, category.type) for category in categories} == set(
+                DEFAULT_CATEGORIES
+            )
 
     async def test_register_lowercases_email(self, client: AsyncClient):
         payload = register_payload(email="User@Test.com")

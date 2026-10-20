@@ -1,5 +1,8 @@
+import asyncio
 import uuid
+from collections.abc import Coroutine
 from decimal import Decimal
+from typing import Any, TypeVar
 
 from fastapi import status
 from httpx import AsyncClient, Response
@@ -15,6 +18,14 @@ from tests.integration.endpoints.types import (
     TransactionTemplateData,
     TransferData,
 )
+
+T = TypeVar("T")
+
+# Upper bound for every wait in a concurrency test, so a deadlock fails instead of hanging
+CONCURRENCY_TIMEOUT_SECONDS = 10
+
+# How long the cleanup TRUNCATE waits for a lock held by a leftover transaction
+CLEANUP_LOCK_TIMEOUT_SECONDS = 5
 
 # Smallest step a NUMERIC(15, 2) money column can store
 CENT = Decimal("0.01")
@@ -36,6 +47,27 @@ def session_id_from_headers(headers: dict[str, str]) -> uuid.UUID:
 
 def forge_refresh_token(session_id: uuid.UUID, secret: str, signature: str) -> str:
     return f"{session_id}.{secret}.{signature}"
+
+
+async def run_concurrently(*coroutines: Coroutine[Any, Any, T]) -> list[T]:
+    """Run the coroutines together and wait for all of them within the shared time limit.
+
+    On any exit (a failed task, a timeout, an outer cancellation) the unfinished tasks are
+    cancelled and awaited within the same time limit, so they release their sessions and
+    connections before the call returns.
+    """
+    tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+
+    try:
+        return await asyncio.wait_for(asyncio.gather(*tasks), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+        await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True), timeout=CONCURRENCY_TIMEOUT_SECONDS
+        )
 
 
 def assert_field_error(
