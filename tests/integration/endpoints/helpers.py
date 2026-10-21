@@ -6,6 +6,8 @@ from typing import Any, TypeVar
 
 from fastapi import status
 from httpx import AsyncClient, Response
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
@@ -26,6 +28,14 @@ CONCURRENCY_TIMEOUT_SECONDS = 10
 
 # How long the cleanup TRUNCATE waits for a lock held by a leftover transaction
 CLEANUP_LOCK_TIMEOUT_SECONDS = 5
+
+# Pause between two pg_stat_activity polls while waiting for lock waiters to queue
+LOCK_POLL_INTERVAL_SECONDS = 0.05
+
+# pg_stat_activity wait events of a transaction blocked on a row lock. The first waiter
+# queues on the lock holder's transaction id (transactionid); every further waiter queues
+# on the row itself (tuple). Table-level waits (relation) are deliberately excluded.
+ROW_LOCK_WAIT_EVENTS = ["transactionid", "tuple"]
 
 # Smallest step a NUMERIC(15, 2) money column can store
 CENT = Decimal("0.01")
@@ -68,6 +78,37 @@ async def run_concurrently(*coroutines: Coroutine[Any, Any, T]) -> list[T]:
         await asyncio.wait_for(
             asyncio.gather(*tasks, return_exceptions=True), timeout=CONCURRENCY_TIMEOUT_SECONDS
         )
+
+
+async def count_row_lock_waiters(session_factory: async_sessionmaker[AsyncSession]) -> int:
+    # A fresh session per call: pg_stat_activity is snapshotted once per transaction, so
+    # polling inside one transaction would keep seeing the first snapshot
+    async with session_factory() as session:
+        return await session.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity"
+                " WHERE datname = current_database()"
+                " AND pid <> pg_backend_pid()"
+                " AND wait_event_type = 'Lock'"
+                " AND wait_event = ANY(:events)"
+            ),
+            {"events": ROW_LOCK_WAIT_EVENTS},
+        )
+
+
+async def wait_for_row_lock_waiters(
+    session_factory: async_sessionmaker[AsyncSession],
+    expected_waiters: int = 1,
+    timeout_seconds: float = CONCURRENCY_TIMEOUT_SECONDS,
+) -> None:
+    """Wait until at least expected_waiters transactions are blocked on a row lock.
+
+    Counts every such connection in the current database, so it assumes no other test
+    traffic. Raises TimeoutError, never returns quietly, when the waiters do not show up.
+    """
+    async with asyncio.timeout(timeout_seconds):
+        while await count_row_lock_waiters(session_factory) < expected_waiters:
+            await asyncio.sleep(LOCK_POLL_INTERVAL_SECONDS)
 
 
 def assert_field_error(
