@@ -24,12 +24,18 @@ from app.core.security import (
     verify_token,
 )
 from tests.jwt_helpers import (
+    FOREIGN_AUDIENCE,
+    FOREIGN_ISSUER,
+    ISSUER_AUDIENCE_DEFECTS,
     UNSECURED_ALGORITHM,
+    ClaimsBreaker,
     assemble_test_jwt,
     encode_test_jwt,
     read_jwt_claims,
     read_jwt_header,
+    replace_claim,
     sign_jwt,
+    without_claim,
 )
 
 WORKER_TIMEOUT_SECONDS = 5
@@ -485,10 +491,24 @@ class TestCreateAccessToken:
 
         assert payload["exp"] == payload["iat"]
 
-    def test_create_access_token_adds_only_the_time_claims(self, data: dict):
+    def test_create_access_token_adds_only_the_server_claims(self, data: dict):
         token = create_access_token(data)
 
-        assert set(read_jwt_claims(token)) == {*data, "exp", "iat"}
+        assert set(read_jwt_claims(token)) == {*data, "exp", "iat", "iss", "aud"}
+
+    def test_create_access_token_stamps_the_issuer_and_audience(self, data: dict):
+        claims = read_jwt_claims(create_access_token(data))
+
+        assert claims["iss"] == settings.JWT_ISSUER
+        assert claims["aud"] == settings.JWT_AUDIENCE
+
+    def test_create_access_token_overrides_the_given_issuer_and_audience(self, data: dict):
+        data_with_foreign_values = {**data, "iss": FOREIGN_ISSUER, "aud": FOREIGN_AUDIENCE}
+
+        claims = read_jwt_claims(create_access_token(data_with_foreign_values))
+
+        assert claims["iss"] == settings.JWT_ISSUER
+        assert claims["aud"] == settings.JWT_AUDIENCE
 
     def test_create_access_token_produces_a_standard_signed_jwt(self, data: dict):
         token = create_access_token(data)
@@ -508,11 +528,27 @@ class TestVerifyToken:
     def data(self):
         return {"sub": "1"}
 
-    def test_verify_token_rejects_a_token_it_did_not_sign(self, data: dict):
-        foreign_secret_key = f"{settings.SECRET_KEY}-foreign"
+    # Valid in every claim, so a test that breaks exactly one of them tests exactly that one
+    @pytest.fixture
+    def valid_claims(self, data: dict) -> dict:
         expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+        return {
+            **data,
+            "exp": expires_at.timestamp(),
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+        }
+
+    def test_verify_token_accepts_valid_claims(self, valid_claims: dict):
+        token = encode_test_jwt(valid_claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+        assert verify_token(token) == valid_claims
+
+    def test_verify_token_rejects_a_token_it_did_not_sign(self, data: dict, valid_claims: dict):
+        foreign_secret_key = f"{settings.SECRET_KEY}-foreign"
         foreign_token = encode_test_jwt(
-            {**data, "exp": expires_at.timestamp()},
+            valid_claims,
             foreign_secret_key,
             algorithm=settings.ALGORITHM,
         )
@@ -521,18 +557,20 @@ class TestVerifyToken:
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(foreign_token)
 
-    def test_verify_token_rejects_a_token_without_exp(self, data: dict):
-        token = encode_test_jwt(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    def test_verify_token_rejects_a_token_without_exp(self, valid_claims: dict):
+        token = encode_test_jwt(
+            without_claim(valid_claims, "exp"), settings.SECRET_KEY, algorithm=settings.ALGORITHM
+        )
 
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(token)
 
-    def test_verify_token_accepts_fractional_time_claims(self, data: dict):
+    def test_verify_token_accepts_fractional_time_claims(self, valid_claims: dict):
         issued_at = (
             datetime.now(UTC).replace(microsecond=HALF_A_SECOND_IN_MICROSECONDS) - ISSUED_AT_MARGIN
         )
         expires_at = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        claims = {**data, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
+        claims = {**valid_claims, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
         assert not claims["iat"].is_integer()
         assert not claims["exp"].is_integer()
 
@@ -540,20 +578,19 @@ class TestVerifyToken:
 
         assert verify_token(token) == claims
 
-    def test_verify_token_rejects_a_token_issued_in_the_future(self, data: dict):
+    def test_verify_token_rejects_a_token_issued_in_the_future(self, valid_claims: dict):
         issued_at = datetime.now(UTC) + FUTURE_ISSUE_OFFSET
         expires_at = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        claims = {**data, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
+        claims = {**valid_claims, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
 
         token = encode_test_jwt(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(token)
 
-    def test_verify_token_rejects_a_non_string_subject(self):
-        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    def test_verify_token_rejects_a_non_string_subject(self, valid_claims: dict):
         token = encode_test_jwt(
-            {"sub": NON_STRING_SUBJECT, "exp": expires_at.timestamp()},
+            replace_claim(valid_claims, "sub", NON_STRING_SUBJECT),
             settings.SECRET_KEY,
             algorithm=settings.ALGORITHM,
         )
@@ -561,16 +598,24 @@ class TestVerifyToken:
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(token)
 
+    @pytest.mark.parametrize(
+        "break_claims", ISSUER_AUDIENCE_DEFECTS.values(), ids=ISSUER_AUDIENCE_DEFECTS.keys()
+    )
+    def test_verify_token_rejects_a_missing_or_foreign_issuer_or_audience(
+        self, valid_claims: dict, break_claims: ClaimsBreaker
+    ):
+        token = encode_test_jwt(
+            break_claims(valid_claims), settings.SECRET_KEY, algorithm=settings.ALGORITHM
+        )
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
+
     @pytest.mark.parametrize("algorithm", OTHER_SIGNING_ALGORITHMS)
     def test_verify_token_rejects_a_token_signed_with_another_algorithm(
-        self, data: dict, algorithm: str
+        self, valid_claims: dict, algorithm: str
     ):
-        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        token = encode_test_jwt(
-            {**data, "exp": expires_at.timestamp()},
-            settings.SECRET_KEY,
-            algorithm=algorithm,
-        )
+        token = encode_test_jwt(valid_claims, settings.SECRET_KEY, algorithm=algorithm)
         assert read_jwt_header(token)["alg"] == algorithm
 
         with pytest.raises(ValueError, match="Invalid token"):

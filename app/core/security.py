@@ -167,7 +167,14 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     else:
         expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode.update({"exp": expire.timestamp(), "iat": now.timestamp()})
+    to_encode.update(
+        {
+            "exp": expire.timestamp(),
+            "iat": now.timestamp(),
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+        }
+    )
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -179,7 +186,11 @@ def verify_token(token: str) -> dict:
             token,
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
-            options={"require": ["exp"]},
+            issuer=settings.JWT_ISSUER,
+            audience=settings.JWT_AUDIENCE,
+            # issuer and audience already reject a missing claim, require makes it explicit.
+            # strict_aud stays off: only this server mints tokens, and it always writes a string.
+            options={"require": ["exp", "iss", "aud"]},
         )
         return payload
     except jwt.PyJWTError as err:

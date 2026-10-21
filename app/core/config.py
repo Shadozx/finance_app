@@ -41,6 +41,8 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
+    JWT_ISSUER: str
+    JWT_AUDIENCE: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(15, gt=0)
     SESSION_IDLE_DAYS: int = Field(30, gt=0)
     SESSION_MAX_DAYS: int = Field(90, gt=0)
@@ -62,6 +64,14 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY is a placeholder or empty.")
         if len(v) < _MIN_SECRET_LENGTH:
             raise ValueError(f"SECRET_KEY must be ≥ {_MIN_SECRET_LENGTH} chars.")
+        return v
+
+    @field_validator("JWT_ISSUER", "JWT_AUDIENCE")
+    @classmethod
+    def jwt_claim_must_not_be_blank(cls, v: str, info: ValidationInfo) -> str:
+        # The value is compared with the token claim as is, so it is not trimmed here
+        if not v.strip():
+            raise ValueError(f"{info.field_name} must not be empty.")
         return v
 
     @field_validator("SESSION_MAX_DAYS")

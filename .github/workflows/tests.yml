@@ -41,5 +41,7 @@ jobs:
           POSTGRES_PORT: "5432"
           POSTGRES_DB: test_db
           SECRET_KEY: "test-secret-key-at-least-32-characters-long-xx"
+          JWT_ISSUER: finance-api-test
+          JWT_AUDIENCE: finance-api-test
           ENVIRONMENT: dev
         run: pytest tests/

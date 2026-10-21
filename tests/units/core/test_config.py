@@ -13,12 +13,20 @@ TOKEN_LIFETIME_SETTING_NAMES = (
 )
 
 
+JWT_CLAIM_SETTING_NAMES = ("JWT_ISSUER", "JWT_AUDIENCE")
+
+JWT_ISSUER = "test-issuer"
+JWT_AUDIENCE = "test-audience"
+
+
 @pytest.fixture
 def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     # Keep the tests independent of variables exported on the machine running them.
     for name in TOKEN_LIFETIME_SETTING_NAMES:
         monkeypatch.delenv(name, raising=False)
     for name in ("PASSWORD_HASH_CONCURRENCY", "PASSWORD_HASH_MAX_QUEUE"):
+        monkeypatch.delenv(name, raising=False)
+    for name in JWT_CLAIM_SETTING_NAMES:
         monkeypatch.delenv(name, raising=False)
 
     return {
@@ -27,11 +35,13 @@ def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         "POSTGRES_SERVER": "localhost",
         "POSTGRES_DB": "test-db",
         "SECRET_KEY": "test-secret-key-that-is-long-enough-for-settings",
+        "JWT_ISSUER": JWT_ISSUER,
+        "JWT_AUDIENCE": JWT_AUDIENCE,
     }
 
 
-def make_settings(base_settings: dict[str, str], **overrides: int) -> Settings:
-    return Settings(_env_file=None, **base_settings, **overrides)  # type: ignore[arg-type, call-arg]
+def make_settings(base_settings: dict[str, str], **overrides: int | str) -> Settings:
+    return Settings(_env_file=None, **{**base_settings, **overrides})  # type: ignore[arg-type, call-arg]
 
 
 class TestPasswordHashSettings:
@@ -150,3 +160,47 @@ class TestTokenLifetimeSettings:
         assert len(errors) == 1
         assert errors[0]["loc"] == ("REFRESH_TOKEN_REUSE_GRACE_SECONDS",)
         assert errors[0]["type"] == "greater_than_equal"
+
+
+class TestJwtClaimSettings:
+    @pytest.mark.parametrize("field_name", JWT_CLAIM_SETTING_NAMES)
+    def test_claim_setting_is_required(self, base_settings: dict[str, str], field_name: str):
+        settings_without_field = {
+            name: value for name, value in base_settings.items() if name != field_name
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(settings_without_field)
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == (field_name,)
+        assert errors[0]["type"] == "missing"
+
+    @pytest.mark.parametrize("field_name", JWT_CLAIM_SETTING_NAMES)
+    @pytest.mark.parametrize("value", ["", "   "], ids=["empty", "only-spaces"])
+    def test_claim_setting_rejects_a_blank_value(
+        self, base_settings: dict[str, str], field_name: str, value: str
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, **{field_name: value})
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == (field_name,)
+        assert errors[0]["type"] == "value_error"
+        assert field_name in errors[0]["msg"]
+
+    def test_claim_settings_keep_the_given_values(self, base_settings: dict[str, str]):
+        settings = make_settings(base_settings)
+
+        assert settings.JWT_ISSUER == JWT_ISSUER
+        assert settings.JWT_AUDIENCE == JWT_AUDIENCE
+
+    @pytest.mark.parametrize("field_name", JWT_CLAIM_SETTING_NAMES)
+    def test_claim_setting_is_not_trimmed(self, base_settings: dict[str, str], field_name: str):
+        padded_value = " padded-value "
+
+        settings = make_settings(base_settings, **{field_name: padded_value})
+
+        assert getattr(settings, field_name) == padded_value

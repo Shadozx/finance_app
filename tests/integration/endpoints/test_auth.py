@@ -37,7 +37,13 @@ from tests.integration.endpoints.helpers import (
     session_id_from_headers,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
-from tests.jwt_helpers import encode_test_jwt, read_jwt_claims
+from tests.jwt_helpers import (
+    ISSUER_AUDIENCE_DEFECTS,
+    ClaimsBreaker,
+    encode_test_jwt,
+    read_jwt_claims,
+    without_claim,
+)
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
@@ -55,7 +61,7 @@ SESSION_TIME_OFFSET = timedelta(days=1)
 # Valid for EmailStr, outside what the users table stores
 NON_ASCII_EMAIL = "користувач@test.com"
 
-ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat"}
+ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat", "iss", "aud"}
 
 # The second racing registration, differing from the default payload in the named fields
 OTHER_EMAIL = "otheruser@test.com"
@@ -1272,16 +1278,63 @@ class TestSessionToken:
         assert claims["sub"] == str(user_id)
         assert claims["sid"] == str(stored_session_id)
 
+    # Valid in every claim and signed with the real key, so a test that breaks exactly one
+    # of them is rejected for that claim alone
+    @pytest.fixture
+    def valid_claims(self, authenticated_user: AuthenticatedUser) -> dict[str, str | float]:
+        expires_at = utc_now() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+        return {
+            "sub": str(authenticated_user["user"]["id"]),
+            "sid": str(session_id_from_headers(authenticated_user["headers"])),
+            "exp": expires_at.timestamp(),
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+        }
+
+    async def test_get_me_accepts_token_with_valid_claims(
+        self,
+        client: AsyncClient,
+        valid_claims: dict[str, str | float],
+    ):
+        token = encode_test_jwt(valid_claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
     async def test_get_me_rejects_token_without_exp(
         self,
         client: AsyncClient,
-        authenticated_user: AuthenticatedUser,
+        valid_claims: dict[str, str | float],
     ):
-        session_id = session_id_from_headers(authenticated_user["headers"])
         token = encode_test_jwt(
-            {"sub": str(authenticated_user["user"]["id"]), "sid": str(session_id)},
-            settings.SECRET_KEY,
-            algorithm=settings.ALGORITHM,
+            without_claim(valid_claims, "exp"), settings.SECRET_KEY, algorithm=settings.ALGORITHM
+        )
+
+        response = await client.get(
+            API_USERS_ME_URL,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
+
+    @pytest.mark.parametrize(
+        "break_claims", ISSUER_AUDIENCE_DEFECTS.values(), ids=ISSUER_AUDIENCE_DEFECTS.keys()
+    )
+    async def test_get_me_rejects_token_with_missing_or_foreign_issuer_or_audience(
+        self,
+        client: AsyncClient,
+        valid_claims: dict[str, str | float],
+        break_claims: ClaimsBreaker,
+    ):
+        token = encode_test_jwt(
+            break_claims(valid_claims), settings.SECRET_KEY, algorithm=settings.ALGORITHM
         )
 
         response = await client.get(

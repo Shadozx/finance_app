@@ -8,7 +8,7 @@ import base64
 import hashlib
 import hmac
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 HASH_BY_ALGORITHM = {
@@ -21,6 +21,10 @@ HASH_BY_ALGORITHM = {
 UNSECURED_ALGORITHM = "none"
 
 DEFAULT_ALGORITHM = "HS256"
+
+# Values no server setting uses, for tokens meant for another issuer or audience
+FOREIGN_ISSUER = "foreign-issuer"
+FOREIGN_AUDIENCE = "foreign-audience"
 
 HEADER_INDEX = 0
 PAYLOAD_INDEX = 1
@@ -59,6 +63,26 @@ def encode_test_jwt(
     payload = json.dumps(claims, separators=(",", ":")).encode()
 
     return assemble_test_jwt(payload, key, algorithm=algorithm)
+
+
+def replace_claim(claims: Mapping[str, Any], name: str, value: Any) -> dict[str, Any]:
+    """Copy the claims with one of them set, even to None (a JSON null)."""
+    return {**claims, name: value}
+
+
+def without_claim(claims: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """Copy the claims with one of them absent, which is not the same as null."""
+    return {key: value for key, value in claims.items() if key != name}
+
+
+ClaimsBreaker = Callable[[Mapping[str, Any]], dict[str, Any]]
+
+ISSUER_AUDIENCE_DEFECTS: dict[str, ClaimsBreaker] = {
+    "missing-iss": lambda claims: without_claim(claims, "iss"),
+    "missing-aud": lambda claims: without_claim(claims, "aud"),
+    "foreign-iss": lambda claims: replace_claim(claims, "iss", FOREIGN_ISSUER),
+    "foreign-aud": lambda claims: replace_claim(claims, "aud", FOREIGN_AUDIENCE),
+}
 
 
 def _read_segment(token: str, index: int) -> dict[str, Any]:
