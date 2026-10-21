@@ -540,14 +540,15 @@ class TestVerifyToken:
 
         assert verify_token(token) == claims
 
-    def test_verify_token_accepts_a_token_issued_in_the_future(self, data: dict):
+    def test_verify_token_rejects_a_token_issued_in_the_future(self, data: dict):
         issued_at = datetime.now(UTC) + FUTURE_ISSUE_OFFSET
         expires_at = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         claims = {**data, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
 
         token = encode_test_jwt(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-        assert verify_token(token) == claims
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
 
     def test_verify_token_rejects_a_non_string_subject(self):
         expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

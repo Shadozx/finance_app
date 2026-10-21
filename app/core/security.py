@@ -10,9 +10,9 @@ from threading import Lock
 from typing import NamedTuple, TypeVar
 from uuid import UUID
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
-from jose import JWTError, jwt
 
 from app.core import settings
 from app.core.email_policy import normalize_email
@@ -179,8 +179,8 @@ def verify_token(token: str) -> dict:
             token,
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
-            options={"require_exp": True},
+            options={"require": ["exp"]},
         )
         return payload
-    except JWTError as err:
+    except jwt.PyJWTError as err:
         raise ValueError("Invalid token") from err
