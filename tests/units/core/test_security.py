@@ -8,7 +8,6 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from jose import jwt
 from pytest_mock import MockerFixture
 
 from app.core.config import settings
@@ -24,12 +23,39 @@ from app.core.security import (
     verify_refresh_token_signature,
     verify_token,
 )
+from tests.jwt_helpers import (
+    UNSECURED_ALGORITHM,
+    assemble_test_jwt,
+    encode_test_jwt,
+    read_jwt_claims,
+    read_jwt_header,
+    sign_jwt,
+)
 
 WORKER_TIMEOUT_SECONDS = 5
 TEST_PASSWORD = "test-password"
 TEST_PASSWORD_HASH = "test-password-hash"
 WRONG_PASSWORD = "wrong-password"
 INVALID_PASSWORD_HASH = "invalid-hash"
+
+JWT_SEGMENT_COUNT = 3
+HALF_A_SECOND_IN_MICROSECONDS = 500_000
+# Keeps a fractional issue time safely in the past, whatever the clock reads
+ISSUED_AT_MARGIN = timedelta(seconds=1)
+FUTURE_ISSUE_OFFSET = timedelta(hours=1)
+NON_STRING_SUBJECT = 1
+OTHER_SIGNING_ALGORITHMS = ["HS384", "HS512", UNSECURED_ALGORITHM]
+
+# Malformed tokens; the last two are signed correctly, so only their body can reject them
+MALFORMED_TOKENS = [
+    pytest.param("", id="empty"),
+    pytest.param("not-a-token", id="no-dots"),
+    pytest.param("one.two", id="two-segments"),
+    pytest.param("a.b.c.d", id="four-segments"),
+    pytest.param("!!!.!!!.!!!", id="not-base64"),
+    pytest.param(assemble_test_jwt(b"not json", settings.SECRET_KEY), id="body-not-json"),
+    pytest.param(assemble_test_jwt(b"[1]", settings.SECRET_KEY), id="body-not-an-object"),
+]
 
 
 class BlockingPasswordBackend:
@@ -455,9 +481,26 @@ class TestCreateAccessToken:
         zero_lifetime = timedelta(0)
 
         token = create_access_token(data, expires_delta=zero_lifetime)
-        payload = jwt.get_unverified_claims(token)
+        payload = read_jwt_claims(token)
 
         assert payload["exp"] == payload["iat"]
+
+    def test_create_access_token_adds_only_the_time_claims(self, data: dict):
+        token = create_access_token(data)
+
+        assert set(read_jwt_claims(token)) == {*data, "exp", "iat"}
+
+    def test_create_access_token_produces_a_standard_signed_jwt(self, data: dict):
+        token = create_access_token(data)
+
+        assert len(token.split(".")) == JWT_SEGMENT_COUNT
+        assert read_jwt_header(token)["alg"] == settings.ALGORITHM
+
+        signing_input, _, signature = token.rpartition(".")
+
+        assert signature == sign_jwt(
+            signing_input, settings.SECRET_KEY, algorithm=settings.ALGORITHM
+        )
 
 
 class TestVerifyToken:
@@ -468,19 +511,72 @@ class TestVerifyToken:
     def test_verify_token_rejects_a_token_it_did_not_sign(self, data: dict):
         foreign_secret_key = f"{settings.SECRET_KEY}-foreign"
         expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        foreign_token = jwt.encode(
+        foreign_token = encode_test_jwt(
             {**data, "exp": expires_at.timestamp()},
             foreign_secret_key,
             algorithm=settings.ALGORITHM,
         )
-        assert jwt.get_unverified_claims(foreign_token)["sub"] == data["sub"]
+        assert read_jwt_claims(foreign_token)["sub"] == data["sub"]
 
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(foreign_token)
 
     def test_verify_token_rejects_a_token_without_exp(self, data: dict):
-        token = jwt.encode(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+        token = encode_test_jwt(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
+
+    def test_verify_token_accepts_fractional_time_claims(self, data: dict):
+        issued_at = (
+            datetime.now(UTC).replace(microsecond=HALF_A_SECOND_IN_MICROSECONDS) - ISSUED_AT_MARGIN
+        )
+        expires_at = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        claims = {**data, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
+        assert not claims["iat"].is_integer()
+        assert not claims["exp"].is_integer()
+
+        token = encode_test_jwt(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+        assert verify_token(token) == claims
+
+    def test_verify_token_accepts_a_token_issued_in_the_future(self, data: dict):
+        issued_at = datetime.now(UTC) + FUTURE_ISSUE_OFFSET
+        expires_at = issued_at + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        claims = {**data, "iat": issued_at.timestamp(), "exp": expires_at.timestamp()}
+
+        token = encode_test_jwt(claims, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+        assert verify_token(token) == claims
+
+    def test_verify_token_rejects_a_non_string_subject(self):
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        token = encode_test_jwt(
+            {"sub": NON_STRING_SUBJECT, "exp": expires_at.timestamp()},
+            settings.SECRET_KEY,
+            algorithm=settings.ALGORITHM,
+        )
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
+
+    @pytest.mark.parametrize("algorithm", OTHER_SIGNING_ALGORITHMS)
+    def test_verify_token_rejects_a_token_signed_with_another_algorithm(
+        self, data: dict, algorithm: str
+    ):
+        expires_at = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        token = encode_test_jwt(
+            {**data, "exp": expires_at.timestamp()},
+            settings.SECRET_KEY,
+            algorithm=algorithm,
+        )
+        assert read_jwt_header(token)["alg"] == algorithm
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(token)
+
+    @pytest.mark.parametrize("token", MALFORMED_TOKENS)
+    def test_verify_token_rejects_a_malformed_token(self, token: str):
         with pytest.raises(ValueError, match="Invalid token"):
             verify_token(token)
 

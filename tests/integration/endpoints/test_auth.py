@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi import status
 from httpx import AsyncClient
-from jose import jwt
 from pytest_mock import MockerFixture
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,6 +37,7 @@ from tests.integration.endpoints.helpers import (
     session_id_from_headers,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
+from tests.jwt_helpers import encode_test_jwt, read_jwt_claims
 
 API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 
@@ -54,6 +54,8 @@ SESSION_TIME_OFFSET = timedelta(days=1)
 
 # Valid for EmailStr, outside what the users table stores
 NON_ASCII_EMAIL = "користувач@test.com"
+
+ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat"}
 
 # The second racing registration, differing from the default payload in the named fields
 OTHER_EMAIL = "otheruser@test.com"
@@ -1253,13 +1255,30 @@ class TestTokenLogging:
 
 
 class TestSessionToken:
+    async def test_login_issues_access_token_with_only_the_expected_claims(
+        self,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+    ):
+        token = authenticated_user["headers"]["Authorization"].removeprefix("Bearer ")
+        user_id = authenticated_user["user"]["id"]
+        stored_session_id = (
+            await test_session.scalars(select(UserSession.id).where(UserSession.user_id == user_id))
+        ).one()
+
+        claims = read_jwt_claims(token)
+
+        assert set(claims) == ACCESS_TOKEN_CLAIMS
+        assert claims["sub"] == str(user_id)
+        assert claims["sid"] == str(stored_session_id)
+
     async def test_get_me_rejects_token_without_exp(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
     ):
         session_id = session_id_from_headers(authenticated_user["headers"])
-        token = jwt.encode(
+        token = encode_test_jwt(
             {"sub": str(authenticated_user["user"]["id"]), "sid": str(session_id)},
             settings.SECRET_KEY,
             algorithm=settings.ALGORITHM,
