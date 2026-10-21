@@ -98,6 +98,7 @@ async def count_row_lock_waiters(session_factory: async_sessionmaker[AsyncSessio
 
 async def wait_for_row_lock_waiters(
     session_factory: async_sessionmaker[AsyncSession],
+    *,
     expected_waiters: int = 1,
     timeout_seconds: float = CONCURRENCY_TIMEOUT_SECONDS,
 ) -> None:
