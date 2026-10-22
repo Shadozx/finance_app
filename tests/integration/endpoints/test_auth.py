@@ -1164,9 +1164,10 @@ class TestLogout:
         )
         assert refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_logout_old_refresh_token_does_not_revoke_rotated_session(
+    async def test_logout_previous_token_in_grace_revokes_the_session(
         self,
         client: AsyncClient,
+        test_session: AsyncSession,
         login_tokens: dict[str, str],
     ):
         refresh_response = await client.post(
@@ -1174,12 +1175,62 @@ class TestLogout:
         )
         assert refresh_response.status_code == status.HTTP_200_OK
         current_tokens = refresh_response.json()
+        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
+        revocation_query = select(UserSession.revoked_at, UserSession.revoked_reason).where(
+            UserSession.id == session_id
+        )
 
         response = await client.post(
             API_AUTH_LOGOUT_URL, json={"refresh_token": login_tokens["refresh_token"]}
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
+        revocation = (await test_session.execute(revocation_query)).one()
+        assert revocation.revoked_at is not None
+        assert revocation.revoked_reason == SessionRevocationReason.LOGOUT
+        current_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        )
+        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        access_response = await client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {current_tokens['access_token']}"}
+        )
+        assert access_response.status_code == status.HTTP_401_UNAUTHORIZED
+        repeated_logout_response = await client.post(
+            API_AUTH_LOGOUT_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        )
+        assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
+        assert (await test_session.execute(revocation_query)).one() == revocation
+
+    # Outside the grace window logout still ignores the previous token. A later commit changes
+    # this deliberately: it will be treated as reuse and revoke the session.
+    async def test_logout_previous_token_outside_grace_does_not_revoke_the_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert refresh_response.status_code == status.HTTP_200_OK
+        current_tokens = refresh_response.json()
+        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
+        grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+        rotated_at = utc_now() - grace_interval - SESSION_TIME_OFFSET
+        await test_session.execute(
+            update(UserSession).where(UserSession.id == session_id).values(rotated_at=rotated_at)
+        )
+
+        response = await client.post(
+            API_AUTH_LOGOUT_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        revoked_at = await test_session.scalar(
+            select(UserSession.revoked_at).where(UserSession.id == session_id)
+        )
+        assert revoked_at is None
         current_refresh_response = await client.post(
             API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
         )

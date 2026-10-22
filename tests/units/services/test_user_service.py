@@ -1144,7 +1144,12 @@ class TestLogout:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_logout_ignores_previous_token_in_grace_without_changing_session(
+    @pytest.mark.parametrize(
+        "rotation_age",
+        [timedelta(seconds=1), timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)],
+        ids=["within-grace", "at-grace-boundary"],
+    )
+    async def test_logout_previous_token_in_grace_revokes_the_session(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1152,13 +1157,15 @@ class TestLogout:
         active_user_session: UserSession,
         refresh_secret: str,
         session_now: datetime,
+        rotation_age: timedelta,
     ):
-        current_hash = hash_refresh_secret("current-refresh-secret")
+        current_hash = hash_refresh_secret(RANDOM_CURRENT_SECRET)
         previous_hash = hash_refresh_secret(refresh_secret)
-        rotated_at = session_now - timedelta(seconds=1)
+        rotated_at = session_now - rotation_age
         active_user_session.refresh_token_hash = current_hash
         active_user_session.previous_refresh_token_hash = previous_hash
         active_user_session.rotated_at = rotated_at
+        original_generation = active_user_session.refresh_generation
         original_last_used_at = active_user_session.last_used_at
         original_expires_at = active_user_session.expires_at
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
@@ -1172,12 +1179,50 @@ class TestLogout:
             active_user_session,
             refresh_token_hash=current_hash,
             previous_refresh_token_hash=previous_hash,
+            refresh_generation=original_generation,
             rotated_at=rotated_at,
             last_used_at=original_last_used_at,
             expires_at=original_expires_at,
-            revoked_at=None,
-            revoked_reason=None,
+            revoked_at=session_now,
+            revoked_reason=SessionRevocationReason.LOGOUT,
         )
+        assert logs == [
+            {
+                "event": "user_logout_success",
+                "session_id": str(active_user_session.id),
+                "match": "previous_in_grace",
+                "log_level": "info",
+            }
+        ]
+        user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
+        user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
+        unit_of_work_mock.commit.assert_awaited_once()
+
+    # Outside the grace window the previous token is still ignored by logout. A later commit
+    # changes this deliberately: it will be treated as reuse and revoke the session.
+    async def test_logout_ignores_previous_token_outside_grace(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        active_user_session: UserSession,
+        refresh_secret: str,
+        session_now: datetime,
+    ):
+        grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+        one_microsecond = timedelta(microseconds=1)
+        active_user_session.refresh_token_hash = hash_refresh_secret(RANDOM_CURRENT_SECRET)
+        active_user_session.previous_refresh_token_hash = hash_refresh_secret(refresh_secret)
+        active_user_session.rotated_at = session_now - grace_interval - one_microsecond
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+        refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
+
+        with capture_logs() as logs:
+            result = await user_service.logout(refresh_token)
+
+        assert result is None
+        assert active_user_session.revoked_at is None
+        assert active_user_session.revoked_reason is None
         assert logs == [
             {
                 "event": "logout_ignored_stale_refresh_token",
@@ -1185,7 +1230,6 @@ class TestLogout:
                 "log_level": "warning",
             }
         ]
-        user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 

@@ -328,7 +328,7 @@ class UserService:
         user_session = resolved.user_session
         match = resolved.match
         now = resolved.now
-        if match is not RefreshTokenMatch.CURRENT:
+        if match is RefreshTokenMatch.MISMATCH:
             logger.warning("logout_ignored_stale_refresh_token", session_id=str(user_session.id))
             return
 
@@ -338,7 +338,7 @@ class UserService:
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()
 
-        logger.info("user_logout_success", session_id=str(user_session.id))
+        logger.info("user_logout_success", session_id=str(user_session.id), match=match.value)
 
     async def update_username(self, data: UsernameUpdate, user_id: int) -> UserResponse:
         existing_user = await validators.validate_user(self.user_repository, user_id)
