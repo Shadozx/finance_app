@@ -36,14 +36,15 @@ from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
     CONCURRENCY_TIMEOUT_SECONDS,
     OVER_MAX_PASSWORD,
+    FirstCallGate,
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
     forge_refresh_token,
     register_payload,
     run_concurrently,
+    run_second_behind_first,
     session_id_from_headers,
-    wait_for_row_lock_waiters,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
 from tests.jwt_helpers import (
@@ -1385,18 +1386,8 @@ class TestRefreshGeneration:
 
 
 class TestConcurrentRefresh:
-    async def test_concurrent_refresh_with_the_same_token_returns_the_same_successor(
-        self,
-        mocker: MockerFixture,
-        independent_client: AsyncClient,
-        independent_session_factory: async_sessionmaker[AsyncSession],
-    ):
-        # The window must not be shorter than the longest wait of the second request, or a slow
-        # run would take its replay for a reuse and revoke the session
-        mocker.patch(
-            "app.services.user_service.settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS",
-            CONCURRENCY_TIMEOUT_SECONDS,
-        )
+    @pytest.fixture
+    async def independent_login_tokens(self, independent_client: AsyncClient) -> dict[str, str]:
         payload = register_payload()
         register_response = await independent_client.post(API_AUTH_REGISTER_URL, json=payload)
         assert register_response.status_code == status.HTTP_201_CREATED
@@ -1404,40 +1395,66 @@ class TestConcurrentRefresh:
             API_AUTH_LOGIN_URL, json={"email": payload["email"], "password": payload["password"]}
         )
         assert login_response.status_code == status.HTTP_200_OK
-        login_tokens = login_response.json()
-        session_id = uuid.UUID(verify_token(login_tokens["access_token"])["sid"])
-        refresh_payload = {"refresh_token": login_tokens["refresh_token"]}
 
-        # The request that locks the session first reaches update first, and stays there until
-        # the other one is queued behind its lock
-        first_update_taken = False
-        release_first_update = asyncio.Event()
-        original_update = UserSessionRepository.update
+        return login_response.json()
 
-        async def hold_first_update(repository: UserSessionRepository, user_session: UserSession):
-            nonlocal first_update_taken
-            if not first_update_taken:
-                first_update_taken = True
-                await asyncio.wait_for(
-                    release_first_update.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS
-                )
-            return await original_update(repository, user_session)
+    @pytest.fixture
+    def session_id(self, independent_login_tokens: dict[str, str]) -> uuid.UUID:
+        return uuid.UUID(verify_token(independent_login_tokens["access_token"])["sid"])
 
-        async def release_when_second_request_waits():
-            try:
-                await wait_for_row_lock_waiters(independent_session_factory)
-            finally:
-                release_first_update.set()
-
+    # Set up after the login, so that only the requests under test reach the held update. The
+    # request that locks the session first reaches update first, and stays there until the
+    # other one is queued behind its lock.
+    @pytest.fixture
+    def held_update(
+        self, mocker: MockerFixture, independent_login_tokens: dict[str, str]
+    ) -> FirstCallGate:
+        # The window must not be shorter than the longest wait of the second request, or a slow
+        # run would take its replay for a reuse and revoke the session
+        mocker.patch(
+            "app.services.user_service.settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS",
+            CONCURRENCY_TIMEOUT_SECONDS,
+        )
+        gate = FirstCallGate()
         mocker.patch.object(
-            UserSessionRepository, "update", autospec=True, side_effect=hold_first_update
+            UserSessionRepository,
+            "update",
+            autospec=True,
+            side_effect=gate.wrap(UserSessionRepository.update),
         )
 
+        return gate
+
+    async def stored_session(
+        self, session_factory: async_sessionmaker[AsyncSession], session_id: uuid.UUID
+    ):
+        async with session_factory() as session:
+            return (
+                await session.execute(
+                    select(
+                        UserSession.refresh_generation,
+                        UserSession.revoked_at,
+                        UserSession.revoked_reason,
+                    ).where(UserSession.id == session_id)
+                )
+            ).one()
+
+    async def test_concurrent_refresh_with_the_same_token_returns_the_same_successor(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+        held_update: FirstCallGate,
+    ):
+        refresh_payload = {"refresh_token": independent_login_tokens["refresh_token"]}
+
         with capture_logs() as logs:
-            first_response, second_response, _ = await run_concurrently(
+            first_response, second_response = await run_second_behind_first(
                 independent_client.post(API_AUTH_REFRESH_URL, json=refresh_payload),
                 independent_client.post(API_AUTH_REFRESH_URL, json=refresh_payload),
-                release_when_second_request_waits(),
+                gate=held_update,
+                session_factory=independent_session_factory,
             )
 
         assert first_response.status_code == status.HTTP_200_OK
@@ -1448,20 +1465,80 @@ class TestConcurrentRefresh:
             log["match"] for log in logs if log["event"] == "user_session_refresh_success"
         )
         assert refresh_matches == ["current", "previous_in_grace"]
-        async with independent_session_factory() as session:
-            stored_session = (
-                await session.execute(
-                    select(UserSession.refresh_generation, UserSession.revoked_at).where(
-                        UserSession.id == session_id
-                    )
-                )
-            ).one()
+        stored_session = await self.stored_session(independent_session_factory, session_id)
         assert stored_session.refresh_generation == GENERATION_AFTER_ONE_REFRESH
         assert stored_session.revoked_at is None
         follow_up_response = await independent_client.post(
             API_AUTH_REFRESH_URL, json={"refresh_token": successor_token}
         )
         assert follow_up_response.status_code == status.HTTP_200_OK
+
+    async def test_logout_with_the_old_token_ends_the_session_after_a_concurrent_refresh(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+        held_update: FirstCallGate,
+    ):
+        old_payload = {"refresh_token": independent_login_tokens["refresh_token"]}
+
+        with capture_logs() as logs:
+            refresh_response, logout_response = await run_second_behind_first(
+                independent_client.post(API_AUTH_REFRESH_URL, json=old_payload),
+                independent_client.post(API_AUTH_LOGOUT_URL, json=old_payload),
+                gate=held_update,
+                session_factory=independent_session_factory,
+            )
+
+        assert refresh_response.status_code == status.HTTP_200_OK
+        assert logout_response.status_code == status.HTTP_204_NO_CONTENT
+        new_tokens = refresh_response.json()
+        stored_session = await self.stored_session(independent_session_factory, session_id)
+        assert stored_session.revoked_reason == SessionRevocationReason.LOGOUT
+        new_refresh_response = await independent_client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": new_tokens["refresh_token"]}
+        )
+        assert new_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        new_access_response = await independent_client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {new_tokens['access_token']}"}
+        )
+        assert new_access_response.status_code == status.HTTP_401_UNAUTHORIZED
+        refresh_matches = [
+            log["match"] for log in logs if log["event"] == "user_session_refresh_success"
+        ]
+        logout_matches = [log["match"] for log in logs if log["event"] == "user_logout_success"]
+        assert refresh_matches == ["current"]
+        assert logout_matches == ["previous_in_grace"]
+
+    async def test_refresh_after_a_concurrent_logout_is_rejected(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+        held_update: FirstCallGate,
+    ):
+        payload = {"refresh_token": independent_login_tokens["refresh_token"]}
+
+        with capture_logs() as logs:
+            logout_response, refresh_response = await run_second_behind_first(
+                independent_client.post(API_AUTH_LOGOUT_URL, json=payload),
+                independent_client.post(API_AUTH_REFRESH_URL, json=payload),
+                gate=held_update,
+                session_factory=independent_session_factory,
+            )
+
+        assert logout_response.status_code == status.HTTP_204_NO_CONTENT
+        assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        stored_session = await self.stored_session(independent_session_factory, session_id)
+        assert stored_session.revoked_reason == SessionRevocationReason.LOGOUT
+        logout_matches = [log["match"] for log in logs if log["event"] == "user_logout_success"]
+        revoked_session_events = [
+            log for log in logs if log["event"] == "refresh_token_used_on_revoked_session"
+        ]
+        assert logout_matches == ["current"]
+        assert len(revoked_session_events) == 1
 
 
 class TestTokenLogging:

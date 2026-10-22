@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from decimal import Decimal
 from typing import Any, TypeVar
 
@@ -22,6 +22,7 @@ from tests.integration.endpoints.types import (
 )
 
 T = TypeVar("T")
+U = TypeVar("U")
 
 # Upper bound for every wait in a concurrency test, so a deadlock fails instead of hanging
 CONCURRENCY_TIMEOUT_SECONDS = 10
@@ -110,6 +111,68 @@ async def wait_for_row_lock_waiters(
     async with asyncio.timeout(timeout_seconds):
         while await count_row_lock_waiters(session_factory) < expected_waiters:
             await asyncio.sleep(LOCK_POLL_INTERVAL_SECONDS)
+
+
+class FirstCallGate:
+    """Holds the first call of an async function until released, and tells when it is held.
+
+    The held call is the one that got there first: for a call made under a row lock, that is
+    the request that took the lock. Later calls pass at once, and so does the case where no
+    later call comes. A release that never comes fails the held call after the time limit.
+    """
+
+    def __init__(self, *, timeout_seconds: float = CONCURRENCY_TIMEOUT_SECONDS):
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self._timeout_seconds = timeout_seconds
+        self._first_call_taken = False
+
+    def wrap(self, original: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+        async def hold_first_call(*args: Any, **kwargs: Any) -> T:
+            if not self._first_call_taken:
+                self._first_call_taken = True
+                self.entered.set()
+                await asyncio.wait_for(self.release.wait(), timeout=self._timeout_seconds)
+
+            return await original(*args, **kwargs)
+
+        return hold_first_call
+
+
+async def run_second_behind_first(
+    first: Coroutine[Any, Any, T],
+    second: Coroutine[Any, Any, U],
+    *,
+    gate: FirstCallGate,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[T, U]:
+    """Run two requests so that the first holds the row lock while the second queues behind it.
+
+    The second starts only once the first is held by the gate, and the gate is released once
+    the second is really waiting for the lock.
+    """
+
+    async def start_second_when_first_is_held() -> U:
+        try:
+            await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+        except BaseException:
+            # Never started, so it must be closed or it is reported as never awaited
+            second.close()
+            raise
+
+        return await second
+
+    async def release_when_second_waits() -> None:
+        try:
+            await wait_for_row_lock_waiters(session_factory)
+        finally:
+            gate.release.set()
+
+    first_result, second_result, _ = await run_concurrently(
+        first, start_second_when_first_is_held(), release_when_second_waits()
+    )
+
+    return first_result, second_result
 
 
 def assert_field_error(

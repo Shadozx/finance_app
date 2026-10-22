@@ -1,9 +1,16 @@
+import asyncio
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Currency
-from tests.integration.endpoints.helpers import run_concurrently, wait_for_row_lock_waiters
+from tests.integration.endpoints.helpers import (
+    CONCURRENCY_TIMEOUT_SECONDS,
+    FirstCallGate,
+    run_concurrently,
+    wait_for_row_lock_waiters,
+)
 
 CURRENCY_CODE = "USD"
 CURRENCY_SYMBOL = "$"
@@ -12,6 +19,9 @@ UPDATED_CURRENCY_NAME = "Updated Dollar"
 
 # Short on purpose: nobody queues in the timeout test, so a full wait would be wasted
 SHORT_TIMEOUT_SECONDS = 0.2
+
+FIRST_VALUE = "first"
+SECOND_VALUE = "second"
 
 
 class TestWaitForRowLockWaiters:
@@ -64,3 +74,47 @@ class TestWaitForRowLockWaiters:
             await wait_for_row_lock_waiters(
                 independent_session_factory, timeout_seconds=SHORT_TIMEOUT_SECONDS
             )
+
+
+class TestFirstCallGate:
+    async def test_holds_only_the_first_call_until_released(self):
+        calls = []
+
+        async def record(value: str) -> str:
+            calls.append(value)
+            return value
+
+        gate = FirstCallGate()
+        wrapped = gate.wrap(record)
+
+        async def check_while_first_call_is_held():
+            try:
+                await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+                assert calls == []
+
+                assert await wrapped(SECOND_VALUE) == SECOND_VALUE
+                assert calls == [SECOND_VALUE]
+            finally:
+                gate.release.set()
+
+        first_result, _ = await run_concurrently(
+            wrapped(FIRST_VALUE), check_while_first_call_is_held()
+        )
+
+        assert first_result == FIRST_VALUE
+        assert calls == [SECOND_VALUE, FIRST_VALUE]
+
+    async def test_fails_the_first_call_when_it_is_never_released(self):
+        calls = []
+
+        async def record(value: str) -> str:
+            calls.append(value)
+            return value
+
+        gate = FirstCallGate(timeout_seconds=SHORT_TIMEOUT_SECONDS)
+
+        with pytest.raises(TimeoutError):
+            await gate.wrap(record)(FIRST_VALUE)
+
+        assert gate.entered.is_set()
+        assert calls == []
