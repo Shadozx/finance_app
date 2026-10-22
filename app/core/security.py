@@ -127,7 +127,9 @@ def hash_refresh_secret(secret: str) -> str:
 
 def _sign_refresh_token(session_id: UUID, secret: str) -> str:
     message = f"refresh-token:{session_id}.{secret}"
-    return hmac.new(settings.SECRET_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(
+        settings.REFRESH_HMAC_KEY.encode(), message.encode(), hashlib.sha256
+    ).hexdigest()
 
 
 # Keyed, because emails have little entropy: a plain hash is reversed with a list of known addresses.

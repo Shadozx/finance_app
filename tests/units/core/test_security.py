@@ -5,7 +5,7 @@ from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 from threading import Event, Lock, get_ident
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pytest_mock import MockerFixture
@@ -346,6 +346,13 @@ class TestFingerprintEmail:
         assert fingerprint_email(email) != original_fingerprint
 
 
+def sign_refresh_message(key: str, session_id: UUID, secret: str) -> str:
+    """Refresh signature computed straight from the format, independent of the app code."""
+    message = f"refresh-token:{session_id}.{secret}"
+
+    return hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 class TestRefreshToken:
     def test_create_refresh_token_round_trips_through_parser(self):
         session_id = uuid4()
@@ -402,10 +409,25 @@ class TestRefreshToken:
         secret = generate_refresh_secret()
         message_without_prefix = f"{session_id}.{secret}"
         signature = hmac.new(
-            settings.SECRET_KEY.encode(), message_without_prefix.encode(), hashlib.sha256
+            settings.REFRESH_HMAC_KEY.encode(), message_without_prefix.encode(), hashlib.sha256
         ).hexdigest()
 
         assert not verify_refresh_token_signature(session_id, secret, signature)
+
+    def test_verify_refresh_token_signature_rejects_signature_made_with_the_secret_key(self):
+        session_id = uuid4()
+        secret = generate_refresh_secret()
+        signature = sign_refresh_message(settings.SECRET_KEY, session_id, secret)
+
+        assert not verify_refresh_token_signature(session_id, secret, signature)
+
+    def test_verify_refresh_token_signature_accepts_signature_made_with_the_refresh_key(self):
+        session_id = uuid4()
+        secret = generate_refresh_secret()
+        signature = sign_refresh_message(settings.REFRESH_HMAC_KEY, session_id, secret)
+
+        assert verify_refresh_token_signature(session_id, secret, signature)
+        assert create_refresh_token(session_id, secret) == f"{session_id}.{secret}.{signature}"
 
     @pytest.mark.parametrize(
         "token",
@@ -442,6 +464,74 @@ class TestRefreshToken:
         assert hashed_secret == hash_refresh_secret(secret)
         assert hashed_secret != secret
         assert len(hashed_secret) == sha256_hex_length
+
+
+class TestSigningKeyIndependence:
+    @pytest.fixture
+    def email(self):
+        return "user@example.com"
+
+    @pytest.fixture
+    def session_id(self):
+        return uuid4()
+
+    @pytest.fixture
+    def refresh_secret(self):
+        return generate_refresh_secret()
+
+    @pytest.fixture
+    def refresh_signature(self, session_id: UUID, refresh_secret: str):
+        return sign_refresh_message(settings.REFRESH_HMAC_KEY, session_id, refresh_secret)
+
+    @pytest.fixture
+    def data(self):
+        return {"sub": "1"}
+
+    @pytest.fixture
+    def access_token(self, data: dict):
+        return create_access_token(data)
+
+    def test_rotating_the_refresh_key_invalidates_refresh_tokens_but_not_access_tokens(
+        self,
+        mocker: MockerFixture,
+        data: dict,
+        session_id: UUID,
+        refresh_secret: str,
+        refresh_signature: str,
+        access_token: str,
+    ):
+        assert verify_refresh_token_signature(session_id, refresh_secret, refresh_signature)
+        rotated_key = f"{settings.REFRESH_HMAC_KEY}-rotated"
+        mocker.patch("app.core.security.settings.REFRESH_HMAC_KEY", rotated_key)
+
+        assert not verify_refresh_token_signature(session_id, refresh_secret, refresh_signature)
+        assert verify_token(access_token)["sub"] == data["sub"]
+
+    def test_rotating_the_secret_key_invalidates_access_tokens_but_not_refresh_tokens(
+        self,
+        mocker: MockerFixture,
+        data: dict,
+        session_id: UUID,
+        refresh_secret: str,
+        refresh_signature: str,
+        access_token: str,
+    ):
+        assert verify_token(access_token)["sub"] == data["sub"]
+        rotated_key = f"{settings.SECRET_KEY}-rotated"
+        mocker.patch("app.core.security.settings.SECRET_KEY", rotated_key)
+
+        with pytest.raises(ValueError, match="Invalid token"):
+            verify_token(access_token)
+        assert verify_refresh_token_signature(session_id, refresh_secret, refresh_signature)
+
+    def test_rotating_the_refresh_key_keeps_the_email_fingerprint(
+        self, mocker: MockerFixture, email: str
+    ):
+        original_fingerprint = fingerprint_email(email)
+        rotated_key = f"{settings.REFRESH_HMAC_KEY}-rotated"
+        mocker.patch("app.core.security.settings.REFRESH_HMAC_KEY", rotated_key)
+
+        assert fingerprint_email(email) == original_fingerprint
 
 
 class TestCreateAccessToken:

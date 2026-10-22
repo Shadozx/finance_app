@@ -41,6 +41,7 @@ jobs:
           POSTGRES_PORT: "5432"
           POSTGRES_DB: test_db
           SECRET_KEY: "test-secret-key-at-least-32-characters-long-xx"
+          REFRESH_HMAC_KEY: "test-refresh-hmac-key-at-least-32-characters-xx"
           JWT_ISSUER: finance-api-test
           JWT_AUDIENCE: finance-api-test
           ENVIRONMENT: dev

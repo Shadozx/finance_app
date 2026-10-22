@@ -3,7 +3,13 @@ import re
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import SESSION_IDLE_EXCEEDS_MAX_MESSAGE, Settings
+from app.core.config import (
+    FORBIDDEN_SECRETS,
+    MIN_SECRET_LENGTH,
+    SESSION_IDLE_EXCEEDS_MAX_MESSAGE,
+    SIGNING_KEY_NAMES,
+    Settings,
+)
 
 TOKEN_LIFETIME_SETTING_NAMES = (
     "ACCESS_TOKEN_EXPIRE_MINUTES",
@@ -18,6 +24,20 @@ JWT_CLAIM_SETTING_NAMES = ("JWT_ISSUER", "JWT_AUDIENCE")
 JWT_ISSUER = "test-issuer"
 JWT_AUDIENCE = "test-audience"
 
+SIGNING_KEY_SETTING_NAMES = ("SECRET_KEY", "REFRESH_HMAC_KEY")
+
+SECRET_KEY = "test-secret-key-that-is-long-enough-for-settings"
+REFRESH_HMAC_KEY = "test-refresh-hmac-key-that-is-long-enough-for-settings"
+
+# Every forbidden value as it is stored, in capitals and padded, which .strip().lower() accepts
+PLACEHOLDER_KEYS = sorted(
+    {
+        variant
+        for placeholder in FORBIDDEN_SECRETS
+        for variant in (placeholder, placeholder.upper(), f"  {placeholder.title()}  ")
+    }
+)
+
 
 @pytest.fixture
 def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
@@ -28,13 +48,16 @@ def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         monkeypatch.delenv(name, raising=False)
     for name in JWT_CLAIM_SETTING_NAMES:
         monkeypatch.delenv(name, raising=False)
+    for name in SIGNING_KEY_SETTING_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
     return {
         "POSTGRES_USER": "test-user",
         "POSTGRES_PASSWORD": "test-password",
         "POSTGRES_SERVER": "localhost",
         "POSTGRES_DB": "test-db",
-        "SECRET_KEY": "test-secret-key-that-is-long-enough-for-settings",
+        "SECRET_KEY": SECRET_KEY,
+        "REFRESH_HMAC_KEY": REFRESH_HMAC_KEY,
         "JWT_ISSUER": JWT_ISSUER,
         "JWT_AUDIENCE": JWT_AUDIENCE,
     }
@@ -204,3 +227,103 @@ class TestJwtClaimSettings:
         settings = make_settings(base_settings, **{field_name: padded_value})
 
         assert getattr(settings, field_name) == padded_value
+
+
+class TestSigningKeySettings:
+    @pytest.mark.parametrize("field_name", SIGNING_KEY_SETTING_NAMES)
+    def test_key_is_required(self, base_settings: dict[str, str], field_name: str):
+        settings_without_key = {
+            name: value for name, value in base_settings.items() if name != field_name
+        }
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(settings_without_key)
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == (field_name,)
+        assert errors[0]["type"] == "missing"
+
+    def test_keys_keep_the_given_values(self, base_settings: dict[str, str]):
+        settings = make_settings(base_settings)
+
+        assert settings.SECRET_KEY == SECRET_KEY
+        assert settings.REFRESH_HMAC_KEY == REFRESH_HMAC_KEY
+
+    @pytest.mark.parametrize("field_name", SIGNING_KEY_SETTING_NAMES)
+    @pytest.mark.parametrize("value", PLACEHOLDER_KEYS, ids=repr)
+    def test_key_rejects_a_placeholder(
+        self, base_settings: dict[str, str], field_name: str, value: str
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, **{field_name: value})
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == (field_name,)
+        assert errors[0]["msg"] == f"Value error, {field_name} is a placeholder or empty."
+
+    @pytest.mark.parametrize("field_name", SIGNING_KEY_SETTING_NAMES)
+    def test_key_rejects_a_value_shorter_than_the_minimum(
+        self, base_settings: dict[str, str], field_name: str
+    ):
+        too_short_key = "x" * (MIN_SECRET_LENGTH - 1)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, **{field_name: too_short_key})
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == (field_name,)
+        assert errors[0]["msg"] == f"Value error, {field_name} must be ≥ {MIN_SECRET_LENGTH} chars."
+
+    @pytest.mark.parametrize("field_name", SIGNING_KEY_SETTING_NAMES)
+    def test_key_accepts_a_value_of_exactly_the_minimum_length(
+        self, base_settings: dict[str, str], field_name: str
+    ):
+        shortest_key = "x" * MIN_SECRET_LENGTH
+
+        settings = make_settings(base_settings, **{field_name: shortest_key})
+
+        assert getattr(settings, field_name) == shortest_key
+
+    def test_refresh_key_must_differ_from_the_secret_key(self, base_settings: dict[str, str]):
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, REFRESH_HMAC_KEY=SECRET_KEY)
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == ("REFRESH_HMAC_KEY",)
+        assert errors[0]["msg"] == "Value error, REFRESH_HMAC_KEY must differ from SECRET_KEY."
+
+    def test_keys_are_compared_exactly(self, base_settings: dict[str, str]):
+        key_with_trailing_space = f"{SECRET_KEY} "
+
+        settings = make_settings(base_settings, REFRESH_HMAC_KEY=key_with_trailing_space)
+
+        assert settings.REFRESH_HMAC_KEY == key_with_trailing_space
+
+    def test_an_invalid_secret_key_does_not_add_a_second_error(self, base_settings: dict[str, str]):
+        too_short_key = "x" * (MIN_SECRET_LENGTH - 1)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, SECRET_KEY=too_short_key)
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == ("SECRET_KEY",)
+
+    def test_a_weak_shared_key_reports_only_that_it_is_weak(self, base_settings: dict[str, str]):
+        weak_key = "x" * (MIN_SECRET_LENGTH - 1)
+
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(base_settings, SECRET_KEY=weak_key, REFRESH_HMAC_KEY=weak_key)
+
+        errors = exc_info.value.errors()
+        assert {error["loc"] for error in errors} == {("SECRET_KEY",), ("REFRESH_HMAC_KEY",)}
+        assert all("must differ" not in error["msg"] for error in errors)
+
+    def test_key_fields_are_declared_in_the_order_the_comparison_relies_on(self):
+        declared_key_names = [name for name in Settings.model_fields if name in SIGNING_KEY_NAMES]
+
+        assert declared_key_names == list(SIGNING_KEY_NAMES)
