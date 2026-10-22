@@ -1143,26 +1143,34 @@ class TestLogout:
         )
         assert refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_logout_wrong_secret_does_not_revoke_session(
+    async def test_logout_wrong_secret_revokes_the_session_as_reuse(
         self,
         client: AsyncClient,
+        test_session: AsyncSession,
         login_tokens: dict[str, str],
     ):
         payload = verify_token(login_tokens["access_token"])
         session_id = uuid.UUID(payload["sid"])
         wrong_token = create_refresh_token(session_id, "wrong-refresh-secret")
+        reason_query = select(UserSession.revoked_reason).where(UserSession.id == session_id)
 
         response = await client.post(API_AUTH_LOGOUT_URL, json={"refresh_token": wrong_token})
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert await test_session.scalar(reason_query) == SessionRevocationReason.REUSE_DETECTED
         access_response = await client.get(
             API_USERS_ME_URL, headers={"Authorization": f"Bearer {login_tokens['access_token']}"}
         )
-        assert access_response.status_code == status.HTTP_200_OK
+        assert access_response.status_code == status.HTTP_401_UNAUTHORIZED
         refresh_response = await client.post(
             API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
         )
-        assert refresh_response.status_code == status.HTTP_200_OK
+        assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        repeated_logout_response = await client.post(
+            API_AUTH_LOGOUT_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
+        assert await test_session.scalar(reason_query) == SessionRevocationReason.REUSE_DETECTED
 
     async def test_logout_previous_token_in_grace_revokes_the_session(
         self,
@@ -1202,9 +1210,7 @@ class TestLogout:
         assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
         assert (await test_session.execute(revocation_query)).one() == revocation
 
-    # Outside the grace window logout still ignores the previous token. A later commit changes
-    # this deliberately: it will be treated as reuse and revoke the session.
-    async def test_logout_previous_token_outside_grace_does_not_revoke_the_session(
+    async def test_logout_previous_token_outside_grace_revokes_the_session_as_reuse(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1227,14 +1233,18 @@ class TestLogout:
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        revoked_at = await test_session.scalar(
-            select(UserSession.revoked_at).where(UserSession.id == session_id)
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
         )
-        assert revoked_at is None
+        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
         current_refresh_response = await client.post(
             API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
         )
-        assert current_refresh_response.status_code == status.HTTP_200_OK
+        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+        access_response = await client.get(
+            API_USERS_ME_URL, headers={"Authorization": f"Bearer {current_tokens['access_token']}"}
+        )
+        assert access_response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestRefreshGeneration:
@@ -1522,11 +1532,6 @@ class TestTokenLogging:
                 API_AUTH_REFRESH_URL, json={"refresh_token": forged_refresh_token}
             )
             assert forged_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
-            wrong_refresh_token = create_refresh_token(session_id, wrong_secret)
-            failed_logout_response = await client.post(
-                API_AUTH_LOGOUT_URL, json={"refresh_token": wrong_refresh_token}
-            )
-            assert failed_logout_response.status_code == status.HTTP_204_NO_CONTENT
             logout_response = await client.post(
                 API_AUTH_LOGOUT_URL, json={"refresh_token": rotated_tokens["refresh_token"]}
             )
@@ -1547,12 +1552,29 @@ class TestTokenLogging:
             )
             assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
 
+            # A session of its own: a logout with a stale token revokes it, so the logout
+            # above must not share it
+            reuse_logout_login_response = await client.post(
+                API_AUTH_LOGIN_URL,
+                json={"email": registered_user["email"], "password": registered_user["password"]},
+            )
+            assert reuse_logout_login_response.status_code == status.HTTP_200_OK
+            reuse_logout_tokens = reuse_logout_login_response.json()
+            reuse_logout_session_id = uuid.UUID(
+                verify_token(reuse_logout_tokens["access_token"])["sid"]
+            )
+            wrong_refresh_token = create_refresh_token(reuse_logout_session_id, wrong_secret)
+            reuse_logout_response = await client.post(
+                API_AUTH_LOGOUT_URL, json={"refresh_token": wrong_refresh_token}
+            )
+            assert reuse_logout_response.status_code == status.HTTP_204_NO_CONTENT
+
         expected_events = {
             "user_authenticate_success",
             "user_session_refresh_success",
             "refresh_token_rejected_session_not_found",
             "refresh_token_rejected_invalid_signature",
-            "logout_ignored_stale_refresh_token",
+            "logout_token_reuse_detected",
             "user_logout_success",
             "refresh_token_reuse_detected",
         }
@@ -1567,7 +1589,7 @@ class TestTokenLogging:
             forged_secret,
             forged_signature,
         ]
-        for tokens in (initial_tokens, rotated_tokens, compromised_tokens):
+        for tokens in (initial_tokens, rotated_tokens, compromised_tokens, reuse_logout_tokens):
             parsed_token = parse_refresh_token(tokens["refresh_token"])
             assert parsed_token is not None
             sensitive_values.extend(

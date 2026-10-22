@@ -135,6 +135,14 @@ class UserService:
             expires_in=expires_in,
         )
 
+    async def _revoke_for_reuse(self, user_session: UserSession, now: datetime) -> None:
+        # Commits here: refresh raises right after, and the rollback at the end of the request
+        # would undo a revocation that is not committed yet
+        user_session.revoked_at = now
+        user_session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
+        await self.user_session_repository.update(user_session)
+        await self.unit_of_work.commit()
+
     async def _resolve_refresh_token(self, token: str) -> ResolvedRefreshToken | None:
         parsed_token = parse_refresh_token(token)
         if parsed_token is None:
@@ -275,10 +283,7 @@ class UserService:
         match = resolved.match
         now = resolved.now
         if match is RefreshTokenMatch.MISMATCH:
-            user_session.revoked_at = now
-            user_session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
-            await self.user_session_repository.update(user_session)
-            await self.unit_of_work.commit()
+            await self._revoke_for_reuse(user_session, now)
 
             logger.warning(
                 "refresh_token_reuse_detected",
@@ -329,7 +334,13 @@ class UserService:
         match = resolved.match
         now = resolved.now
         if match is RefreshTokenMatch.MISMATCH:
-            logger.warning("logout_ignored_stale_refresh_token", session_id=str(user_session.id))
+            await self._revoke_for_reuse(user_session, now)
+
+            logger.warning(
+                "logout_token_reuse_detected",
+                session_id=str(user_session.id),
+                user_id=user_session.user_id,
+            )
             return
 
         user_session.revoked_at = now

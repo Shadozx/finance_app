@@ -1107,27 +1107,16 @@ class TestLogout:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    @pytest.mark.parametrize(
-        "session_exists", [False, True], ids=["missing-session", "wrong-secret"]
-    )
-    async def test_logout_ignores_unmatched_token(
+    async def test_logout_ignores_unknown_session(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         active_user_session: UserSession,
-        session_exists: bool,
     ):
         wrong_secret = "wrong-refresh-secret"
         refresh_token = create_refresh_token(active_user_session.id, wrong_secret)
-        user_session_repo_mock.get_by_id_for_update.return_value = (
-            active_user_session if session_exists else None
-        )
-        expected_event = (
-            "logout_ignored_stale_refresh_token"
-            if session_exists
-            else "refresh_token_rejected_session_not_found"
-        )
+        user_session_repo_mock.get_by_id_for_update.return_value = None
 
         with capture_logs() as logs:
             result = await user_service.logout(refresh_token)
@@ -1135,14 +1124,52 @@ class TestLogout:
         assert result is None
         assert logs == [
             {
-                "event": expected_event,
+                "event": "refresh_token_rejected_session_not_found",
                 "session_id": str(active_user_session.id),
                 "log_level": "warning",
             }
         ]
-        assert active_user_session.revoked_at is None
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
+
+    async def test_logout_wrong_secret_revokes_the_session_as_reuse(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        active_user_session: UserSession,
+        session_now: datetime,
+    ):
+        wrong_secret = "wrong-refresh-secret"
+        refresh_token = create_refresh_token(active_user_session.id, wrong_secret)
+        original_hash = active_user_session.refresh_token_hash
+        original_generation = active_user_session.refresh_generation
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+
+        def commit_revocation():
+            user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
+            assert active_user_session.revoked_at == session_now
+            assert active_user_session.revoked_reason == SessionRevocationReason.REUSE_DETECTED
+
+        unit_of_work_mock.commit.side_effect = commit_revocation
+
+        with capture_logs() as logs:
+            result = await user_service.logout(refresh_token)
+
+        assert result is None
+        assert active_user_session.refresh_token_hash == original_hash
+        assert active_user_session.refresh_generation == original_generation
+        assert active_user_session.revoked_at == session_now
+        assert active_user_session.revoked_reason == SessionRevocationReason.REUSE_DETECTED
+        assert logs == [
+            {
+                "event": "logout_token_reuse_detected",
+                "session_id": str(active_user_session.id),
+                "user_id": active_user_session.user_id,
+                "log_level": "warning",
+            }
+        ]
+        unit_of_work_mock.commit.assert_awaited_once()
 
     @pytest.mark.parametrize(
         "rotation_age",
@@ -1198,9 +1225,7 @@ class TestLogout:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    # Outside the grace window the previous token is still ignored by logout. A later commit
-    # changes this deliberately: it will be treated as reuse and revoke the session.
-    async def test_logout_ignores_previous_token_outside_grace(
+    async def test_logout_previous_token_outside_grace_revokes_the_session_as_reuse(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1211,9 +1236,12 @@ class TestLogout:
     ):
         grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
         one_microsecond = timedelta(microseconds=1)
-        active_user_session.refresh_token_hash = hash_refresh_secret(RANDOM_CURRENT_SECRET)
-        active_user_session.previous_refresh_token_hash = hash_refresh_secret(refresh_secret)
-        active_user_session.rotated_at = session_now - grace_interval - one_microsecond
+        current_hash = hash_refresh_secret(RANDOM_CURRENT_SECRET)
+        previous_hash = hash_refresh_secret(refresh_secret)
+        rotated_at = session_now - grace_interval - one_microsecond
+        active_user_session.refresh_token_hash = current_hash
+        active_user_session.previous_refresh_token_hash = previous_hash
+        active_user_session.rotated_at = rotated_at
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
         refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
 
@@ -1221,17 +1249,24 @@ class TestLogout:
             result = await user_service.logout(refresh_token)
 
         assert result is None
-        assert active_user_session.revoked_at is None
-        assert active_user_session.revoked_reason is None
+        assert_model_fields(
+            active_user_session,
+            refresh_token_hash=current_hash,
+            previous_refresh_token_hash=previous_hash,
+            rotated_at=rotated_at,
+            revoked_at=session_now,
+            revoked_reason=SessionRevocationReason.REUSE_DETECTED,
+        )
         assert logs == [
             {
-                "event": "logout_ignored_stale_refresh_token",
+                "event": "logout_token_reuse_detected",
                 "session_id": str(active_user_session.id),
+                "user_id": active_user_session.user_id,
                 "log_level": "warning",
             }
         ]
-        user_session_repo_mock.update.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
+        unit_of_work_mock.commit.assert_awaited_once()
 
 
 class TestUpdateUsername:
