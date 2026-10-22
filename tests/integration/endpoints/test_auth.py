@@ -30,6 +30,7 @@ from app.models import (
     User,
     UserSession,
 )
+from app.repositories import UserSessionRepository
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
@@ -42,6 +43,7 @@ from tests.integration.endpoints.helpers import (
     register_payload,
     run_concurrently,
     session_id_from_headers,
+    wait_for_row_lock_waiters,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
 from tests.jwt_helpers import (
@@ -72,6 +74,7 @@ ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat", "iss", "aud"}
 
 # A secret of the kind issued before secrets were derived from the generation
 LEGACY_RANDOM_SECRET = "legacy-random-secret"
+PREVIOUS_RANDOM_SECRET = "previous-random-secret"
 
 GENERATION_AFTER_ONE_REFRESH = INITIAL_REFRESH_GENERATION + 1
 GENERATION_AFTER_TWO_REFRESHES = INITIAL_REFRESH_GENERATION + 2
@@ -639,7 +642,7 @@ class TestRefresh:
         assert retry_response.status_code == status.HTTP_200_OK
         assert retry_response.headers["Cache-Control"] == "no-store"
         retry_tokens = retry_response.json()
-        assert retry_tokens["refresh_token"] != current_tokens["refresh_token"]
+        assert retry_tokens["refresh_token"] == current_tokens["refresh_token"]
         assert retry_tokens["refresh_token"] != login_tokens["refresh_token"]
         preserved_rotation = (await test_session.execute(rotation_query)).one()
         assert (
@@ -658,40 +661,79 @@ class TestRefresh:
         )
         assert next_refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_refresh_displaced_current_token_after_grace_rotation_revokes_session(
+    async def test_refresh_grace_replay_keeps_the_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
         login_tokens: dict[str, str],
     ):
-        # A retry in the grace window displaces the pair issued by the first refresh, and
-        # later use of that pair is treated as reuse. This is acceptable only if the client
-        # serializes refresh calls with a mutex: then it retries only when the first
-        # response never arrived, so it never holds the displaced pair. Without the mutex,
-        # two parallel refreshes can leave the client with the displaced pair, and its next
-        # refresh revokes the session.
         payload = {"refresh_token": login_tokens["refresh_token"]}
         response = await client.post(API_AUTH_REFRESH_URL, json=payload)
         assert response.status_code == status.HTTP_200_OK
-        displaced_tokens = response.json()
+        first_tokens = response.json()
         retry_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
         assert retry_response.status_code == status.HTTP_200_OK
-        current_tokens = retry_response.json()
+        retry_tokens = retry_response.json()
+        assert retry_tokens["refresh_token"] == first_tokens["refresh_token"]
 
-        reuse_response = await client.post(
-            API_AUTH_REFRESH_URL, json={"refresh_token": displaced_tokens["refresh_token"]}
+        next_refresh_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": first_tokens["refresh_token"]}
         )
 
-        assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
-        current_refresh_response = await client.post(
-            API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
+        assert next_refresh_response.status_code == status.HTTP_200_OK
+        session_id = uuid.UUID(verify_token(first_tokens["access_token"])["sid"])
+        revoked_at = await test_session.scalar(
+            select(UserSession.revoked_at).where(UserSession.id == session_id)
         )
-        assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
-        session_id = uuid.UUID(verify_token(current_tokens["access_token"])["sid"])
-        revoked_reason = await test_session.scalar(
-            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        assert revoked_at is None
+
+    async def test_refresh_grace_replay_is_unavailable_when_the_current_secret_is_random(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        session_id = uuid.UUID(verify_token(login_tokens["access_token"])["sid"])
+        await test_session.execute(
+            update(UserSession)
+            .where(UserSession.id == session_id)
+            .values(
+                refresh_token_hash=hash_refresh_secret(LEGACY_RANDOM_SECRET),
+                previous_refresh_token_hash=hash_refresh_secret(PREVIOUS_RANDOM_SECRET),
+                rotated_at=utc_now(),
+            )
         )
-        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
+        state_query = select(
+            UserSession.refresh_token_hash,
+            UserSession.previous_refresh_token_hash,
+            UserSession.rotated_at,
+            UserSession.refresh_generation,
+            UserSession.last_used_at,
+            UserSession.expires_at,
+            UserSession.revoked_at,
+        ).where(UserSession.id == session_id)
+        original_state = (await test_session.execute(state_query)).one()
+
+        with capture_logs() as logs:
+            replay_response = await client.post(
+                API_AUTH_REFRESH_URL,
+                json={"refresh_token": create_refresh_token(session_id, PREVIOUS_RANDOM_SECRET)},
+            )
+
+        assert replay_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert (await test_session.execute(state_query)).one() == original_state
+        assert [log for log in logs if log["event"] == "refresh_replay_unavailable"] == [
+            {
+                "event": "refresh_replay_unavailable",
+                "session_id": str(session_id),
+                "log_level": "warning",
+            }
+        ]
+        current_response = await client.post(
+            API_AUTH_REFRESH_URL,
+            json={"refresh_token": create_refresh_token(session_id, LEGACY_RANDOM_SECRET)},
+        )
+        assert current_response.status_code == status.HTTP_200_OK
 
     @pytest.mark.parametrize("session_state", ["expired", "revoked", "unknown"])
     async def test_refresh_rejects_inactive_session(
@@ -1217,9 +1259,7 @@ class TestRefreshGeneration:
             await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
         )
 
-    # A retry in the grace window writes a new secret, so it takes a new number. Once the
-    # grace branch stops writing a secret, this expectation changes with it.
-    async def test_refresh_in_grace_window_advances_the_generation(
+    async def test_refresh_in_grace_window_keeps_the_generation(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1234,7 +1274,7 @@ class TestRefreshGeneration:
 
         assert retry_response.status_code == status.HTTP_200_OK
         assert (
-            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_ONE_REFRESH
         )
 
     async def test_refresh_reuse_keeps_the_generation_and_revokes_the_session(
@@ -1281,6 +1321,86 @@ class TestRefreshGeneration:
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
+
+
+class TestConcurrentRefresh:
+    async def test_concurrent_refresh_with_the_same_token_returns_the_same_successor(
+        self,
+        mocker: MockerFixture,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+    ):
+        # The window must not be shorter than the longest wait of the second request, or a slow
+        # run would take its replay for a reuse and revoke the session
+        mocker.patch(
+            "app.services.user_service.settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS",
+            CONCURRENCY_TIMEOUT_SECONDS,
+        )
+        payload = register_payload()
+        register_response = await independent_client.post(API_AUTH_REGISTER_URL, json=payload)
+        assert register_response.status_code == status.HTTP_201_CREATED
+        login_response = await independent_client.post(
+            API_AUTH_LOGIN_URL, json={"email": payload["email"], "password": payload["password"]}
+        )
+        assert login_response.status_code == status.HTTP_200_OK
+        login_tokens = login_response.json()
+        session_id = uuid.UUID(verify_token(login_tokens["access_token"])["sid"])
+        refresh_payload = {"refresh_token": login_tokens["refresh_token"]}
+
+        # The request that locks the session first reaches update first, and stays there until
+        # the other one is queued behind its lock
+        first_update_taken = False
+        release_first_update = asyncio.Event()
+        original_update = UserSessionRepository.update
+
+        async def hold_first_update(repository: UserSessionRepository, user_session: UserSession):
+            nonlocal first_update_taken
+            if not first_update_taken:
+                first_update_taken = True
+                await asyncio.wait_for(
+                    release_first_update.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS
+                )
+            return await original_update(repository, user_session)
+
+        async def release_when_second_request_waits():
+            try:
+                await wait_for_row_lock_waiters(independent_session_factory)
+            finally:
+                release_first_update.set()
+
+        mocker.patch.object(
+            UserSessionRepository, "update", autospec=True, side_effect=hold_first_update
+        )
+
+        with capture_logs() as logs:
+            first_response, second_response, _ = await run_concurrently(
+                independent_client.post(API_AUTH_REFRESH_URL, json=refresh_payload),
+                independent_client.post(API_AUTH_REFRESH_URL, json=refresh_payload),
+                release_when_second_request_waits(),
+            )
+
+        assert first_response.status_code == status.HTTP_200_OK
+        assert second_response.status_code == status.HTTP_200_OK
+        successor_token = first_response.json()["refresh_token"]
+        assert second_response.json()["refresh_token"] == successor_token
+        refresh_matches = sorted(
+            log["match"] for log in logs if log["event"] == "user_session_refresh_success"
+        )
+        assert refresh_matches == ["current", "previous_in_grace"]
+        async with independent_session_factory() as session:
+            stored_session = (
+                await session.execute(
+                    select(UserSession.refresh_generation, UserSession.revoked_at).where(
+                        UserSession.id == session_id
+                    )
+                )
+            ).one()
+        assert stored_session.refresh_generation == GENERATION_AFTER_ONE_REFRESH
+        assert stored_session.revoked_at is None
+        follow_up_response = await independent_client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": successor_token}
+        )
+        assert follow_up_response.status_code == status.HTTP_200_OK
 
 
 class TestTokenLogging:

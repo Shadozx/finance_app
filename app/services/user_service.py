@@ -2,6 +2,7 @@ import hmac
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+from typing import assert_never
 from uuid import UUID, uuid4
 
 import structlog
@@ -103,9 +104,26 @@ class UserService:
 
         return UserResponse.model_validate(created_user)
 
-    def _issue_tokens(self, user_session: UserSession) -> TokenResponse:
+    def _set_refresh_secret(self, user_session: UserSession) -> str:
+        """Derive the secret of the session's current generation and store its hash."""
         secret = derive_refresh_secret(user_session.id, user_session.refresh_generation)
         user_session.refresh_token_hash = hash_refresh_secret(secret)
+
+        return secret
+
+    def _replayable_secret(self, user_session: UserSession) -> str | None:
+        """Secret of the current generation, if that is the one the stored hash belongs to.
+
+        A session whose current secret was issued at random, before secrets were derived,
+        cannot hand it out again: only its hash is known.
+        """
+        secret = derive_refresh_secret(user_session.id, user_session.refresh_generation)
+        if not hmac.compare_digest(hash_refresh_secret(secret), user_session.refresh_token_hash):
+            return None
+
+        return secret
+
+    def _issue_tokens(self, user_session: UserSession, secret: str) -> TokenResponse:
         expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
         return TokenResponse(
@@ -233,7 +251,8 @@ class UserService:
             last_used_at=now,
             expires_at=now + timedelta(days=settings.SESSION_IDLE_DAYS),
         )
-        tokens = self._issue_tokens(user_session)
+        secret = self._set_refresh_secret(user_session)
+        tokens = self._issue_tokens(user_session, secret)
 
         await self.user_session_repository.add(user_session)
 
@@ -271,15 +290,26 @@ class UserService:
         if match is RefreshTokenMatch.CURRENT:
             user_session.previous_refresh_token_hash = user_session.refresh_token_hash
             user_session.rotated_at = now
+            user_session.refresh_generation += 1
+            secret = self._set_refresh_secret(user_session)
+        elif match is RefreshTokenMatch.PREVIOUS_IN_GRACE:
+            # A replay inside the grace window gets the successor the first refresh issued, so
+            # nothing is rotated. It is checked before the session is touched, because a
+            # replay that cannot be served must leave the session as it was.
+            replayed_secret = self._replayable_secret(user_session)
+            if replayed_secret is None:
+                logger.warning("refresh_replay_unavailable", session_id=str(user_session.id))
+                raise AuthenticationException("Invalid or expired token")
+            secret = replayed_secret
+        else:
+            assert_never(match)
 
         user_session.last_used_at = now
         user_session.expires_at = min(
             now + timedelta(days=settings.SESSION_IDLE_DAYS),
             user_session.created_at + timedelta(days=settings.SESSION_MAX_DAYS),
         )
-        # Every branch that gets here writes a new secret, so every one gets a new number
-        user_session.refresh_generation += 1
-        tokens = self._issue_tokens(user_session)
+        tokens = self._issue_tokens(user_session, secret)
 
         await self.user_session_repository.update(user_session)
         await self.unit_of_work.commit()

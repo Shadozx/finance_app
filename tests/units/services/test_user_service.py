@@ -44,6 +44,21 @@ from tests.units.services.helpers import (
 
 SESSION_TIME_OFFSET = timedelta(days=1)
 
+# A current secret of the kind issued before secrets were derived from the generation
+RANDOM_CURRENT_SECRET = "random-current-secret"
+
+# Every session field a refresh could change
+SESSION_FIELDS = (
+    "refresh_token_hash",
+    "previous_refresh_token_hash",
+    "refresh_generation",
+    "rotated_at",
+    "last_used_at",
+    "expires_at",
+    "revoked_at",
+    "revoked_reason",
+)
+
 
 class TestRegister:
     @pytest.fixture
@@ -861,7 +876,7 @@ class TestRefreshSession:
         [timedelta(seconds=1), timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)],
         ids=["within-grace", "at-grace-boundary"],
     )
-    async def test_refresh_session_previous_token_rotates_without_extending_grace(
+    async def test_refresh_session_previous_token_replays_the_current_successor(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -871,7 +886,10 @@ class TestRefreshSession:
         session_now: datetime,
         rotation_age: timedelta,
     ):
-        current_hash = hash_refresh_secret("current-refresh-secret")
+        current_secret = derive_refresh_secret(
+            active_user_session.id, active_user_session.refresh_generation
+        )
+        current_hash = hash_refresh_secret(current_secret)
         previous_hash = hash_refresh_secret(refresh_secret)
         rotated_at = session_now - rotation_age
         active_user_session.refresh_token_hash = current_hash
@@ -886,15 +904,13 @@ class TestRefreshSession:
 
         parsed_token = parse_refresh_token(result.refresh_token)
         assert parsed_token is not None
-        session_id, new_secret, signature = parsed_token
-        assert verify_refresh_token_signature(session_id, new_secret, signature)
+        session_id, replayed_secret, signature = parsed_token
+        assert verify_refresh_token_signature(session_id, replayed_secret, signature)
         assert session_id == active_user_session.id
-        assert new_secret == derive_refresh_secret(session_id, original_generation + 1)
-        assert active_user_session.refresh_token_hash == hash_refresh_secret(new_secret)
-        assert active_user_session.refresh_token_hash != current_hash
-        assert active_user_session.refresh_token_hash != previous_hash
+        assert replayed_secret == current_secret
+        assert active_user_session.refresh_token_hash == current_hash
         assert active_user_session.previous_refresh_token_hash == previous_hash
-        assert active_user_session.refresh_generation == original_generation + 1
+        assert active_user_session.refresh_generation == original_generation
         assert active_user_session.rotated_at == rotated_at
         assert active_user_session.revoked_at is None
         assert active_user_session.revoked_reason is None
@@ -914,6 +930,37 @@ class TestRefreshSession:
         user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(session_id)
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
+
+    async def test_refresh_session_previous_token_replay_is_unavailable_for_a_random_secret(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        active_user_session: UserSession,
+        refresh_secret: str,
+        session_now: datetime,
+    ):
+        active_user_session.refresh_token_hash = hash_refresh_secret(RANDOM_CURRENT_SECRET)
+        active_user_session.previous_refresh_token_hash = hash_refresh_secret(refresh_secret)
+        active_user_session.rotated_at = session_now
+        untouched_fields = {name: getattr(active_user_session, name) for name in SESSION_FIELDS}
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+        refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
+
+        with capture_logs() as logs:
+            with pytest.raises(AuthenticationException, match="Invalid or expired token"):
+                await user_service.refresh_session(refresh_token)
+
+        assert_model_fields(active_user_session, **untouched_fields)
+        assert logs == [
+            {
+                "event": "refresh_replay_unavailable",
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
+        user_session_repo_mock.update.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
 
     @pytest.mark.parametrize(
         "rotation_state",
