@@ -1,7 +1,7 @@
 import asyncio
+import base64
 import hashlib
 import hmac
-import secrets
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -117,8 +117,12 @@ class ParsedRefreshToken(NamedTuple):
     signature: str
 
 
-def generate_refresh_secret() -> str:
-    return secrets.token_urlsafe(32)
+def derive_refresh_secret(session_id: UUID, generation: int) -> str:
+    # The message format is fixed for good: changing it changes every derived secret, and a
+    # later library must derive from exactly this string.
+    message = f"refresh-secret:{session_id}:{generation}"
+    digest = hmac.new(settings.REFRESH_SECRET_KEY.encode(), message.encode(), hashlib.sha256)
+    return base64.urlsafe_b64encode(digest.digest()).rstrip(b"=").decode()
 
 
 def hash_refresh_secret(secret: str) -> str:

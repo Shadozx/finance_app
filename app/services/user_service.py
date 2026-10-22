@@ -13,8 +13,8 @@ from app.core.security import (
     Argon2Hasher,
     create_access_token,
     create_refresh_token,
+    derive_refresh_secret,
     fingerprint_email,
-    generate_refresh_secret,
     hash_refresh_secret,
     parse_refresh_token,
     verify_refresh_token_signature,
@@ -104,7 +104,7 @@ class UserService:
         return UserResponse.model_validate(created_user)
 
     def _issue_tokens(self, user_session: UserSession) -> TokenResponse:
-        secret = generate_refresh_secret()
+        secret = derive_refresh_secret(user_session.id, user_session.refresh_generation)
         user_session.refresh_token_hash = hash_refresh_secret(secret)
         expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 

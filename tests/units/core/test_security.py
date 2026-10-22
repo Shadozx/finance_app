@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 from concurrent.futures import Future
@@ -16,13 +17,14 @@ from app.core.security import (
     PasswordHashQueueFullError,
     create_access_token,
     create_refresh_token,
+    derive_refresh_secret,
     fingerprint_email,
-    generate_refresh_secret,
     hash_refresh_secret,
     parse_refresh_token,
     verify_refresh_token_signature,
     verify_token,
 )
+from app.models import INITIAL_REFRESH_GENERATION
 from tests.jwt_helpers import (
     FOREIGN_AUDIENCE,
     FOREIGN_ISSUER,
@@ -43,6 +45,10 @@ TEST_PASSWORD = "test-password"
 TEST_PASSWORD_HASH = "test-password-hash"
 WRONG_PASSWORD = "wrong-password"
 INVALID_PASSWORD_HASH = "invalid-hash"
+
+# Any secret will do for tests that sign or parse a token; the derived one is tested apart
+REFRESH_SECRET = "test-refresh-secret"
+OTHER_GENERATION = INITIAL_REFRESH_GENERATION + 1
 
 JWT_SEGMENT_COUNT = 3
 HALF_A_SECOND_IN_MICROSECONDS = 500_000
@@ -353,10 +359,67 @@ def sign_refresh_message(key: str, session_id: UUID, secret: str) -> str:
     return hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
+def reference_refresh_secret(key: str, session_id: UUID, generation: int) -> str:
+    """Derived secret computed straight from the format, independent of the app code."""
+    message = f"refresh-secret:{session_id}:{generation}"
+    digest = hmac.new(key.encode(), message.encode(), hashlib.sha256).digest()
+
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+class TestDeriveRefreshSecret:
+    @pytest.fixture
+    def session_id(self):
+        return uuid4()
+
+    def test_derive_refresh_secret_follows_the_documented_format(self, session_id: UUID):
+        expected_secret = reference_refresh_secret(
+            settings.REFRESH_SECRET_KEY, session_id, INITIAL_REFRESH_GENERATION
+        )
+
+        assert derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION) == expected_secret
+
+    def test_derive_refresh_secret_is_deterministic(self, session_id: UUID):
+        assert derive_refresh_secret(session_id, OTHER_GENERATION) == derive_refresh_secret(
+            session_id, OTHER_GENERATION
+        )
+
+    def test_derive_refresh_secret_differs_between_sessions(self, session_id: UUID):
+        other_session_id = uuid4()
+
+        assert derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION) != (
+            derive_refresh_secret(other_session_id, INITIAL_REFRESH_GENERATION)
+        )
+
+    def test_derive_refresh_secret_differs_between_generations(self, session_id: UUID):
+        assert derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION) != (
+            derive_refresh_secret(session_id, OTHER_GENERATION)
+        )
+
+    def test_derive_refresh_secret_changes_when_the_key_changes(
+        self, mocker: MockerFixture, session_id: UUID
+    ):
+        original_secret = derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
+        rotated_key = f"{settings.REFRESH_SECRET_KEY}-rotated"
+        mocker.patch("app.core.security.settings.REFRESH_SECRET_KEY", rotated_key)
+
+        assert derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION) != original_secret
+
+    def test_derived_refresh_secret_survives_a_round_trip_through_the_token(self, session_id: UUID):
+        secret = derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
+        assert "." not in secret
+        assert "=" not in secret
+
+        parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
+
+        assert parsed_token is not None
+        assert parsed_token.secret == secret
+
+
 class TestRefreshToken:
     def test_create_refresh_token_round_trips_through_parser(self):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         signature_hex_length = 64
 
         token = create_refresh_token(session_id, secret)
@@ -371,7 +434,7 @@ class TestRefreshToken:
 
     def test_verify_refresh_token_signature_rejects_changed_secret(self):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
         signature = parsed_token.signature
@@ -383,7 +446,7 @@ class TestRefreshToken:
     def test_verify_refresh_token_signature_rejects_substituted_session_id(self):
         session_id = uuid4()
         other_session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
         signature = parsed_token.signature
@@ -393,7 +456,7 @@ class TestRefreshToken:
     @pytest.mark.parametrize("signature_kind", ["altered", "non-ascii"])
     def test_verify_refresh_token_signature_rejects_changed_signature(self, signature_kind: str):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         parsed_token = parse_refresh_token(create_refresh_token(session_id, secret))
         assert parsed_token is not None
         signature = parsed_token.signature
@@ -406,7 +469,7 @@ class TestRefreshToken:
 
     def test_verify_refresh_token_signature_rejects_signature_without_domain_prefix(self):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         message_without_prefix = f"{session_id}.{secret}"
         signature = hmac.new(
             settings.REFRESH_HMAC_KEY.encode(), message_without_prefix.encode(), hashlib.sha256
@@ -416,14 +479,14 @@ class TestRefreshToken:
 
     def test_verify_refresh_token_signature_rejects_signature_made_with_the_secret_key(self):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         signature = sign_refresh_message(settings.SECRET_KEY, session_id, secret)
 
         assert not verify_refresh_token_signature(session_id, secret, signature)
 
     def test_verify_refresh_token_signature_accepts_signature_made_with_the_refresh_key(self):
         session_id = uuid4()
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         signature = sign_refresh_message(settings.REFRESH_HMAC_KEY, session_id, secret)
 
         assert verify_refresh_token_signature(session_id, secret, signature)
@@ -456,7 +519,7 @@ class TestRefreshToken:
         assert parse_refresh_token(token) is None
 
     def test_hash_refresh_secret_is_deterministic_and_does_not_store_secret(self):
-        secret = generate_refresh_secret()
+        secret = REFRESH_SECRET
         sha256_hex_length = 64
 
         hashed_secret = hash_refresh_secret(secret)
@@ -466,7 +529,7 @@ class TestRefreshToken:
         assert len(hashed_secret) == sha256_hex_length
 
 
-class TestSigningKeyIndependence:
+class TestKeyIndependence:
     @pytest.fixture
     def email(self):
         return "user@example.com"
@@ -477,7 +540,7 @@ class TestSigningKeyIndependence:
 
     @pytest.fixture
     def refresh_secret(self):
-        return generate_refresh_secret()
+        return REFRESH_SECRET
 
     @pytest.fixture
     def refresh_signature(self, session_id: UUID, refresh_secret: str):
@@ -532,6 +595,31 @@ class TestSigningKeyIndependence:
         mocker.patch("app.core.security.settings.REFRESH_HMAC_KEY", rotated_key)
 
         assert fingerprint_email(email) == original_fingerprint
+
+    def test_rotating_the_derivation_key_keeps_refresh_signatures_and_access_tokens(
+        self,
+        mocker: MockerFixture,
+        data: dict,
+        session_id: UUID,
+        refresh_secret: str,
+        refresh_signature: str,
+        access_token: str,
+    ):
+        rotated_key = f"{settings.REFRESH_SECRET_KEY}-rotated"
+        mocker.patch("app.core.security.settings.REFRESH_SECRET_KEY", rotated_key)
+
+        assert verify_refresh_token_signature(session_id, refresh_secret, refresh_signature)
+        assert verify_token(access_token)["sub"] == data["sub"]
+
+    @pytest.mark.parametrize("key_name", ["SECRET_KEY", "REFRESH_HMAC_KEY"])
+    def test_rotating_another_key_keeps_the_derived_secret(
+        self, mocker: MockerFixture, session_id: UUID, key_name: str
+    ):
+        original_secret = derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
+        rotated_key = f"{getattr(settings, key_name)}-rotated"
+        mocker.patch(f"app.core.security.settings.{key_name}", rotated_key)
+
+        assert derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION) == original_secret
 
 
 class TestCreateAccessToken:

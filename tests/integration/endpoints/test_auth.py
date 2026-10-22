@@ -17,6 +17,7 @@ from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.rate_limiter import limiter
 from app.core.security import (
     create_refresh_token,
+    derive_refresh_secret,
     hash_refresh_secret,
     parse_refresh_token,
     password_hasher,
@@ -68,6 +69,9 @@ SESSION_TIME_OFFSET = timedelta(days=1)
 NON_ASCII_EMAIL = "користувач@test.com"
 
 ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat", "iss", "aud"}
+
+# A secret of the kind issued before secrets were derived from the generation
+LEGACY_RANDOM_SECRET = "legacy-random-secret"
 
 GENERATION_AFTER_ONE_REFRESH = INITIAL_REFRESH_GENERATION + 1
 GENERATION_AFTER_TWO_REFRESHES = INITIAL_REFRESH_GENERATION + 2
@@ -1157,6 +1161,37 @@ class TestRefreshGeneration:
         self, test_session: AsyncSession, session_id: uuid.UUID
     ):
         assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
+
+    async def test_login_issues_the_derived_secret_of_the_initial_generation(
+        self, login_tokens: dict[str, str], session_id: uuid.UUID
+    ):
+        parsed_token = parse_refresh_token(login_tokens["refresh_token"])
+
+        assert parsed_token is not None
+        assert parsed_token.secret == derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
+
+    async def test_refresh_replaces_a_random_secret_with_a_derived_one(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        session_id: uuid.UUID,
+    ):
+        assert LEGACY_RANDOM_SECRET != derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
+        await test_session.execute(
+            update(UserSession)
+            .where(UserSession.id == session_id)
+            .values(refresh_token_hash=hash_refresh_secret(LEGACY_RANDOM_SECRET))
+        )
+        legacy_token = create_refresh_token(session_id, LEGACY_RANDOM_SECRET)
+
+        response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": legacy_token})
+
+        assert response.status_code == status.HTTP_200_OK
+        parsed_token = parse_refresh_token(response.json()["refresh_token"])
+        assert parsed_token is not None
+        assert parsed_token.secret == derive_refresh_secret(
+            session_id, GENERATION_AFTER_ONE_REFRESH
+        )
 
     async def test_each_refresh_advances_the_generation(
         self,

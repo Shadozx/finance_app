@@ -14,9 +14,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 FORBIDDEN_SECRETS = {"", "changeme", "secret"}
 MIN_SECRET_LENGTH = 32
 
-# Each key must differ from the ones listed before it. Pydantic only has the earlier fields in
-# info.data when it validates a field, so Settings must declare these fields in this same order.
-SIGNING_KEY_NAMES = ("SECRET_KEY", "REFRESH_HMAC_KEY")
+# Every key setting follows the same rules: it must be strong and must differ from the keys
+# listed before it. Pydantic only has the earlier fields in info.data when it validates a field,
+# so Settings must declare these fields in this same order.
+KEY_SETTING_NAMES = ("SECRET_KEY", "REFRESH_HMAC_KEY", "REFRESH_SECRET_KEY")
 
 SESSION_IDLE_EXCEEDS_MAX_MESSAGE = "SESSION_IDLE_DAYS must not exceed SESSION_MAX_DAYS."
 
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     REFRESH_HMAC_KEY: str
+    REFRESH_SECRET_KEY: str
     ALGORITHM: str = "HS256"
     JWT_ISSUER: str
     JWT_AUDIENCE: str
@@ -62,21 +64,21 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator(*SIGNING_KEY_NAMES)
+    @field_validator(*KEY_SETTING_NAMES)
     @classmethod
-    def signing_key_must_be_strong(cls, v: str, info: ValidationInfo) -> str:
+    def key_must_be_strong(cls, v: str, info: ValidationInfo) -> str:
         if v.strip().lower() in FORBIDDEN_SECRETS:
             raise ValueError(f"{info.field_name} is a placeholder or empty.")
         if len(v) < MIN_SECRET_LENGTH:
             raise ValueError(f"{info.field_name} must be ≥ {MIN_SECRET_LENGTH} chars.")
         return v
 
-    @field_validator(*SIGNING_KEY_NAMES)
+    @field_validator(*KEY_SETTING_NAMES)
     @classmethod
-    def signing_key_must_differ_from_earlier_keys(cls, v: str, info: ValidationInfo) -> str:
+    def key_must_differ_from_earlier_keys(cls, v: str, info: ValidationInfo) -> str:
         # An earlier key that failed its own check is missing from info.data, and that check
         # already reports it. The comparison is exact: it catches a copied key, not a similar one.
-        for earlier_name in SIGNING_KEY_NAMES[: SIGNING_KEY_NAMES.index(info.field_name)]:
+        for earlier_name in KEY_SETTING_NAMES[: KEY_SETTING_NAMES.index(info.field_name)]:
             if v == info.data.get(earlier_name):
                 raise ValueError(f"{info.field_name} must differ from {earlier_name}.")
         return v

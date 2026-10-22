@@ -14,6 +14,7 @@ from app.core.security import (
     Argon2Hasher,
     PasswordHashQueueFullError,
     create_refresh_token,
+    derive_refresh_secret,
     fingerprint_email,
     hash_refresh_secret,
     parse_refresh_token,
@@ -249,7 +250,7 @@ class TestAuthenticate:
         session_id = uuid.uuid4()
         now = datetime.now(UTC)
         session_idle_days = 7
-        refresh_secret = "login-refresh-secret"
+        refresh_secret = derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
         expected_commit_count = 2
         access_token_expire_minutes = 7
         access_lifetime = timedelta(minutes=access_token_expire_minutes)
@@ -262,9 +263,6 @@ class TestAuthenticate:
             access_token_expire_minutes,
         )
         mocker.patch("app.services.user_service.uuid4", return_value=session_id)
-        mocker.patch(
-            "app.services.user_service.generate_refresh_secret", return_value=refresh_secret
-        )
 
         def persist_user_session(user_session: UserSession) -> UserSession:
             assert user_session.refresh_token_hash == hash_refresh_secret(refresh_secret)
@@ -668,6 +666,7 @@ class TestRefreshSession:
         assert verify_refresh_token_signature(session_id, new_secret, signature)
         assert session_id == active_user_session.id
         assert new_secret != refresh_secret
+        assert new_secret == derive_refresh_secret(session_id, original_generation + 1)
         assert active_user_session.refresh_token_hash != original_hash
         assert active_user_session.refresh_token_hash == hash_refresh_secret(new_secret)
         assert active_user_session.previous_refresh_token_hash == original_hash
@@ -684,6 +683,28 @@ class TestRefreshSession:
         user_session_repo_mock.get_active_with_user.assert_not_awaited()
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
+
+    # Sessions issued before secrets were derived hold a random one, and it must keep working
+    async def test_refresh_session_replaces_a_random_secret_with_a_derived_one(
+        self,
+        user_service: UserService,
+        user_session_repo_mock: UserSessionRepository,
+        active_user_session: UserSession,
+        refresh_secret: str,
+    ):
+        original_generation = active_user_session.refresh_generation
+        assert refresh_secret != derive_refresh_secret(active_user_session.id, original_generation)
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+        refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
+
+        result = await user_service.refresh_session(refresh_token)
+
+        parsed_token = parse_refresh_token(result.refresh_token)
+        assert parsed_token is not None
+        expected_secret = derive_refresh_secret(active_user_session.id, original_generation + 1)
+        assert parsed_token.secret == expected_secret
+        assert active_user_session.refresh_token_hash == hash_refresh_secret(expected_secret)
+        assert active_user_session.refresh_generation == original_generation + 1
 
     @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret.signature"])
     async def test_refresh_session_rejects_malformed_token(
@@ -868,6 +889,7 @@ class TestRefreshSession:
         session_id, new_secret, signature = parsed_token
         assert verify_refresh_token_signature(session_id, new_secret, signature)
         assert session_id == active_user_session.id
+        assert new_secret == derive_refresh_secret(session_id, original_generation + 1)
         assert active_user_session.refresh_token_hash == hash_refresh_secret(new_secret)
         assert active_user_session.refresh_token_hash != current_hash
         assert active_user_session.refresh_token_hash != previous_hash
