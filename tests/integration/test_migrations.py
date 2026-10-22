@@ -13,7 +13,13 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 from app.core import Base
-from app.models import CategoryType, SessionRevocationReason, TransactionKind, TransactionType
+from app.models import (
+    INITIAL_REFRESH_GENERATION,
+    CategoryType,
+    SessionRevocationReason,
+    TransactionKind,
+    TransactionType,
+)
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 MIGRATIONS_DATABASE = "migrations_test"
@@ -31,6 +37,13 @@ PASSWORD_CHANGED_AT_REVISION = "d9da74d03578"
 CATEGORY_TYPE_REVISION = "a42e8b91c630"
 REFRESH_TOKEN_HASH_REVISION = "f90bd8d1e5b1"
 SESSION_REVOCATION_REVISION = "8ba7b4d10ebb"
+REFRESH_GENERATION_REVISION = "e15e6b228c4b"
+
+# Every user_sessions column that exists before the refresh generation is added
+USER_SESSION_COLUMNS_BEFORE_REFRESH_GENERATION = (
+    "id, user_id, refresh_token_hash, previous_refresh_token_hash, rotated_at, user_agent,"
+    " created_at, last_used_at, expires_at, revoked_at, revoked_reason"
+)
 
 
 def before(revision: str) -> str:
@@ -554,6 +567,36 @@ class TestDataMigrations:
         assert row.refresh_token_hash == refresh_token_hash
         assert row.previous_refresh_token_hash is None
         assert row.rotated_at is None
+
+    async def test_refresh_generation_backfills_the_initial_value_and_keeps_other_columns(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(REFRESH_GENERATION_REVISION))
+        user_id = await self.insert_user_before_category_type(migrations_engine)
+        await insert(
+            migrations_engine,
+            "INSERT INTO user_sessions"
+            " (id, user_id, refresh_token_hash, previous_refresh_token_hash, rotated_at,"
+            " created_at, last_used_at, expires_at)"
+            " VALUES (:session_id, :user_id, :refresh_token_hash, :previous_refresh_token_hash,"
+            " now(), now(), now(), now() + INTERVAL '30 days')",
+            session_id=uuid.uuid4(),
+            user_id=user_id,
+            refresh_token_hash="a" * 64,
+            previous_refresh_token_hash="b" * 64,
+        )
+        select_columns = f"SELECT {USER_SESSION_COLUMNS_BEFORE_REFRESH_GENERATION}"
+        seeded_session = await fetch_row(migrations_engine, f"{select_columns} FROM user_sessions")
+
+        await upgrade(migrations_engine, alembic_config, REFRESH_GENERATION_REVISION)
+
+        migrated_session = await fetch_row(
+            migrations_engine, f"{select_columns}, refresh_generation FROM user_sessions"
+        )
+        assert migrated_session.refresh_generation == INITIAL_REFRESH_GENERATION
+        assert tuple(migrated_session)[:-1] == tuple(seeded_session)
 
     async def test_password_changed_at_backfills_from_created_at(
         self,

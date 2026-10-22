@@ -22,7 +22,13 @@ from app.core.security import (
     password_hasher,
     verify_refresh_token_signature,
 )
-from app.models import Category, SessionRevocationReason, User, UserSession
+from app.models import (
+    INITIAL_REFRESH_GENERATION,
+    Category,
+    SessionRevocationReason,
+    User,
+    UserSession,
+)
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
@@ -62,6 +68,9 @@ SESSION_TIME_OFFSET = timedelta(days=1)
 NON_ASCII_EMAIL = "користувач@test.com"
 
 ACCESS_TOKEN_CLAIMS = {"sub", "sid", "exp", "iat", "iss", "aud"}
+
+GENERATION_AFTER_ONE_REFRESH = INITIAL_REFRESH_GENERATION + 1
+GENERATION_AFTER_TWO_REFRESHES = INITIAL_REFRESH_GENERATION + 2
 
 # The second racing registration, differing from the default payload in the named fields
 OTHER_EMAIL = "otheruser@test.com"
@@ -1129,6 +1138,114 @@ class TestLogout:
             API_AUTH_REFRESH_URL, json={"refresh_token": current_tokens["refresh_token"]}
         )
         assert current_refresh_response.status_code == status.HTTP_200_OK
+
+
+class TestRefreshGeneration:
+    @pytest.fixture
+    def session_id(self, login_tokens: dict[str, str]) -> uuid.UUID:
+        return uuid.UUID(verify_token(login_tokens["access_token"])["sid"])
+
+    # Reads the column, not the entity attribute
+    async def stored_generation(self, test_session: AsyncSession, session_id: uuid.UUID) -> int:
+        return (
+            await test_session.scalars(
+                select(UserSession.refresh_generation).where(UserSession.id == session_id)
+            )
+        ).one()
+
+    async def test_login_starts_at_the_initial_generation(
+        self, test_session: AsyncSession, session_id: uuid.UUID
+    ):
+        assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
+
+    async def test_each_refresh_advances_the_generation(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+    ):
+        first_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        assert first_response.status_code == status.HTTP_200_OK
+        assert (
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_ONE_REFRESH
+        )
+
+        second_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": first_response.json()["refresh_token"]}
+        )
+
+        assert second_response.status_code == status.HTTP_200_OK
+        assert (
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
+        )
+
+    # A retry in the grace window writes a new secret, so it takes a new number. Once the
+    # grace branch stops writing a secret, this expectation changes with it.
+    async def test_refresh_in_grace_window_advances_the_generation(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+    ):
+        payload = {"refresh_token": login_tokens["refresh_token"]}
+        first_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+        assert first_response.status_code == status.HTTP_200_OK
+
+        retry_response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+
+        assert retry_response.status_code == status.HTTP_200_OK
+        assert (
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
+        )
+
+    async def test_refresh_reuse_keeps_the_generation_and_revokes_the_session(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+    ):
+        first_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+        second_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": first_response.json()["refresh_token"]}
+        )
+        assert second_response.status_code == status.HTTP_200_OK
+        assert (
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
+        )
+
+        reuse_response = await client.post(
+            API_AUTH_REFRESH_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert reuse_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert (
+            await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
+        )
+        revoked_reason = await test_session.scalar(
+            select(UserSession.revoked_reason).where(UserSession.id == session_id)
+        )
+        assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
+
+    async def test_logout_keeps_the_generation(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+        session_id: uuid.UUID,
+    ):
+        response = await client.post(
+            API_AUTH_LOGOUT_URL, json={"refresh_token": login_tokens["refresh_token"]}
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
 
 
 class TestTokenLogging:

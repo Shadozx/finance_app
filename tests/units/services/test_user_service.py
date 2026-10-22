@@ -20,7 +20,13 @@ from app.core.security import (
     verify_refresh_token_signature,
     verify_token,
 )
-from app.models import USER_AGENT_MAX_LENGTH, SessionRevocationReason, User, UserSession
+from app.models import (
+    INITIAL_REFRESH_GENERATION,
+    USER_AGENT_MAX_LENGTH,
+    SessionRevocationReason,
+    User,
+    UserSession,
+)
 from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
@@ -300,6 +306,7 @@ class TestAuthenticate:
             expires_at=now + timedelta(days=session_idle_days),
             revoked_at=None,
             refresh_token_hash=hash_refresh_secret(refresh_secret),
+            refresh_generation=INITIAL_REFRESH_GENERATION,
         )
 
         user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
@@ -647,6 +654,7 @@ class TestRefreshSession:
         )
         active_user_session.created_at = session_now - session_age
         original_hash = active_user_session.refresh_token_hash
+        original_generation = active_user_session.refresh_generation
         original_created_at = active_user_session.created_at
         refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
@@ -663,6 +671,7 @@ class TestRefreshSession:
         assert active_user_session.refresh_token_hash != original_hash
         assert active_user_session.refresh_token_hash == hash_refresh_secret(new_secret)
         assert active_user_session.previous_refresh_token_hash == original_hash
+        assert active_user_session.refresh_generation == original_generation + 1
         assert active_user_session.rotated_at == session_now
         assert active_user_session.last_used_at == session_now
         assert active_user_session.created_at == original_created_at
@@ -847,6 +856,7 @@ class TestRefreshSession:
         active_user_session.refresh_token_hash = current_hash
         active_user_session.previous_refresh_token_hash = previous_hash
         active_user_session.rotated_at = rotated_at
+        original_generation = active_user_session.refresh_generation
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
         refresh_token = create_refresh_token(active_user_session.id, refresh_secret)
 
@@ -862,6 +872,7 @@ class TestRefreshSession:
         assert active_user_session.refresh_token_hash != current_hash
         assert active_user_session.refresh_token_hash != previous_hash
         assert active_user_session.previous_refresh_token_hash == previous_hash
+        assert active_user_session.refresh_generation == original_generation + 1
         assert active_user_session.rotated_at == rotated_at
         assert active_user_session.revoked_at is None
         assert active_user_session.revoked_reason is None
@@ -907,6 +918,7 @@ class TestRefreshSession:
             if rotation_state == "grace-expired":
                 active_user_session.rotated_at = session_now - grace_interval - boundary_offset
         original_hash = active_user_session.refresh_token_hash
+        original_generation = active_user_session.refresh_generation
         original_last_used_at = active_user_session.last_used_at
         original_expires_at = active_user_session.expires_at
         user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
@@ -932,6 +944,7 @@ class TestRefreshSession:
         ]
 
         assert active_user_session.refresh_token_hash == original_hash
+        assert active_user_session.refresh_generation == original_generation
         assert active_user_session.last_used_at == original_last_used_at
         assert active_user_session.expires_at == original_expires_at
         assert active_user_session.revoked_at == session_now

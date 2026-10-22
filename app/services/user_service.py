@@ -19,7 +19,14 @@ from app.core.security import (
     parse_refresh_token,
     verify_refresh_token_signature,
 )
-from app.models import USER_AGENT_MAX_LENGTH, Category, SessionRevocationReason, User, UserSession
+from app.models import (
+    INITIAL_REFRESH_GENERATION,
+    USER_AGENT_MAX_LENGTH,
+    Category,
+    SessionRevocationReason,
+    User,
+    UserSession,
+)
 from app.repositories import CategoryRepository, UserRepository, UserSessionRepository
 from app.schemas import (
     PasswordUpdate,
@@ -221,6 +228,7 @@ class UserService:
             id=uuid4(),
             user_id=existing_user.id,
             user_agent=user_agent[:USER_AGENT_MAX_LENGTH] if user_agent is not None else None,
+            refresh_generation=INITIAL_REFRESH_GENERATION,
             created_at=now,
             last_used_at=now,
             expires_at=now + timedelta(days=settings.SESSION_IDLE_DAYS),
@@ -269,6 +277,8 @@ class UserService:
             now + timedelta(days=settings.SESSION_IDLE_DAYS),
             user_session.created_at + timedelta(days=settings.SESSION_MAX_DAYS),
         )
+        # Every branch that gets here writes a new secret, so every one gets a new number
+        user_session.refresh_generation += 1
         tokens = self._issue_tokens(user_session)
 
         await self.user_session_repository.update(user_session)

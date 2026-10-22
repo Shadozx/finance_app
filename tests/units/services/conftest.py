@@ -8,6 +8,7 @@ from pytest_mock import MockerFixture
 from app.core import UnitOfWork, settings
 from app.core.security import Argon2Hasher, hash_refresh_secret
 from app.models import (
+    INITIAL_REFRESH_GENERATION,
     Account,
     Category,
     Currency,
@@ -320,6 +321,7 @@ def active_user_session(existing_user: User, refresh_secret: str, session_now: d
         id=uuid.uuid4(),
         user_id=existing_user.id,
         refresh_token_hash=hash_refresh_secret(refresh_secret),
+        refresh_generation=INITIAL_REFRESH_GENERATION,
         created_at=session_now - session_age,
         last_used_at=session_now - session_age,
         expires_at=session_now + datetime.timedelta(days=settings.SESSION_IDLE_DAYS) - session_age,

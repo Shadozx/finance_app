@@ -16,6 +16,9 @@ from app.models.enums import SessionRevocationReason
 
 USER_AGENT_MAX_LENGTH = 512
 
+# Generation of the refresh secret a new session starts with
+INITIAL_REFRESH_GENERATION = 0
+
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
@@ -27,6 +30,10 @@ class UserSession(Base):
     refresh_token_hash: Mapped[str] = mapped_column(String(64))
 
     previous_refresh_token_hash: Mapped[str | None] = mapped_column(String(64))
+
+    # Number of the current refresh secret. Every secret written to refresh_token_hash gets
+    # its own number, which never repeats and never decreases.
+    refresh_generation: Mapped[int] = mapped_column(default=INITIAL_REFRESH_GENERATION)
 
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
