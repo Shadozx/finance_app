@@ -96,6 +96,39 @@ async def independent_client(
         app.dependency_overrides[get_session] = previous_override
 
 
+@pytest.fixture
+async def independent_registered_user(independent_client: AsyncClient) -> UserData:
+    payload = register_payload()
+
+    response = await independent_client.post("/api/v1/auth/register", json=payload)
+
+    assert response.status_code == status.HTTP_201_CREATED
+
+    return {
+        "id": response.json()["id"],
+        "email": payload["email"],
+        "username": payload["username"],
+        "password": payload["password"],
+    }
+
+
+@pytest.fixture
+async def independent_login_tokens(
+    independent_client: AsyncClient, independent_registered_user: UserData
+) -> dict[str, str]:
+    response = await independent_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": independent_registered_user["email"],
+            "password": independent_registered_user["password"],
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    return response.json()
+
+
 @pytest.fixture(autouse=True)
 def disable_rate_limiter():
     previous_state = app.state.limiter.enabled

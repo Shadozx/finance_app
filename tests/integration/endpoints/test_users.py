@@ -1,24 +1,33 @@
+import asyncio
 import uuid
 from datetime import datetime, timedelta
 
 import pytest
 from fastapi import status
 from httpx import AsyncClient
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from pytest_mock import MockerFixture
+from sqlalchemy import select, text, update
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from structlog.testing import capture_logs
 
 from app.core import utc_now
 from app.core.error_codes import ErrorCode, FieldErrorCode
-from app.models import SessionRevocationReason, UserSession
+from app.core.security import Argon2Hasher
+from app.models import INITIAL_PASSWORD_VERSION, SessionRevocationReason, User, UserSession
+from app.repositories import UserRepository
 from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 from tests.integration.endpoints.helpers import (
+    CONCURRENCY_TIMEOUT_SECONDS,
     OVER_MAX_PASSWORD,
+    FirstCallGate,
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
+    run_concurrently,
+    run_second_behind_first,
     session_id_from_headers,
 )
-from tests.integration.endpoints.types import AuthenticatedUser
+from tests.integration.endpoints.types import AuthenticatedUser, UserData
 
 API_USERS_ME = "/api/v1/users/me"
 API_USERS_ME_UPDATE_USERNAME = "/api/v1/users/me/username"
@@ -666,3 +675,172 @@ class TestUpdatePassword:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
         assert "detail" in response.json()
+
+
+class TestConcurrentPasswordUpdate:
+    @pytest.fixture
+    def headers(self, independent_login_tokens: dict[str, str]) -> dict[str, str]:
+        return {"Authorization": f"Bearer {independent_login_tokens['access_token']}"}
+
+    def password_payload(self, user: UserData, new_password: str) -> dict[str, str]:
+        return {"current_password": user["password"], "new_password": new_password}
+
+    # Set up after the login, so that only the requests under test reach the held update. The
+    # request that locks the user first reaches update first, and stays there until the other
+    # one is queued behind its lock.
+    @pytest.fixture
+    def held_update(
+        self, mocker: MockerFixture, independent_login_tokens: dict[str, str]
+    ) -> FirstCallGate:
+        gate = FirstCallGate()
+        mocker.patch.object(
+            UserRepository,
+            "update",
+            autospec=True,
+            side_effect=gate.wrap(UserRepository.update),
+        )
+
+        return gate
+
+    def held_argon2(self, mocker: MockerFixture, operation: str) -> FirstCallGate:
+        gate = FirstCallGate()
+        mocker.patch.object(
+            Argon2Hasher,
+            operation,
+            autospec=True,
+            side_effect=gate.wrap(getattr(Argon2Hasher, operation)),
+        )
+
+        return gate
+
+    async def test_concurrent_password_updates_let_only_the_first_succeed(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_registered_user: UserData,
+        headers: dict[str, str],
+        held_update: FirstCallGate,
+    ):
+        first_new_password = "First" + independent_registered_user["password"]
+        second_new_password = "Second" + independent_registered_user["password"]
+
+        with capture_logs() as logs:
+            first_response, second_response = await run_second_behind_first(
+                independent_client.put(
+                    API_USERS_ME_UPDATE_PASSWORD,
+                    json=self.password_payload(independent_registered_user, first_new_password),
+                    headers=headers,
+                ),
+                independent_client.put(
+                    API_USERS_ME_UPDATE_PASSWORD,
+                    json=self.password_payload(independent_registered_user, second_new_password),
+                    headers=headers,
+                ),
+                gate=held_update,
+                session_factory=independent_session_factory,
+            )
+
+        assert first_response.status_code == status.HTTP_204_NO_CONTENT
+        assert second_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert_field_error(
+            second_response, ErrorCode.INVALID_CREDENTIALS, ["body", "current_password"]
+        )
+        events = [log["event"] for log in logs]
+        assert events.count("password_update_success") == 1
+        assert events.count("password_update_rejected_password_changed") == 1
+
+        async with independent_session_factory() as session:
+            stored_password_version = await session.scalar(
+                select(User.password_version).where(User.id == independent_registered_user["id"])
+            )
+        assert stored_password_version == INITIAL_PASSWORD_VERSION + 1
+
+        first_login = await independent_client.post(
+            API_AUTH_LOGIN,
+            json={
+                "email": independent_registered_user["email"],
+                "password": first_new_password,
+            },
+        )
+        second_login = await independent_client.post(
+            API_AUTH_LOGIN,
+            json={
+                "email": independent_registered_user["email"],
+                "password": second_new_password,
+            },
+        )
+        assert first_login.status_code == status.HTTP_200_OK
+        assert second_login.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.parametrize("operation", ["verify", "hash"])
+    async def test_user_row_is_not_locked_while_argon2_runs(
+        self,
+        mocker: MockerFixture,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_registered_user: UserData,
+        headers: dict[str, str],
+        operation: str,
+    ):
+        gate = self.held_argon2(mocker, operation)
+
+        async def lock_user_row_without_waiting() -> None:
+            await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+
+            try:
+                # NOWAIT fails at once if the row is locked, so success proves it is free
+                async with independent_session_factory() as session:
+                    await session.execute(
+                        text("SELECT id FROM users WHERE id = :user_id FOR UPDATE NOWAIT"),
+                        {"user_id": independent_registered_user["id"]},
+                    )
+            finally:
+                gate.release.set()
+
+        response, _ = await run_concurrently(
+            independent_client.put(
+                API_USERS_ME_UPDATE_PASSWORD,
+                json=self.password_payload(
+                    independent_registered_user, "New" + independent_registered_user["password"]
+                ),
+                headers=headers,
+            ),
+            lock_user_row_without_waiting(),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    @pytest.mark.parametrize("operation", ["verify", "hash"])
+    async def test_connection_is_returned_to_the_pool_while_argon2_runs(
+        self,
+        mocker: MockerFixture,
+        test_engine: AsyncEngine,
+        independent_client: AsyncClient,
+        independent_registered_user: UserData,
+        headers: dict[str, str],
+        operation: str,
+    ):
+        expected_checked_out_connections = 0
+        gate = self.held_argon2(mocker, operation)
+
+        async def count_checked_out_connections() -> int:
+            await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+
+            try:
+                return test_engine.sync_engine.pool.checkedout()
+            finally:
+                gate.release.set()
+
+        response, checked_out_connections = await run_concurrently(
+            independent_client.put(
+                API_USERS_ME_UPDATE_PASSWORD,
+                json=self.password_payload(
+                    independent_registered_user, "New" + independent_registered_user["password"]
+                ),
+                headers=headers,
+            ),
+            count_checked_out_connections(),
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert checked_out_connections == expected_checked_out_connections

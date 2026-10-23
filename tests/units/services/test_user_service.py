@@ -32,7 +32,10 @@ from app.repositories import CategoryRepository, UserRepository, UserSessionRepo
 from app.schemas import PasswordUpdate, UserCreate, UserLogin, UsernameUpdate, UserResponse
 from app.services import UserService
 from app.services.default_categories import DEFAULT_CATEGORIES
-from app.services.user_service import INVALID_CREDENTIALS_MESSAGE
+from app.services.user_service import (
+    CURRENT_PASSWORD_INCORRECT_MESSAGE,
+    INVALID_CREDENTIALS_MESSAGE,
+)
 from app.services.validators import USER_NO_LONGER_EXISTS_MESSAGE
 from tests.units.services.helpers import (
     as_persisted,
@@ -1436,7 +1439,7 @@ class TestUpdatePassword:
         pending_count = 22
         error = PasswordHashQueueFullError(pending_count)
         original_hash = existing_user.hashed_password
-        user_repo_mock.get_by_id_for_update.return_value = existing_user
+        user_repo_mock.get_by_id.return_value = existing_user
         password_hasher_mock.verify.return_value = True
         getattr(password_hasher_mock, operation).side_effect = error
 
@@ -1445,9 +1448,10 @@ class TestUpdatePassword:
 
         assert exc_info.value is error
         assert existing_user.hashed_password == original_hash
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_repo_mock.update.assert_not_awaited()
         user_session_repo_mock.revoke_active.assert_not_awaited()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_update_password_rejects_missing_user(
         self,
@@ -1459,7 +1463,7 @@ class TestUpdatePassword:
         existing_user: User,
         data: PasswordUpdate,
     ):
-        user_repo_mock.get_by_id_for_update.return_value = None
+        user_repo_mock.get_by_id.return_value = None
         mock_password = password_hasher_mock.verify
         mock_hash = password_hasher_mock.hash
 
@@ -1469,8 +1473,8 @@ class TestUpdatePassword:
             await user_service.update_password(data, existing_user.id)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
-        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
-        user_repo_mock.get_by_id.assert_not_awaited()
+        user_repo_mock.get_by_id.assert_awaited_once_with(existing_user.id)
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
         mock_password.assert_not_awaited()
         mock_hash.assert_not_awaited()
         user_repo_mock.update.assert_not_awaited()
@@ -1490,8 +1494,10 @@ class TestUpdatePassword:
         data: PasswordUpdate,
         revoked_count: int,
     ):
+        user_repo_mock.get_by_id.return_value = existing_user
         user_repo_mock.get_by_id_for_update.return_value = existing_user
         user_session_repo_mock.revoke_active.return_value = revoked_count
+        expected_commit_count = 2
         original_hashed_password = existing_user.hashed_password
         original_password_changed_at = existing_user.password_changed_at
         original_password_version = existing_user.password_version
@@ -1504,6 +1510,10 @@ class TestUpdatePassword:
         password_hasher_mock.hash.return_value = hashed_password
 
         async def commit_password_and_revocation():
+            # The first commit only ends the read transaction, before the lock is taken
+            if user_repo_mock.get_by_id_for_update.await_count == 0:
+                return
+
             user_repo_mock.update.assert_awaited_once_with(existing_user)
             user_session_repo_mock.revoke_active.assert_awaited_once_with(
                 existing_user.id,
@@ -1522,8 +1532,8 @@ class TestUpdatePassword:
 
         assert result is None
 
+        user_repo_mock.get_by_id.assert_awaited_once_with(existing_user.id)
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
-        user_repo_mock.get_by_id.assert_not_awaited()
 
         call_args = user_repo_mock.update.call_args[0][0]
         assert_model_fields(
@@ -1542,7 +1552,7 @@ class TestUpdatePassword:
 
         user_repo_mock.update.assert_called_once()
 
-        unit_of_work_mock.commit.assert_awaited_once()
+        assert unit_of_work_mock.commit.await_count == expected_commit_count
         assert logs == [
             {
                 "event": "password_update_success",
@@ -1564,22 +1574,156 @@ class TestUpdatePassword:
     ):
         data.current_password = "wrong_password"
 
-        user_repo_mock.get_by_id_for_update.return_value = existing_user
+        user_repo_mock.get_by_id.return_value = existing_user
 
         mock_password = password_hasher_mock.verify
         password_hasher_mock.verify.return_value = False
 
-        with pytest.raises(AuthenticationException, match="Current password is incorrect"):
+        with pytest.raises(
+            AuthenticationException, match=f"^{re.escape(CURRENT_PASSWORD_INCORRECT_MESSAGE)}$"
+        ):
             await user_service.update_password(data, existing_user.id)
 
-        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
-        user_repo_mock.get_by_id.assert_not_awaited()
+        user_repo_mock.get_by_id.assert_awaited_once_with(existing_user.id)
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
         mock_password.assert_awaited_once_with(data.current_password, existing_user.hashed_password)
 
         user_repo_mock.update.assert_not_called()
         user_session_repo_mock.revoke_active.assert_not_awaited()
 
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
+
+    async def test_update_password_commits_before_verifying_password(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: PasswordUpdate,
+    ):
+        user_repo_mock.get_by_id.return_value = existing_user
+        mock_password = password_hasher_mock.verify
+
+        async def verify_password(*args) -> bool:
+            user_repo_mock.get_by_id.assert_awaited_once_with(existing_user.id)
+            unit_of_work_mock.commit.assert_awaited_once_with()
+            user_repo_mock.get_by_id_for_update.assert_not_awaited()
+            return False
+
+        mock_password.side_effect = verify_password
+
+        with pytest.raises(
+            AuthenticationException, match=f"^{re.escape(CURRENT_PASSWORD_INCORRECT_MESSAGE)}$"
+        ):
+            await user_service.update_password(data, existing_user.id)
+
+        mock_password.assert_awaited_once_with(data.current_password, existing_user.hashed_password)
+        unit_of_work_mock.commit.assert_awaited_once_with()
+
+    async def test_update_password_hashes_before_locking(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        data: PasswordUpdate,
+    ):
+        hashed_password = "hashed"
+        revoked_count = 0
+        user_repo_mock.get_by_id.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
+        user_session_repo_mock.revoke_active.return_value = revoked_count
+        password_hasher_mock.verify.return_value = True
+
+        async def hash_password(*args) -> str:
+            user_repo_mock.get_by_id_for_update.assert_not_awaited()
+            return hashed_password
+
+        password_hasher_mock.hash.side_effect = hash_password
+
+        await user_service.update_password(data, existing_user.id)
+
+        password_hasher_mock.hash.assert_awaited_once_with(data.new_password)
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        assert existing_user.hashed_password == hashed_password
+
+    async def test_update_password_rejects_password_changed_after_verification(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: PasswordUpdate,
+    ):
+        verified_hashed_password = existing_user.hashed_password
+        verified_password_version = existing_user.password_version
+        changed_hashed_password = "changed-hashed-password"
+        changed_password_version = verified_password_version + 1
+
+        password_hasher_mock.verify.return_value = True
+
+        def lock_user_with_changed_password(user_id: int) -> User:
+            # Mimic populate_existing: the locked re-read overwrites the same object.
+            existing_user.hashed_password = changed_hashed_password
+            existing_user.password_version = changed_password_version
+            return existing_user
+
+        user_repo_mock.get_by_id.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.side_effect = lock_user_with_changed_password
+
+        with capture_logs() as logs:
+            with pytest.raises(
+                AuthenticationException, match=f"^{re.escape(CURRENT_PASSWORD_INCORRECT_MESSAGE)}$"
+            ) as exc_info:
+                await user_service.update_password(data, existing_user.id)
+
+        assert exc_info.value.code == ErrorCode.INVALID_CREDENTIALS
+        password_hasher_mock.verify.assert_awaited_once_with(
+            data.current_password, verified_hashed_password
+        )
+        assert existing_user.hashed_password == changed_hashed_password
+        assert existing_user.password_version == changed_password_version
+        assert logs == [
+            {
+                "event": "password_update_rejected_password_changed",
+                "user_id": existing_user.id,
+                "log_level": "warning",
+            }
+        ]
+
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        user_repo_mock.update.assert_not_awaited()
+        user_session_repo_mock.revoke_active.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
+
+    async def test_update_password_rejects_user_deleted_after_verification(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        data: PasswordUpdate,
+    ):
+        password_hasher_mock.verify.return_value = True
+        user_repo_mock.get_by_id.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = None
+
+        with pytest.raises(
+            AuthenticationException, match=f"^{re.escape(USER_NO_LONGER_EXISTS_MESSAGE)}$"
+        ) as exc_info:
+            await user_service.update_password(data, existing_user.id)
+
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        user_repo_mock.update.assert_not_awaited()
+        user_session_repo_mock.revoke_active.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
 
     async def test_update_password_does_not_commit_when_session_revocation_fails(
         self,
@@ -1591,6 +1735,7 @@ class TestUpdatePassword:
         existing_user: User,
         data: PasswordUpdate,
     ):
+        user_repo_mock.get_by_id.return_value = existing_user
         user_repo_mock.get_by_id_for_update.return_value = existing_user
         password_hasher_mock.verify.return_value = True
         password_hasher_mock.hash.return_value = "new-hashed-password"
@@ -1601,7 +1746,7 @@ class TestUpdatePassword:
             await user_service.update_password(data, existing_user.id)
 
         assert exc_info.value is revocation_error
+        user_repo_mock.get_by_id.assert_awaited_once_with(existing_user.id)
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
-        user_repo_mock.get_by_id.assert_not_awaited()
         user_session_repo_mock.revoke_active.assert_awaited_once()
-        unit_of_work_mock.commit.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()

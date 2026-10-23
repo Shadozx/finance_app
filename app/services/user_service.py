@@ -43,6 +43,7 @@ from app.services.default_categories import DEFAULT_CATEGORIES
 logger = structlog.get_logger()
 
 INVALID_CREDENTIALS_MESSAGE = "Invalid email or password"
+CURRENT_PASSWORD_INCORRECT_MESSAGE = "Current password is incorrect"
 
 
 class RefreshTokenMatch(StrEnum):
@@ -374,27 +375,48 @@ class UserService:
         return UserResponse.model_validate(updated_user)
 
     async def update_password(self, data: PasswordUpdate, user_id: int) -> None:
-        # Lock the user before checking the password to serialize password changes
-        # with logins and other password changes.
-        existing_user = await validators.validate_user_for_update(self.user_repository, user_id)
+        existing_user = await validators.validate_user(self.user_repository, user_id)
+        # Kept apart from existing_user: the locked re-read below uses populate_existing
+        # and overwrites that object in place, hash and version alike.
+        verified_hash = existing_user.hashed_password
+        verified_password_version = existing_user.password_version
 
-        if not await self.password_hasher.verify(
-            data.current_password, existing_user.hashed_password
-        ):
+        # Release the read transaction's connection before waiting for Argon2.
+        await self.unit_of_work.commit()
+
+        if not await self.password_hasher.verify(data.current_password, verified_hash):
             logger.warning("password_update_failed", user_id=user_id)
 
             raise AuthenticationException(
-                "Current password is incorrect",
+                CURRENT_PASSWORD_INCORRECT_MESSAGE,
                 code=ErrorCode.INVALID_CREDENTIALS,
                 loc=("current_password",),
             )
 
-        existing_user.hashed_password = await self.password_hasher.hash(data.new_password)
-        now = utc_now()
-        existing_user.password_changed_at = now
-        existing_user.password_version += 1
+        new_hashed_password = await self.password_hasher.hash(data.new_password)
 
-        await self.user_repository.update(existing_user)
+        # Both passwords are handled without a lock so the slow hashing does not hold the
+        # user row.
+        # The re-read takes the lock to serialize password changes with logins and other
+        # password changes: if the password version changed after verification, the password
+        # checked here is no longer the current one.
+        locked_user = await validators.validate_user_for_update(self.user_repository, user_id)
+
+        if locked_user.password_version != verified_password_version:
+            logger.warning("password_update_rejected_password_changed", user_id=user_id)
+
+            raise AuthenticationException(
+                CURRENT_PASSWORD_INCORRECT_MESSAGE,
+                code=ErrorCode.INVALID_CREDENTIALS,
+                loc=("current_password",),
+            )
+
+        locked_user.hashed_password = new_hashed_password
+        now = utc_now()
+        locked_user.password_changed_at = now
+        locked_user.password_version += 1
+
+        await self.user_repository.update(locked_user)
         revoked_count = await self.user_session_repository.revoke_active(
             user_id,
             now=now,
@@ -403,6 +425,4 @@ class UserService:
 
         await self.unit_of_work.commit()
 
-        logger.info(
-            "password_update_success", user_id=existing_user.id, revoked_count=revoked_count
-        )
+        logger.info("password_update_success", user_id=locked_user.id, revoked_count=revoked_count)

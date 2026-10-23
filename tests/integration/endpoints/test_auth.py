@@ -1387,18 +1387,6 @@ class TestRefreshGeneration:
 
 class TestConcurrentRefresh:
     @pytest.fixture
-    async def independent_login_tokens(self, independent_client: AsyncClient) -> dict[str, str]:
-        payload = register_payload()
-        register_response = await independent_client.post(API_AUTH_REGISTER_URL, json=payload)
-        assert register_response.status_code == status.HTTP_201_CREATED
-        login_response = await independent_client.post(
-            API_AUTH_LOGIN_URL, json={"email": payload["email"], "password": payload["password"]}
-        )
-        assert login_response.status_code == status.HTTP_200_OK
-
-        return login_response.json()
-
-    @pytest.fixture
     def session_id(self, independent_login_tokens: dict[str, str]) -> uuid.UUID:
         return uuid.UUID(verify_token(independent_login_tokens["access_token"])["sid"])
 
