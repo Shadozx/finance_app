@@ -530,14 +530,16 @@ class TestAuthenticate:
         existing_user: User,
         data: UserLogin,
     ):
-        verified_hashed_password = existing_user.hashed_password
+        verified_password_version = existing_user.password_version
         changed_hashed_password = "changed-hashed-password"
+        changed_password_version = verified_password_version + 1
 
         password_hasher_mock.verify.return_value = True
 
         def lock_user_with_changed_password(user_id: int) -> User:
             # Mimic populate_existing: the locked re-read overwrites the same object.
             existing_user.hashed_password = changed_hashed_password
+            existing_user.password_version = changed_password_version
             return existing_user
 
         user_repo_mock.get_by_email.return_value = existing_user
@@ -550,7 +552,7 @@ class TestAuthenticate:
                 await user_service.authenticate(data, user_agent=None)
 
         assert exc_info.value.code == ErrorCode.INVALID_CREDENTIALS
-        assert existing_user.hashed_password != verified_hashed_password
+        assert existing_user.password_version != verified_password_version
         assert logs == [
             {
                 "event": "user_authenticate_rejected_password_changed",
@@ -563,6 +565,54 @@ class TestAuthenticate:
         user_session_repo_mock.delete_expired_sessions.assert_not_awaited()
         user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
+
+    async def test_authenticate_accepts_hash_changed_without_password_change(
+        self,
+        mocker: MockerFixture,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        mocked_token = "mocked_token"
+        verified_hashed_password = existing_user.hashed_password
+        verified_password_version = existing_user.password_version
+        rehashed_password = "rehashed-hashed-password"
+
+        mock_password = password_hasher_mock.verify
+        password_hasher_mock.verify.return_value = True
+        mocker.patch("app.services.user_service.create_access_token", return_value=mocked_token)
+
+        def lock_user_with_rehashed_password(user_id: int) -> User:
+            # Mimic populate_existing: the locked re-read overwrites the same object.
+            # Only the hash changes, the password version stays the same.
+            existing_user.hashed_password = rehashed_password
+            return existing_user
+
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.side_effect = lock_user_with_rehashed_password
+
+        with capture_logs() as logs:
+            result = await user_service.authenticate(data, user_agent=None)
+
+        user_session_repo_mock.add.assert_awaited_once()
+        created_session = user_session_repo_mock.add.await_args.args[0]
+
+        assert result.access_token == mocked_token
+        mock_password.assert_awaited_once_with(data.password, verified_hashed_password)
+        assert existing_user.hashed_password == rehashed_password
+        assert existing_user.hashed_password != verified_hashed_password
+        assert existing_user.password_version == verified_password_version
+        assert logs == [
+            {
+                "event": "user_authenticate_success",
+                "user_id": existing_user.id,
+                "session_id": str(created_session.id),
+                "log_level": "info",
+            }
+        ]
 
     async def test_authenticate_rejects_user_deleted_after_verification(
         self,
@@ -1451,6 +1501,7 @@ class TestUpdatePassword:
         user_session_repo_mock.revoke_active_except.return_value = revoked_count
         original_hashed_password = existing_user.hashed_password
         original_password_changed_at = existing_user.password_changed_at
+        original_password_version = existing_user.password_version
         hashed_password = "hashed"
 
         mock_password = password_hasher_mock.verify
@@ -1469,6 +1520,7 @@ class TestUpdatePassword:
             )
             assert existing_user.hashed_password == hashed_password
             assert existing_user.password_changed_at == session_now
+            assert existing_user.password_version == original_password_version + 1
             assert logs == []
 
         unit_of_work_mock.commit.side_effect = commit_password_and_revocation
@@ -1496,6 +1548,7 @@ class TestUpdatePassword:
         mock_hash.assert_awaited_once_with(data.new_password)
 
         assert original_password_changed_at < existing_user.password_changed_at
+        assert existing_user.password_version == original_password_version + 1
 
         user_repo_mock.update.assert_called_once()
 

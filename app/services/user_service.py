@@ -197,8 +197,9 @@ class UserService:
     async def authenticate(self, user: UserLogin, *, user_agent: str | None) -> TokenResponse:
         existing_user = await self.user_repository.get_by_email(user.email)
         # Kept apart from existing_user: the locked re-read below uses populate_existing
-        # and overwrites that object in place.
+        # and overwrites that object in place, hash and version alike.
         verified_hash = existing_user.hashed_password if existing_user else None
+        verified_password_version = existing_user.password_version if existing_user else None
 
         # Release the read transaction's connection before waiting for Argon2.
         await self.unit_of_work.commit()
@@ -223,7 +224,7 @@ class UserService:
         # The password is verified without a lock so the slow hash check does not hold
         # the user row.
         # The re-read takes the lock to serialize login with password changes: if the
-        # hash changed after verification, the password used here is no longer valid.
+        # password version changed after verification, the password used here is no longer valid.
         locked_user = await self.user_repository.get_by_id_for_update(existing_user.id)
 
         if locked_user is None:
@@ -236,7 +237,7 @@ class UserService:
                 INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
-        if locked_user.hashed_password != verified_hash:
+        if locked_user.password_version != verified_password_version:
             logger.warning(
                 "user_authenticate_rejected_password_changed",
                 user_id=existing_user.id,
@@ -393,6 +394,7 @@ class UserService:
         existing_user.hashed_password = await self.password_hasher.hash(data.new_password)
         now = utc_now()
         existing_user.password_changed_at = now
+        existing_user.password_version += 1
 
         await self.user_repository.update(existing_user)
         revoked_count = await self.user_session_repository.revoke_active_except(
