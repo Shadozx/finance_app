@@ -93,6 +93,25 @@ class UserSessionRepository:
 
         return result.rowcount
 
+    async def revoke_active(
+        self,
+        user_id: int,
+        *,
+        now: datetime,
+        reason: SessionRevocationReason,
+    ) -> int:
+        query = (
+            update(UserSession)
+            .where(UserSession.user_id == user_id)
+            .where(UserSession.revoked_at.is_(None))
+            .where(UserSession.expires_at > now)
+            .values(revoked_at=now, revoked_reason=reason)
+        )
+
+        result = cast(CursorResult, await self.session.execute(query))
+
+        return result.rowcount
+
     async def delete_expired_sessions(
         self,
         user_id: int,

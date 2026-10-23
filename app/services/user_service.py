@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import assert_never
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import structlog
 
@@ -373,9 +373,7 @@ class UserService:
 
         return UserResponse.model_validate(updated_user)
 
-    async def update_password(
-        self, data: PasswordUpdate, user_id: int, *, current_session_id: UUID
-    ) -> None:
+    async def update_password(self, data: PasswordUpdate, user_id: int) -> None:
         # Lock the user before checking the password to serialize password changes
         # with logins and other password changes.
         existing_user = await validators.validate_user_for_update(self.user_repository, user_id)
@@ -397,9 +395,8 @@ class UserService:
         existing_user.password_version += 1
 
         await self.user_repository.update(existing_user)
-        revoked_count = await self.user_session_repository.revoke_active_except(
+        revoked_count = await self.user_session_repository.revoke_active(
             user_id,
-            keep_session_id=current_session_id,
             now=now,
             reason=SessionRevocationReason.PASSWORD_CHANGED,
         )

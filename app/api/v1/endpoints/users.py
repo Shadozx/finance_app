@@ -43,12 +43,10 @@ async def update_username(
 async def update_password(
     request: Request,
     data: PasswordUpdate,
-    context: AuthContext = Depends(get_auth_context),
+    current_user: User = Depends(get_current_user),
     user_service: UserService = Depends(get_user_service),
 ):
-    await user_service.update_password(
-        data, context.user.id, current_session_id=context.user_session.id
-    )
+    await user_service.update_password(data, current_user.id)
 
 
 @router.get("/me/sessions", response_model=Page[UserSessionResponse])

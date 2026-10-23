@@ -520,7 +520,7 @@ class TestUpdatePassword:
 
         assert old_login.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_update_password_keeps_current_session_and_revokes_other_sessions(
+    async def test_update_password_revokes_all_sessions_including_current(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -536,38 +536,32 @@ class TestUpdatePassword:
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
             json=payload,
-            headers=authenticated_user["headers"],
+            headers=second_device_headers,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
-        me_response = await client.get(
-            API_USERS_ME,
-            headers=authenticated_user["headers"],
-        )
-
-        assert me_response.status_code == status.HTTP_200_OK
-
-        other_response = await client.get(API_USERS_ME, headers=second_device_headers)
-        assert other_response.status_code == status.HTTP_401_UNAUTHORIZED
+        current_response = await client.get(API_USERS_ME, headers=second_device_headers)
+        assert current_response.status_code == status.HTTP_401_UNAUTHORIZED
 
         refresh_response = await client.post(
             API_AUTH_REFRESH, json={"refresh_token": second_device_tokens["refresh_token"]}
         )
         assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        other_session_id = session_id_from_headers(second_device_headers)
-        revoked_reason = await test_session.scalar(
-            select(UserSession.revoked_reason).where(UserSession.id == other_session_id)
-        )
-        assert revoked_reason == SessionRevocationReason.PASSWORD_CHANGED
+        other_response = await client.get(API_USERS_ME, headers=authenticated_user["headers"])
+        assert other_response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        sessions_response = await client.get(
-            API_USERS_ME_SESSIONS, headers=authenticated_user["headers"]
-        )
-        assert sessions_response.status_code == status.HTTP_200_OK
-        expected_session_ids = [str(session_id_from_headers(authenticated_user["headers"]))]
-        assert [item["id"] for item in sessions_response.json()["items"]] == expected_session_ids
+        session_ids = [
+            session_id_from_headers(second_device_headers),
+            session_id_from_headers(authenticated_user["headers"]),
+        ]
+        revoked_reasons = (
+            await test_session.scalars(
+                select(UserSession.revoked_reason).where(UserSession.id.in_(session_ids))
+            )
+        ).all()
+        assert revoked_reasons == [SessionRevocationReason.PASSWORD_CHANGED] * len(session_ids)
 
     async def test_update_password_wrong_current_password(
         self, client: AsyncClient, authenticated_user: AuthenticatedUser

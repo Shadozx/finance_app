@@ -510,6 +510,130 @@ class TestRevokeActiveExcept:
         assert persisted_states == expected_states
 
 
+class TestRevokeActive:
+    async def test_revoke_active_revokes_all_active_sessions_and_returns_count(
+        self,
+        test_session: AsyncSession,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        reason = SessionRevocationReason.PASSWORD_CHANGED
+        sessions_to_revoke = [
+            UserSession(
+                user_id=user.id,
+                expires_at=now + SESSION_TIME_OFFSET,
+                refresh_token_hash=REFRESH_TOKEN_HASH,
+            ),
+            UserSession(
+                user_id=user.id,
+                expires_at=now + SESSION_TIME_OFFSET,
+                refresh_token_hash=REFRESH_TOKEN_HASH,
+            ),
+            UserSession(
+                user_id=user.id,
+                expires_at=now + SESSION_TIME_OFFSET,
+                refresh_token_hash=REFRESH_TOKEN_HASH,
+            ),
+        ]
+        for user_session in sessions_to_revoke:
+            await user_session_repository.add(user_session)
+        expected_states = {user_session.id: (now, reason) for user_session in sessions_to_revoke}
+
+        revoked_count = await user_session_repository.revoke_active(user.id, now=now, reason=reason)
+
+        rows = (
+            await test_session.execute(
+                select(UserSession.id, UserSession.revoked_at, UserSession.revoked_reason)
+            )
+        ).all()
+        persisted_states = {
+            session_id: (revoked_at, revoked_reason)
+            for session_id, revoked_at, revoked_reason in rows
+        }
+
+        assert revoked_count == len(sessions_to_revoke)
+        assert persisted_states == expected_states
+
+    async def test_revoke_active_preserves_other_users_and_inactive_sessions(
+        self,
+        test_session: AsyncSession,
+        user_repository: UserRepository,
+        user_session_repository: UserSessionRepository,
+        user: User,
+    ):
+        now = utc_now()
+        reason = SessionRevocationReason.PASSWORD_CHANGED
+        previous_revoked_at = now - SESSION_TIME_OFFSET
+        previous_reason = SessionRevocationReason.REUSE_DETECTED
+        other_user = await user_repository.add(
+            User(
+                email="other@test.com",
+                username="other",
+                hashed_password=user.hashed_password,
+            )
+        )
+        active_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+        other_session = UserSession(
+            user_id=other_user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+        revoked_session = UserSession(
+            user_id=user.id,
+            expires_at=now + SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+            revoked_at=previous_revoked_at,
+            revoked_reason=previous_reason,
+        )
+        expired_session = UserSession(
+            user_id=user.id,
+            expires_at=now - SESSION_TIME_OFFSET,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+        expiring_session = UserSession(
+            user_id=user.id,
+            expires_at=now,
+            refresh_token_hash=REFRESH_TOKEN_HASH,
+        )
+        sessions = [
+            active_session,
+            other_session,
+            revoked_session,
+            expired_session,
+            expiring_session,
+        ]
+        for user_session in sessions:
+            await user_session_repository.add(user_session)
+        expected_states = {
+            active_session.id: (now, reason),
+            other_session.id: (None, None),
+            revoked_session.id: (previous_revoked_at, previous_reason),
+            expired_session.id: (None, None),
+            expiring_session.id: (None, None),
+        }
+        expected_revoked_count = 1
+
+        revoked_count = await user_session_repository.revoke_active(user.id, now=now, reason=reason)
+
+        rows = (
+            await test_session.execute(
+                select(UserSession.id, UserSession.revoked_at, UserSession.revoked_reason)
+            )
+        ).all()
+        persisted_states = {
+            session_id: (revoked_at, revoked_reason)
+            for session_id, revoked_at, revoked_reason in rows
+        }
+
+        assert revoked_count == expected_revoked_count
+        assert persisted_states == expected_states
+
+
 class TestDeleteExpiredSessions:
     async def test_delete_expired_sessions_deletes_expired_session(
         self,

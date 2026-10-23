@@ -1430,7 +1430,6 @@ class TestUpdatePassword:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
-        active_user_session: UserSession,
         data: PasswordUpdate,
         operation: str,
     ):
@@ -1442,14 +1441,12 @@ class TestUpdatePassword:
         getattr(password_hasher_mock, operation).side_effect = error
 
         with pytest.raises(PasswordHashQueueFullError) as exc_info:
-            await user_service.update_password(
-                data, existing_user.id, current_session_id=active_user_session.id
-            )
+            await user_service.update_password(data, existing_user.id)
 
         assert exc_info.value is error
         assert existing_user.hashed_password == original_hash
         user_repo_mock.update.assert_not_awaited()
-        user_session_repo_mock.revoke_active_except.assert_not_awaited()
+        user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
     async def test_update_password_rejects_missing_user(
@@ -1460,7 +1457,6 @@ class TestUpdatePassword:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
-        active_user_session: UserSession,
         data: PasswordUpdate,
     ):
         user_repo_mock.get_by_id_for_update.return_value = None
@@ -1470,9 +1466,7 @@ class TestUpdatePassword:
         with pytest.raises(
             AuthenticationException, match=f"^{re.escape(USER_NO_LONGER_EXISTS_MESSAGE)}$"
         ) as exc_info:
-            await user_service.update_password(
-                data, existing_user.id, current_session_id=active_user_session.id
-            )
+            await user_service.update_password(data, existing_user.id)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
@@ -1480,10 +1474,10 @@ class TestUpdatePassword:
         mock_password.assert_not_awaited()
         mock_hash.assert_not_awaited()
         user_repo_mock.update.assert_not_awaited()
-        user_session_repo_mock.revoke_active_except.assert_not_awaited()
+        user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    @pytest.mark.parametrize("revoked_count", [0, 2], ids=["no-other-sessions", "revoked"])
+    @pytest.mark.parametrize("revoked_count", [0, 2], ids=["none-revoked", "revoked"])
     async def test_update_password_success(
         self,
         user_service: UserService,
@@ -1492,13 +1486,12 @@ class TestUpdatePassword:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
-        active_user_session: UserSession,
         session_now: datetime,
         data: PasswordUpdate,
         revoked_count: int,
     ):
         user_repo_mock.get_by_id_for_update.return_value = existing_user
-        user_session_repo_mock.revoke_active_except.return_value = revoked_count
+        user_session_repo_mock.revoke_active.return_value = revoked_count
         original_hashed_password = existing_user.hashed_password
         original_password_changed_at = existing_user.password_changed_at
         original_password_version = existing_user.password_version
@@ -1512,9 +1505,8 @@ class TestUpdatePassword:
 
         async def commit_password_and_revocation():
             user_repo_mock.update.assert_awaited_once_with(existing_user)
-            user_session_repo_mock.revoke_active_except.assert_awaited_once_with(
+            user_session_repo_mock.revoke_active.assert_awaited_once_with(
                 existing_user.id,
-                keep_session_id=active_user_session.id,
                 now=session_now,
                 reason=SessionRevocationReason.PASSWORD_CHANGED,
             )
@@ -1526,9 +1518,7 @@ class TestUpdatePassword:
         unit_of_work_mock.commit.side_effect = commit_password_and_revocation
 
         with capture_logs() as logs:
-            result = await user_service.update_password(
-                data, existing_user.id, current_session_id=active_user_session.id
-            )
+            result = await user_service.update_password(data, existing_user.id)
 
         assert result is None
 
@@ -1570,7 +1560,6 @@ class TestUpdatePassword:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
-        active_user_session: UserSession,
         data: PasswordUpdate,
     ):
         data.current_password = "wrong_password"
@@ -1581,16 +1570,14 @@ class TestUpdatePassword:
         password_hasher_mock.verify.return_value = False
 
         with pytest.raises(AuthenticationException, match="Current password is incorrect"):
-            await user_service.update_password(
-                data, existing_user.id, current_session_id=active_user_session.id
-            )
+            await user_service.update_password(data, existing_user.id)
 
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         user_repo_mock.get_by_id.assert_not_awaited()
         mock_password.assert_awaited_once_with(data.current_password, existing_user.hashed_password)
 
         user_repo_mock.update.assert_not_called()
-        user_session_repo_mock.revoke_active_except.assert_not_awaited()
+        user_session_repo_mock.revoke_active.assert_not_awaited()
 
         unit_of_work_mock.commit.assert_not_awaited()
 
@@ -1602,22 +1589,19 @@ class TestUpdatePassword:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
-        active_user_session: UserSession,
         data: PasswordUpdate,
     ):
         user_repo_mock.get_by_id_for_update.return_value = existing_user
         password_hasher_mock.verify.return_value = True
         password_hasher_mock.hash.return_value = "new-hashed-password"
         revocation_error = RuntimeError("Session revocation failed")
-        user_session_repo_mock.revoke_active_except.side_effect = revocation_error
+        user_session_repo_mock.revoke_active.side_effect = revocation_error
 
         with pytest.raises(RuntimeError) as exc_info:
-            await user_service.update_password(
-                data, existing_user.id, current_session_id=active_user_session.id
-            )
+            await user_service.update_password(data, existing_user.id)
 
         assert exc_info.value is revocation_error
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         user_repo_mock.get_by_id.assert_not_awaited()
-        user_session_repo_mock.revoke_active_except.assert_awaited_once()
+        user_session_repo_mock.revoke_active.assert_awaited_once()
         unit_of_work_mock.commit.assert_not_awaited()
