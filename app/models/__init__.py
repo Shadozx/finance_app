@@ -13,10 +13,11 @@ from .transaction import Transaction
 from .transaction_split import TransactionSplit
 from .transaction_template import TransactionTemplate
 from .transaction_template_split import TransactionTemplateSplit
-from .user import User
+from .user import INITIAL_PASSWORD_VERSION, User
 from .user_session import INITIAL_REFRESH_GENERATION, USER_AGENT_MAX_LENGTH, UserSession
 
 __all__ = [
+    "INITIAL_PASSWORD_VERSION",
     "INITIAL_REFRESH_GENERATION",
     "USABLE_CATEGORY_TYPES",
     "USER_AGENT_MAX_LENGTH",

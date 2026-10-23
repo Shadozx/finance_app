@@ -4,6 +4,7 @@ from typing import TypeVar
 from uuid import UUID
 
 from app.models import (
+    INITIAL_PASSWORD_VERSION,
     Account,
     Budget,
     Category,
@@ -154,5 +155,6 @@ def make_user(**kwargs) -> User:
     kwargs.setdefault("hashed_password", "hashed_password")
     kwargs.setdefault("created_at", datetime(2026, 2, 10, tzinfo=UTC))
     kwargs.setdefault("password_changed_at", datetime(2026, 2, 10, tzinfo=UTC))
+    kwargs.setdefault("password_version", INITIAL_PASSWORD_VERSION)
 
     return User(**kwargs)

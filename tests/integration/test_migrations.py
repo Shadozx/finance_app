@@ -14,6 +14,7 @@ from testcontainers.postgres import PostgresContainer
 from alembic import command
 from app.core import Base
 from app.models import (
+    INITIAL_PASSWORD_VERSION,
     INITIAL_REFRESH_GENERATION,
     CategoryType,
     SessionRevocationReason,
@@ -38,11 +39,17 @@ CATEGORY_TYPE_REVISION = "a42e8b91c630"
 REFRESH_TOKEN_HASH_REVISION = "f90bd8d1e5b1"
 SESSION_REVOCATION_REVISION = "8ba7b4d10ebb"
 REFRESH_GENERATION_REVISION = "e15e6b228c4b"
+PASSWORD_VERSION_REVISION = "e6dbc97b18b9"
 
 # Every user_sessions column that exists before the refresh generation is added
 USER_SESSION_COLUMNS_BEFORE_REFRESH_GENERATION = (
     "id, user_id, refresh_token_hash, previous_refresh_token_hash, rotated_at, user_agent,"
     " created_at, last_used_at, expires_at, revoked_at, revoked_reason"
+)
+
+# Every users column that exists before the password version is added
+USER_COLUMNS_BEFORE_PASSWORD_VERSION = (
+    "id, username, email, hashed_password, created_at, password_changed_at"
 )
 
 
@@ -597,6 +604,24 @@ class TestDataMigrations:
         )
         assert migrated_session.refresh_generation == INITIAL_REFRESH_GENERATION
         assert tuple(migrated_session)[:-1] == tuple(seeded_session)
+
+    async def test_password_version_backfills_the_initial_value_and_keeps_other_columns(
+        self,
+        migrations_engine: AsyncEngine,
+        alembic_config: Config,
+    ):
+        await upgrade(migrations_engine, alembic_config, before(PASSWORD_VERSION_REVISION))
+        await self.insert_user_before_category_type(migrations_engine)
+        select_columns = f"SELECT {USER_COLUMNS_BEFORE_PASSWORD_VERSION}"
+        seeded_user = await fetch_row(migrations_engine, f"{select_columns} FROM users")
+
+        await upgrade(migrations_engine, alembic_config, PASSWORD_VERSION_REVISION)
+
+        migrated_user = await fetch_row(
+            migrations_engine, f"{select_columns}, password_version FROM users"
+        )
+        assert migrated_user.password_version == INITIAL_PASSWORD_VERSION
+        assert tuple(migrated_user)[:-1] == tuple(seeded_user)
 
     async def test_password_changed_at_backfills_from_created_at(
         self,

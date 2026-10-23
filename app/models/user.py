@@ -6,6 +6,9 @@ from sqlalchemy.orm import Mapped, mapped_column, validates
 from app.core import Base, utc_now
 from app.core.email_policy import is_supported_email, normalize_email
 
+# Version of the password a new user starts with
+INITIAL_PASSWORD_VERSION = 0
+
 
 class User(Base):
     __tablename__ = "users"
@@ -27,6 +30,10 @@ class User(Base):
         DateTime(timezone=True),
         default=utc_now,
     )
+
+    # Number of the current password. Changes only when the password is changed;
+    # rehashing the same password with newer parameters leaves it untouched.
+    password_version: Mapped[int] = mapped_column(default=INITIAL_PASSWORD_VERSION)
 
     @validates("email")
     def validate_email(self, key, value):
