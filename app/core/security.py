@@ -11,13 +11,26 @@ from typing import NamedTuple, TypeVar
 from uuid import UUID
 
 import jwt
-from argon2 import PasswordHasher
+from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from app.core import settings
 from app.core.email_policy import normalize_email
 
 T = TypeVar("T")
+
+# Argon2 parameters, written down so that a new argon2-cffi release cannot change them
+# unnoticed. The values are the defaults of argon2-cffi 25.1.0 (the RFC 9106 "low memory"
+# profile) at the time they were written down. Hashes made since argon2-cffi replaced passlib
+# already have them; older passlib hashes have weaker parameters and are reported by
+# needs_rehash. Changing any value makes needs_rehash report all stored hashes as outdated.
+# The memory cost also sets the memory budget of every hashing worker.
+ARGON2_TIME_COST = 3
+ARGON2_MEMORY_COST_KIB = 65536
+ARGON2_PARALLELISM = 4
+ARGON2_HASH_LENGTH_BYTES = 32
+ARGON2_SALT_LENGTH_BYTES = 16
+ARGON2_TYPE = Type.ID
 
 
 class PasswordHashQueueFullError(Exception):
@@ -46,7 +59,18 @@ class Argon2Hasher:
         if max_queue < 0:
             raise ValueError("max_queue must not be negative")
 
-        self._backend = backend if backend is not None else PasswordHasher()
+        self._backend = (
+            backend
+            if backend is not None
+            else PasswordHasher(
+                time_cost=ARGON2_TIME_COST,
+                memory_cost=ARGON2_MEMORY_COST_KIB,
+                parallelism=ARGON2_PARALLELISM,
+                hash_len=ARGON2_HASH_LENGTH_BYTES,
+                salt_len=ARGON2_SALT_LENGTH_BYTES,
+                type=ARGON2_TYPE,
+            )
+        )
         # Computed from this backend rather than hardcoded: a fixed hash would keep the parameters
         # it was made with, and a failed login for an unknown email would stop costing the same.
         self._dummy_password_hash = self._backend.hash("dummy-password-never-matched")
@@ -65,6 +89,11 @@ class Argon2Hasher:
 
     async def verify_dummy(self, plain_password: str) -> bool:
         return await self.verify(plain_password, self._dummy_password_hash)
+
+    def needs_rehash(self, hashed_password: str) -> bool:
+        # Only parses the hash string and compares parameters, no Argon2 runs, so it stays
+        # out of the worker pool and cannot hit a full queue.
+        return self._backend.check_needs_rehash(hashed_password)
 
     async def _run(self, operation: Callable[[], T]) -> T:
         with self._lock:

@@ -9,10 +9,18 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
+from argon2 import Parameters, PasswordHasher, extract_parameters, profiles
+from argon2.low_level import ARGON2_VERSION
 from pytest_mock import MockerFixture
 
 from app.core.config import settings
 from app.core.security import (
+    ARGON2_HASH_LENGTH_BYTES,
+    ARGON2_MEMORY_COST_KIB,
+    ARGON2_PARALLELISM,
+    ARGON2_SALT_LENGTH_BYTES,
+    ARGON2_TIME_COST,
+    ARGON2_TYPE,
     Argon2Hasher,
     PasswordHashQueueFullError,
     create_access_token,
@@ -45,6 +53,13 @@ TEST_PASSWORD = "test-password"
 TEST_PASSWORD_HASH = "test-password-hash"
 WRONG_PASSWORD = "wrong-password"
 INVALID_PASSWORD_HASH = "invalid-hash"
+
+OUTDATED_PARAMETERS = profiles.CHEAPEST
+# Made by argon2-cffi 25.1.0 with its defaults, before the parameters were written down
+LIBRARY_DEFAULT_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$xTG0jtSXBo1s0zjGzMVedA$"
+    "ML4R668SfdHu81x70RhEapqM+lwTVI3Y+5hDg8VwToI"
+)
 
 # Any secret will do for tests that sign or parse a token; the derived one is tested apart
 REFRESH_SECRET = "test-refresh-secret"
@@ -141,6 +156,42 @@ class TestArgon2Hasher:
         hasher = make_hasher()
 
         assert not await hasher.verify_dummy(TEST_PASSWORD)
+
+    async def test_hash_uses_the_configured_parameters(self, make_hasher):
+        hasher = make_hasher()
+        expected_parameters = Parameters(
+            type=ARGON2_TYPE,
+            version=ARGON2_VERSION,
+            salt_len=ARGON2_SALT_LENGTH_BYTES,
+            hash_len=ARGON2_HASH_LENGTH_BYTES,
+            time_cost=ARGON2_TIME_COST,
+            memory_cost=ARGON2_MEMORY_COST_KIB,
+            parallelism=ARGON2_PARALLELISM,
+        )
+
+        hashed_password = await hasher.hash(TEST_PASSWORD)
+
+        assert extract_parameters(hashed_password) == expected_parameters
+
+    async def test_needs_rehash_is_false_for_a_fresh_hash(self, make_hasher):
+        hasher = make_hasher()
+
+        hashed_password = await hasher.hash(TEST_PASSWORD)
+
+        assert hasher.needs_rehash(hashed_password) is False
+
+    async def test_needs_rehash_is_true_for_a_hash_with_outdated_parameters(self, make_hasher):
+        hasher = make_hasher()
+        outdated_hashed_password = PasswordHasher.from_parameters(OUTDATED_PARAMETERS).hash(
+            TEST_PASSWORD
+        )
+
+        assert hasher.needs_rehash(outdated_hashed_password) is True
+
+    def test_needs_rehash_is_false_for_a_hash_made_with_the_library_defaults(self, make_hasher):
+        hasher = make_hasher()
+
+        assert hasher.needs_rehash(LIBRARY_DEFAULT_PASSWORD_HASH) is False
 
     async def test_verify_dummy_uses_hash_generated_by_its_backend(
         self, make_hasher, mocker: MockerFixture
