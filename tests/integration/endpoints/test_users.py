@@ -14,7 +14,6 @@ from app.core import utc_now
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.security import Argon2Hasher
 from app.models import INITIAL_PASSWORD_VERSION, SessionRevocationReason, User, UserSession
-from app.repositories import UserRepository
 from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 from tests.integration.endpoints.helpers import (
     CONCURRENCY_TIMEOUT_SECONDS,
@@ -26,6 +25,7 @@ from tests.integration.endpoints.helpers import (
     run_concurrently,
     run_second_behind_first,
     session_id_from_headers,
+    store_outdated_password_hash,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
 
@@ -689,23 +689,6 @@ class TestUpdatePasswordConcurrency:
     def password_payload(self, user: UserData, new_password: str) -> dict[str, str]:
         return {"current_password": user["password"], "new_password": new_password}
 
-    # Set up after the login, so that only the requests under test reach the held update. The
-    # request that locks the user first reaches update first, and stays there until the other
-    # one is queued behind its lock.
-    @pytest.fixture
-    def held_update(
-        self, mocker: MockerFixture, independent_login_tokens: dict[str, str]
-    ) -> FirstCallGate:
-        gate = FirstCallGate()
-        mocker.patch.object(
-            UserRepository,
-            "update",
-            autospec=True,
-            side_effect=gate.wrap(UserRepository.update),
-        )
-
-        return gate
-
     def held_argon2(self, mocker: MockerFixture, operation: str) -> FirstCallGate:
         gate = FirstCallGate()
         mocker.patch.object(
@@ -717,13 +700,46 @@ class TestUpdatePasswordConcurrency:
 
         return gate
 
+    async def test_update_password_concurrent_rehash_succeeds(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_registered_user: UserData,
+        headers: dict[str, str],
+        new_password: str,
+        held_user_update: FirstCallGate,
+    ):
+        await store_outdated_password_hash(independent_session_factory, independent_registered_user)
+        login_payload = {
+            "email": independent_registered_user["email"],
+            "password": independent_registered_user["password"],
+        }
+
+        login_response, update_response = await run_second_behind_first(
+            independent_client.post(API_AUTH_LOGIN, json=login_payload),
+            independent_client.put(
+                API_USERS_ME_UPDATE_PASSWORD,
+                json=self.password_payload(independent_registered_user, new_password),
+                headers=headers,
+            ),
+            gate=held_user_update,
+            session_factory=independent_session_factory,
+        )
+
+        assert login_response.status_code == status.HTTP_200_OK
+        assert update_response.status_code == status.HTTP_204_NO_CONTENT
+        new_login = await independent_client.post(
+            API_AUTH_LOGIN, json={**login_payload, "password": new_password}
+        )
+        assert new_login.status_code == status.HTTP_200_OK
+
     async def test_update_password_concurrent_second_unauthorized(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
         independent_registered_user: UserData,
         headers: dict[str, str],
-        held_update: FirstCallGate,
+        held_user_update: FirstCallGate,
     ):
         first_new_password = "First" + independent_registered_user["password"]
         second_new_password = "Second" + independent_registered_user["password"]
@@ -740,7 +756,7 @@ class TestUpdatePasswordConcurrency:
                     json=self.password_payload(independent_registered_user, second_new_password),
                     headers=headers,
                 ),
-                gate=held_update,
+                gate=held_user_update,
                 session_factory=independent_session_factory,
             )
 

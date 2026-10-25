@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
+from pytest_mock import MockerFixture
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -10,8 +11,10 @@ from app.api.dependencies import get_session
 from app.core import Base
 from app.main import app
 from app.models import Currency
+from app.repositories import UserRepository
 from tests.integration.endpoints.helpers import (
     CLEANUP_LOCK_TIMEOUT_SECONDS,
+    FirstCallGate,
     account_payload,
     archive_account,
     archive_category,
@@ -127,6 +130,21 @@ async def independent_login_tokens(
     assert response.status_code == status.HTTP_200_OK
 
     return response.json()
+
+
+@pytest.fixture
+def held_user_update(
+    mocker: MockerFixture, independent_login_tokens: dict[str, str]
+) -> FirstCallGate:
+    # Install after login; hold the first update until another request queues on its lock.
+    gate = FirstCallGate()
+    mocker.patch.object(
+        UserRepository,
+        "update",
+        autospec=True,
+        side_effect=gate.wrap(UserRepository.update),
+    )
+    return gate
 
 
 @pytest.fixture(autouse=True)

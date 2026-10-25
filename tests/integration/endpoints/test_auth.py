@@ -53,6 +53,7 @@ from tests.integration.endpoints.helpers import (
     run_concurrently,
     run_second_behind_first,
     session_id_from_headers,
+    store_outdated_password_hash,
 )
 from tests.integration.endpoints.types import AuthenticatedUser, UserData
 from tests.jwt_helpers import (
@@ -68,6 +69,7 @@ API_AUTH_REGISTER_URL = "/api/v1/auth/register"
 API_AUTH_LOGIN_URL = "/api/v1/auth/login"
 API_AUTH_REFRESH_URL = "/api/v1/auth/refresh"
 API_AUTH_LOGOUT_URL = "/api/v1/auth/logout"
+API_USERS_ME_UPDATE_PASSWORD = "/api/v1/users/me/password"
 
 API_CATEGORIES_URL = "/api/v1/categories"
 
@@ -1437,6 +1439,70 @@ class TestRefreshGeneration:
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
+
+
+class TestLoginConcurrency:
+    async def test_login_concurrent_rehash_succeeds(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_registered_user: UserData,
+        held_user_update: FirstCallGate,
+    ):
+        await store_outdated_password_hash(independent_session_factory, independent_registered_user)
+        payload = {
+            "email": independent_registered_user["email"],
+            "password": independent_registered_user["password"],
+        }
+
+        first_response, second_response = await run_second_behind_first(
+            independent_client.post(API_AUTH_LOGIN_URL, json=payload),
+            independent_client.post(API_AUTH_LOGIN_URL, json=payload),
+            gate=held_user_update,
+            session_factory=independent_session_factory,
+        )
+
+        assert first_response.status_code == status.HTTP_200_OK
+        assert second_response.status_code == status.HTTP_200_OK
+
+    async def test_login_concurrent_password_change_unauthorized(
+        self,
+        independent_client: AsyncClient,
+        independent_session_factory: async_sessionmaker[AsyncSession],
+        independent_registered_user: UserData,
+        independent_login_tokens: dict[str, str],
+        held_user_update: FirstCallGate,
+    ):
+        await store_outdated_password_hash(independent_session_factory, independent_registered_user)
+        new_password = "New" + independent_registered_user["password"]
+        headers = {"Authorization": f"Bearer {independent_login_tokens['access_token']}"}
+        login_payload = {
+            "email": independent_registered_user["email"],
+            "password": independent_registered_user["password"],
+        }
+        password_payload = {
+            "current_password": independent_registered_user["password"],
+            "new_password": new_password,
+        }
+
+        update_response, login_response = await run_second_behind_first(
+            independent_client.put(
+                API_USERS_ME_UPDATE_PASSWORD, json=password_payload, headers=headers
+            ),
+            independent_client.post(API_AUTH_LOGIN_URL, json=login_payload),
+            gate=held_user_update,
+            session_factory=independent_session_factory,
+        )
+
+        new_login = await independent_client.post(
+            API_AUTH_LOGIN_URL, json={**login_payload, "password": new_password}
+        )
+        old_login = await independent_client.post(API_AUTH_LOGIN_URL, json=login_payload)
+
+        assert update_response.status_code == status.HTTP_204_NO_CONTENT
+        assert login_response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert new_login.status_code == status.HTTP_200_OK
+        assert old_login.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestConcurrentRefresh:

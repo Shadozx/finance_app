@@ -4,14 +4,15 @@ from collections.abc import Awaitable, Callable, Coroutine
 from decimal import Decimal
 from typing import Any, TypeVar
 
+from argon2 import PasswordHasher, profiles
 from fastapi import status
 from httpx import AsyncClient, Response
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
-from app.models import CategoryType
+from app.models import CategoryType, User
 from app.schemas.validators import MAX_AMOUNT, MAX_PASSWORD_LENGTH
 from tests.integration.endpoints.types import (
     AccountData,
@@ -19,6 +20,7 @@ from tests.integration.endpoints.types import (
     TransactionData,
     TransactionTemplateData,
     TransferData,
+    UserData,
 )
 
 T = TypeVar("T")
@@ -48,6 +50,22 @@ UNDER_MIN_BALANCE_VALUE = str(-MAX_AMOUNT - CENT)
 
 # Passes every strength rule, so only the length can reject it
 OVER_MAX_PASSWORD = ("a1" * MAX_PASSWORD_LENGTH)[: MAX_PASSWORD_LENGTH + 1]
+
+# Differs from the pinned parameters, so a hash made with it needs rehashing
+OUTDATED_PASSWORD_PARAMETERS = profiles.CHEAPEST
+
+
+async def store_outdated_password_hash(
+    session_factory: async_sessionmaker[AsyncSession], user: UserData
+) -> None:
+    outdated_hash = PasswordHasher.from_parameters(OUTDATED_PASSWORD_PARAMETERS).hash(
+        user["password"]
+    )
+    async with session_factory() as session:
+        await session.execute(
+            update(User).where(User.id == user["id"]).values(hashed_password=outdated_hash)
+        )
+        await session.commit()
 
 
 def session_id_from_headers(headers: dict[str, str]) -> uuid.UUID:
