@@ -677,10 +677,14 @@ class TestUpdatePassword:
         assert "detail" in response.json()
 
 
-class TestConcurrentPasswordUpdate:
+class TestUpdatePasswordConcurrency:
     @pytest.fixture
     def headers(self, independent_login_tokens: dict[str, str]) -> dict[str, str]:
         return {"Authorization": f"Bearer {independent_login_tokens['access_token']}"}
+
+    @pytest.fixture
+    def new_password(self, independent_registered_user: UserData) -> str:
+        return "New" + independent_registered_user["password"]
 
     def password_payload(self, user: UserData, new_password: str) -> dict[str, str]:
         return {"current_password": user["password"], "new_password": new_password}
@@ -713,7 +717,7 @@ class TestConcurrentPasswordUpdate:
 
         return gate
 
-    async def test_concurrent_password_updates_let_only_the_first_succeed(
+    async def test_update_password_concurrent_second_unauthorized(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
@@ -773,13 +777,14 @@ class TestConcurrentPasswordUpdate:
         assert second_login.status_code == status.HTTP_401_UNAUTHORIZED
 
     @pytest.mark.parametrize("operation", ["verify", "hash"])
-    async def test_user_row_is_not_locked_while_argon2_runs(
+    async def test_update_password_during_argon2_user_unlocked(
         self,
         mocker: MockerFixture,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
         independent_registered_user: UserData,
         headers: dict[str, str],
+        new_password: str,
         operation: str,
     ):
         gate = self.held_argon2(mocker, operation)
@@ -800,9 +805,7 @@ class TestConcurrentPasswordUpdate:
         response, _ = await run_concurrently(
             independent_client.put(
                 API_USERS_ME_UPDATE_PASSWORD,
-                json=self.password_payload(
-                    independent_registered_user, "New" + independent_registered_user["password"]
-                ),
+                json=self.password_payload(independent_registered_user, new_password),
                 headers=headers,
             ),
             lock_user_row_without_waiting(),
@@ -811,13 +814,14 @@ class TestConcurrentPasswordUpdate:
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
     @pytest.mark.parametrize("operation", ["verify", "hash"])
-    async def test_connection_is_returned_to_the_pool_while_argon2_runs(
+    async def test_update_password_during_argon2_connection_released(
         self,
         mocker: MockerFixture,
         test_engine: AsyncEngine,
         independent_client: AsyncClient,
         independent_registered_user: UserData,
         headers: dict[str, str],
+        new_password: str,
         operation: str,
     ):
         expected_checked_out_connections = 0
@@ -834,9 +838,7 @@ class TestConcurrentPasswordUpdate:
         response, checked_out_connections = await run_concurrently(
             independent_client.put(
                 API_USERS_ME_UPDATE_PASSWORD,
-                json=self.password_payload(
-                    independent_registered_user, "New" + independent_registered_user["password"]
-                ),
+                json=self.password_payload(independent_registered_user, new_password),
                 headers=headers,
             ),
             count_checked_out_connections(),

@@ -78,10 +78,10 @@ def without_claim(claims: Mapping[str, Any], name: str) -> dict[str, Any]:
 ClaimsBreaker = Callable[[Mapping[str, Any]], dict[str, Any]]
 
 ISSUER_AUDIENCE_DEFECTS: dict[str, ClaimsBreaker] = {
-    "missing-iss": lambda claims: without_claim(claims, "iss"),
-    "missing-aud": lambda claims: without_claim(claims, "aud"),
-    "foreign-iss": lambda claims: replace_claim(claims, "iss", FOREIGN_ISSUER),
-    "foreign-aud": lambda claims: replace_claim(claims, "aud", FOREIGN_AUDIENCE),
+    "missing_iss": lambda claims: without_claim(claims, "iss"),
+    "missing_aud": lambda claims: without_claim(claims, "aud"),
+    "foreign_iss": lambda claims: replace_claim(claims, "iss", FOREIGN_ISSUER),
+    "foreign_aud": lambda claims: replace_claim(claims, "aud", FOREIGN_AUDIENCE),
 }
 
 
