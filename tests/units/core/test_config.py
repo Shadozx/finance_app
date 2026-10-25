@@ -7,7 +7,9 @@ from app.core.config import (
     FORBIDDEN_SECRETS,
     KEY_SETTING_NAMES,
     MIN_SECRET_LENGTH,
+    RATE_LIMIT_DISABLED_IN_PROD_MESSAGE,
     SESSION_IDLE_EXCEEDS_MAX_MESSAGE,
+    Environment,
     Settings,
 )
 
@@ -50,6 +52,8 @@ def base_settings(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     for name in JWT_CLAIM_SETTING_NAMES:
         monkeypatch.delenv(name, raising=False)
     for name in EXPECTED_KEY_SETTING_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    for name in ("ENVIRONMENT", "RATE_LIMIT_ENABLED"):
         monkeypatch.delenv(name, raising=False)
 
     return {
@@ -350,3 +354,47 @@ class TestKeySettings:
         declared_key_names = [name for name in Settings.model_fields if name in KEY_SETTING_NAMES]
 
         assert declared_key_names == list(KEY_SETTING_NAMES)
+
+
+class TestRateLimitSettings:
+    def test_rate_limit_enabled_defaults_to_true(self, base_settings: dict[str, str]):
+        settings = make_settings(base_settings)
+
+        assert settings.RATE_LIMIT_ENABLED is True
+
+    @pytest.mark.parametrize(
+        "environment",
+        [
+            pytest.param(Environment.DEV, id="dev"),
+            pytest.param(Environment.STAGING, id="staging"),
+        ],
+    )
+    def test_rate_limit_enabled_false_outside_prod_accepted(
+        self, base_settings: dict[str, str], environment: Environment
+    ):
+        settings = make_settings(
+            base_settings, ENVIRONMENT=environment.value, RATE_LIMIT_ENABLED=False
+        )
+
+        assert settings.RATE_LIMIT_ENABLED is False
+
+    def test_rate_limit_enabled_false_in_prod_raises_validation_error(
+        self, base_settings: dict[str, str]
+    ):
+        with pytest.raises(
+            ValidationError, match=re.escape(RATE_LIMIT_DISABLED_IN_PROD_MESSAGE)
+        ) as exc_info:
+            make_settings(
+                base_settings, ENVIRONMENT=Environment.PROD.value, RATE_LIMIT_ENABLED=False
+            )
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == ("RATE_LIMIT_ENABLED",)
+
+    def test_rate_limit_enabled_true_in_prod_accepted(self, base_settings: dict[str, str]):
+        settings = make_settings(
+            base_settings, ENVIRONMENT=Environment.PROD.value, RATE_LIMIT_ENABLED=True
+        )
+
+        assert settings.RATE_LIMIT_ENABLED is True

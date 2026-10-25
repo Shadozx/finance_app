@@ -20,6 +20,7 @@ MIN_SECRET_LENGTH = 32
 KEY_SETTING_NAMES = ("SECRET_KEY", "REFRESH_HMAC_KEY", "REFRESH_SECRET_KEY")
 
 SESSION_IDLE_EXCEEDS_MAX_MESSAGE = "SESSION_IDLE_DAYS must not exceed SESSION_MAX_DAYS."
+RATE_LIMIT_DISABLED_IN_PROD_MESSAGE = "RATE_LIMIT_ENABLED must not be false in prod."
 
 
 class Environment(str, Enum):
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: Environment = Environment.DEV
     DEBUG: bool = False
+    RATE_LIMIT_ENABLED: bool = True
     CORS_ORIGINS: list[AnyHttpUrl] = []
 
     POSTGRES_USER: str
@@ -99,6 +101,15 @@ class Settings(BaseSettings):
         idle_days = info.data.get("SESSION_IDLE_DAYS")
         if idle_days is not None and idle_days > v:
             raise ValueError(SESSION_IDLE_EXCEEDS_MAX_MESSAGE)
+        return v
+
+    @field_validator("RATE_LIMIT_ENABLED")
+    @classmethod
+    def rate_limit_must_stay_enabled_in_prod(cls, v: bool, info: ValidationInfo) -> bool:
+        # ENVIRONMENT is missing here when it failed its own validation, which already
+        # reports the error. Staging may switch the limit off for load tests.
+        if not v and info.data.get("ENVIRONMENT") == Environment.PROD:
+            raise ValueError(RATE_LIMIT_DISABLED_IN_PROD_MESSAGE)
         return v
 
     @field_validator("DATABASE_URL", mode="before")
