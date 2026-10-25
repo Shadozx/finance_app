@@ -16,18 +16,21 @@ services:
       timeout: 3s
       retries: 5
 
-#  app:
-#    build: .
-#    container_name: finance_tracker_app
-#    env_file:
-#      - .env.dev
-#    environment:
-#      POSTGRES_SERVER: db
-#    ports:
-#      - "8020:8000"
-#    depends_on:
-#      db:
-#        condition: service_healthy
+  app:
+    build: .
+    container_name: finance_tracker_app
+    env_file:
+      - .env.dev
+    environment:
+      POSTGRES_SERVER: db
+    ports:
+      - "8020:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Workers x (PASSWORD_HASH_CONCURRENCY x Argon2 memory cost) + ~73 MiB idle, plus 25%
+    # Recalculate when hasher concurrency, ARGON2_MEMORY_COST_KIB or --workers change
+    mem_limit: 256m
 
 volumes:
   postgres_data:
