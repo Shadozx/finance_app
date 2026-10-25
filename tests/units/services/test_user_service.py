@@ -343,6 +343,137 @@ class TestAuthenticate:
             expires_delta=access_lifetime,
         )
 
+    async def test_authenticate_outdated_hash_updates_hashed_password(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        verified_hash = existing_user.hashed_password
+        verified_password_version = existing_user.password_version
+        verified_password_changed_at = existing_user.password_changed_at
+        rehashed_password = "rehashed-password"
+
+        password_hasher_mock.verify.return_value = True
+        password_hasher_mock.needs_rehash.return_value = True
+        password_hasher_mock.hash.return_value = rehashed_password
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
+
+        with capture_logs() as logs:
+            await user_service.authenticate(data, user_agent=None)
+
+        created_session = user_session_repo_mock.add.await_args.args[0]
+
+        password_hasher_mock.needs_rehash.assert_called_once_with(verified_hash)
+        password_hasher_mock.hash.assert_awaited_once_with(data.password)
+        user_repo_mock.update.assert_awaited_once_with(existing_user)
+        assert existing_user.hashed_password == rehashed_password
+        assert existing_user.password_version == verified_password_version
+        assert existing_user.password_changed_at == verified_password_changed_at
+        assert logs == [
+            {
+                "event": "password_rehashed",
+                "user_id": existing_user.id,
+                "log_level": "info",
+            },
+            {
+                "event": "user_authenticate_success",
+                "user_id": existing_user.id,
+                "session_id": str(created_session.id),
+                "log_level": "info",
+            },
+        ]
+
+    async def test_authenticate_outdated_hash_rehashes_before_locking(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        rehashed_password = "rehashed-password"
+        password_hasher_mock.verify.return_value = True
+        password_hasher_mock.needs_rehash.return_value = True
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
+
+        async def hash_password(*args) -> str:
+            user_repo_mock.get_by_id_for_update.assert_not_awaited()
+            return rehashed_password
+
+        password_hasher_mock.hash.side_effect = hash_password
+
+        await user_service.authenticate(data, user_agent=None)
+
+        password_hasher_mock.hash.assert_awaited_once_with(data.password)
+        user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+
+    async def test_authenticate_fresh_hash_skips_rehash(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        verified_hash = existing_user.hashed_password
+        password_hasher_mock.verify.return_value = True
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
+
+        await user_service.authenticate(data, user_agent=None)
+
+        password_hasher_mock.needs_rehash.assert_called_once_with(verified_hash)
+        password_hasher_mock.hash.assert_not_awaited()
+        user_repo_mock.update.assert_not_awaited()
+
+    async def test_authenticate_full_queue_skips_rehash(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        existing_user: User,
+        data: UserLogin,
+    ):
+        verified_hash = existing_user.hashed_password
+        pending_count = 22
+        error = PasswordHashQueueFullError(pending_count)
+        password_hasher_mock.verify.return_value = True
+        password_hasher_mock.needs_rehash.return_value = True
+        password_hasher_mock.hash.side_effect = error
+        user_repo_mock.get_by_email.return_value = existing_user
+        user_repo_mock.get_by_id_for_update.return_value = existing_user
+
+        with capture_logs() as logs:
+            await user_service.authenticate(data, user_agent=None)
+
+        created_session = user_session_repo_mock.add.await_args.args[0]
+
+        password_hasher_mock.hash.assert_awaited_once_with(data.password)
+        assert existing_user.hashed_password == verified_hash
+        user_repo_mock.update.assert_not_awaited()
+        user_session_repo_mock.add.assert_awaited_once()
+        assert logs == [
+            {
+                "event": "password_rehash_skipped_queue_full",
+                "user_id": existing_user.id,
+                "pending_count": pending_count,
+                "log_level": "warning",
+            },
+            {
+                "event": "user_authenticate_success",
+                "user_id": existing_user.id,
+                "session_id": str(created_session.id),
+                "log_level": "info",
+            },
+        ]
+
     @pytest.mark.parametrize("known_user", [True, False], ids=["known-email", "unknown-email"])
     async def test_authenticate_commits_before_verifying_password(
         self,
@@ -523,6 +654,13 @@ class TestAuthenticate:
 
         unit_of_work_mock.commit.assert_awaited_once_with()
 
+    @pytest.mark.parametrize(
+        "needs_rehash",
+        [
+            pytest.param(False, id="fresh_hash"),
+            pytest.param(True, id="outdated_hash"),
+        ],
+    )
     async def test_authenticate_rejects_password_changed_after_verification(
         self,
         user_service: UserService,
@@ -532,12 +670,16 @@ class TestAuthenticate:
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserLogin,
+        needs_rehash: bool,
     ):
         verified_password_version = existing_user.password_version
         changed_hashed_password = "changed-hashed-password"
+        rehashed_password = "rehashed-password"
         changed_password_version = verified_password_version + 1
 
         password_hasher_mock.verify.return_value = True
+        password_hasher_mock.needs_rehash.return_value = needs_rehash
+        password_hasher_mock.hash.return_value = rehashed_password
 
         def lock_user_with_changed_password(user_id: int) -> User:
             # Mimic populate_existing: the locked re-read overwrites the same object.
@@ -565,6 +707,7 @@ class TestAuthenticate:
         ]
 
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
+        user_repo_mock.update.assert_not_awaited()
         user_session_repo_mock.delete_expired_sessions.assert_not_awaited()
         user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()

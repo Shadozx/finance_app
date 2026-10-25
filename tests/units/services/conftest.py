@@ -153,7 +153,9 @@ def currency_service(currency_repo_mock: CurrencyRepository):
 
 @pytest.fixture
 def password_hasher_mock(mocker: MockerFixture):
-    return mocker.AsyncMock(spec=Argon2Hasher)
+    password_hasher = mocker.AsyncMock(spec=Argon2Hasher)
+    password_hasher.needs_rehash.return_value = False
+    return password_hasher
 
 
 @pytest.fixture

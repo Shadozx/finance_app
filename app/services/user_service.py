@@ -12,6 +12,7 @@ from app.core.error_codes import ErrorCode
 from app.core.exceptions import AuthenticationException, ValueExistsException
 from app.core.security import (
     Argon2Hasher,
+    PasswordHashQueueFullError,
     create_access_token,
     create_refresh_token,
     derive_refresh_secret,
@@ -222,6 +223,19 @@ class UserService:
                 INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
+        # Rehashing only upgrades the stored hash, so it runs outside the lock.
+        # A full hash queue skips the upgrade without preventing login.
+        rehashed_password: str | None = None
+        if verified_hash is not None and self.password_hasher.needs_rehash(verified_hash):
+            try:
+                rehashed_password = await self.password_hasher.hash(user.password)
+            except PasswordHashQueueFullError as exc:
+                logger.warning(
+                    "password_rehash_skipped_queue_full",
+                    user_id=existing_user.id,
+                    pending_count=exc.pending_count,
+                )
+
         # The password is verified without a lock so the slow hash check does not hold
         # the user row.
         # The re-read takes the lock to serialize login with password changes: if the
@@ -248,6 +262,10 @@ class UserService:
                 INVALID_CREDENTIALS_MESSAGE, code=ErrorCode.INVALID_CREDENTIALS
             )
 
+        if rehashed_password is not None:
+            locked_user.hashed_password = rehashed_password
+            await self.user_repository.update(locked_user)
+
         now = utc_now()
 
         await self.user_session_repository.delete_expired_sessions(existing_user.id, now)
@@ -267,6 +285,9 @@ class UserService:
         await self.user_session_repository.add(user_session)
 
         await self.unit_of_work.commit()
+
+        if rehashed_password is not None:
+            logger.info("password_rehashed", user_id=existing_user.id)
 
         logger.info(
             "user_authenticate_success",

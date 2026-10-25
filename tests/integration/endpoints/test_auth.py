@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+from argon2 import Parameters, PasswordHasher, extract_parameters, profiles
+from argon2.low_level import ARGON2_VERSION
 from fastapi import status
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
@@ -16,6 +18,12 @@ from app.core import create_access_token, settings, utc_now, verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
 from app.core.rate_limiter import limiter
 from app.core.security import (
+    ARGON2_HASH_LENGTH_BYTES,
+    ARGON2_MEMORY_COST_KIB,
+    ARGON2_PARALLELISM,
+    ARGON2_SALT_LENGTH_BYTES,
+    ARGON2_TIME_COST,
+    ARGON2_TYPE,
     create_refresh_token,
     derive_refresh_secret,
     hash_refresh_secret,
@@ -410,6 +418,52 @@ class TestLogin:
         assert verify_refresh_token_signature(refresh_session_id, secret, signature)
         assert user_session.refresh_token_hash == hash_refresh_secret(secret)
         assert user_session.refresh_token_hash != secret
+
+    async def test_login_outdated_hash_updates_stored_hash(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        registered_user: UserData,
+    ):
+        outdated_parameters = profiles.CHEAPEST
+        expected_parameters = Parameters(
+            type=ARGON2_TYPE,
+            version=ARGON2_VERSION,
+            salt_len=ARGON2_SALT_LENGTH_BYTES,
+            hash_len=ARGON2_HASH_LENGTH_BYTES,
+            time_cost=ARGON2_TIME_COST,
+            memory_cost=ARGON2_MEMORY_COST_KIB,
+            parallelism=ARGON2_PARALLELISM,
+        )
+        stored_user = await test_session.scalar(
+            select(User).where(User.id == registered_user["id"])
+        )
+        assert stored_user is not None
+
+        outdated_hash = PasswordHasher.from_parameters(outdated_parameters).hash(
+            registered_user["password"]
+        )
+        stored_user.hashed_password = outdated_hash
+        password_version = stored_user.password_version
+        password_changed_at = stored_user.password_changed_at
+        await test_session.commit()
+
+        response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={
+                "email": registered_user["email"],
+                "password": registered_user["password"],
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+        await test_session.refresh(stored_user)
+
+        assert stored_user.hashed_password != outdated_hash
+        assert extract_parameters(stored_user.hashed_password) == expected_parameters
+        assert stored_user.password_version == password_version
+        assert stored_user.password_changed_at == password_changed_at
 
     async def test_login_wrong_password(
         self,
