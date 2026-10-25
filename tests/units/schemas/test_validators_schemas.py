@@ -2,7 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 
+from app.core.error_codes import FieldErrorCode
+from app.schemas.user import PasswordUpdate
 from app.schemas.validators import (
     MAX_AMOUNT,
     MAX_DATE_RANGE_DAYS,
@@ -18,6 +21,14 @@ from app.schemas.validators import (
     username_validator,
     validate_date_range,
 )
+
+# The same password in two Unicode forms that look identical: a single composed character
+# and a base letter followed by a combining mark
+COMPOSED_PASSWORD = "Password1\u0439"
+DECOMPOSED_PASSWORD = "Password1\u0438\u0306"
+# The same letter in the same two forms, for tests that depend on the length
+COMPOSED_LETTER = "\u00e9"
+DECOMPOSED_LETTER = "e\u0301"
 
 
 class TestNameValidator:
@@ -52,6 +63,19 @@ class TestNameValidator:
 
 
 class TestPasswordValidator:
+    def test_password_decomposed_normalized_to_composed(self):
+        assert password_validator(DECOMPOSED_PASSWORD) == COMPOSED_PASSWORD
+
+    def test_password_over_max_length_before_normalization_accepted(self):
+        required_digit = "1"
+        letter_count = MAX_PASSWORD_LENGTH - len(required_digit)
+        decomposed_password = DECOMPOSED_LETTER * letter_count + required_digit
+        composed_password = COMPOSED_LETTER * letter_count + required_digit
+
+        assert len(decomposed_password) > MAX_PASSWORD_LENGTH
+        assert len(composed_password) == MAX_PASSWORD_LENGTH
+        assert password_validator(decomposed_password) == composed_password
+
     def test_valid_password_returned_as_is(self):
         assert password_validator("Password1") == "Password1"
 
@@ -86,6 +110,17 @@ class TestPasswordValidator:
 
 
 class TestPasswordMaxLengthValidator:
+    def test_password_decomposed_normalized_to_composed(self):
+        assert password_max_length_validator(DECOMPOSED_PASSWORD) == COMPOSED_PASSWORD
+
+    def test_password_over_max_length_before_normalization_accepted(self):
+        decomposed_password = DECOMPOSED_LETTER * MAX_PASSWORD_LENGTH
+        composed_password = COMPOSED_LETTER * MAX_PASSWORD_LENGTH
+
+        assert len(decomposed_password) == len(DECOMPOSED_LETTER) * MAX_PASSWORD_LENGTH
+        assert len(composed_password) == MAX_PASSWORD_LENGTH
+        assert password_max_length_validator(decomposed_password) == composed_password
+
     def test_valid_password_returned_as_is(self):
         assert password_max_length_validator("Password1") == "Password1"
 
@@ -101,6 +136,17 @@ class TestPasswordMaxLengthValidator:
     def test_long_password_rejected(self):
         with pytest.raises(ValueError, match="Password must be at most"):
             password_max_length_validator("a" * (MAX_PASSWORD_LENGTH + 1))
+
+
+class TestPasswordUpdate:
+    def test_new_password_decomposed_same_as_current_rejected(self):
+        with pytest.raises(ValidationError) as exc_info:
+            PasswordUpdate(current_password=COMPOSED_PASSWORD, new_password=DECOMPOSED_PASSWORD)
+
+        errors = exc_info.value.errors()
+        assert len(errors) == 1
+        assert errors[0]["loc"] == ("new_password",)
+        assert errors[0]["type"] == FieldErrorCode.SAME_AS_CURRENT
 
 
 class TestEmailAddressValidator:

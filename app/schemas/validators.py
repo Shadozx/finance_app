@@ -9,6 +9,7 @@ from pydantic_core import PydanticCustomError
 
 from app.core.email_policy import is_supported_email, normalize_email
 from app.core.error_codes import FieldErrorCode
+from app.core.password_policy import normalize_password
 
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -58,6 +59,9 @@ def name_validator(name: str, entity: str) -> str:
 
 
 def password_max_length_validator(password: str) -> str:
+    # Normalize first, so the length is counted on the form that gets hashed
+    password = normalize_password(password)
+
     # The only rule for a password being checked rather than set: strength rules
     # may tighten later and must not lock out existing users
     if len(password) > MAX_PASSWORD_LENGTH:
@@ -72,7 +76,7 @@ def password_max_length_validator(password: str) -> str:
 
 def password_validator(password: str) -> str:
     # Length goes first, so the strength checks below never scan an oversized string
-    password_max_length_validator(password)
+    password = password_max_length_validator(password)
 
     if len(password) < 8:
         raise field_error(FieldErrorCode.STRING_TOO_SHORT, "Password must be at least 8 characters")

@@ -374,6 +374,21 @@ class TestRegister:
 
 
 class TestLogin:
+    async def test_login_decomposed_password_succeeds(self, client: AsyncClient):
+        composed_password = "Password1\u0439"
+        decomposed_password = "Password1\u0438\u0306"
+        payload = register_payload(password=composed_password)
+
+        registration = await client.post(API_AUTH_REGISTER_URL, json=payload)
+        assert registration.status_code == status.HTTP_201_CREATED
+
+        response = await client.post(
+            API_AUTH_LOGIN_URL,
+            json={"email": payload["email"], "password": decomposed_password},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
     async def test_login_success(
         self,
         client: AsyncClient,
