@@ -7,11 +7,13 @@ from typing import Any, TypeVar
 from argon2 import PasswordHasher, profiles
 from fastapi import status
 from httpx import AsyncClient, Response
+from pytest_mock import MockerFixture
 from sqlalchemy import text, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core import verify_token
 from app.core.error_codes import ErrorCode, FieldErrorCode
+from app.core.security import Argon2Hasher
 from app.models import CategoryType, User
 from app.schemas.validators import MAX_AMOUNT, MAX_PASSWORD_LENGTH
 from tests.integration.endpoints.types import (
@@ -155,6 +157,27 @@ class FirstCallGate:
             return await original(*args, **kwargs)
 
         return hold_first_call
+
+
+def hold_argon2(mocker: MockerFixture, operation: str) -> FirstCallGate:
+    gate = FirstCallGate()
+    mocker.patch.object(
+        Argon2Hasher,
+        operation,
+        autospec=True,
+        side_effect=gate.wrap(getattr(Argon2Hasher, operation)),
+    )
+
+    return gate
+
+
+async def count_checked_out_connections_while_held(gate: FirstCallGate, engine: AsyncEngine) -> int:
+    await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
+
+    try:
+        return engine.sync_engine.pool.checkedout()
+    finally:
+        gate.release.set()
 
 
 async def run_second_behind_first(

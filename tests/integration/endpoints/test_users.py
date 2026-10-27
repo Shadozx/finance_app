@@ -12,7 +12,6 @@ from structlog.testing import capture_logs
 
 from app.core import utc_now
 from app.core.error_codes import ErrorCode, FieldErrorCode
-from app.core.security import Argon2Hasher
 from app.models import INITIAL_PASSWORD_VERSION, SessionRevocationReason, User, UserSession
 from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 from tests.integration.endpoints.helpers import (
@@ -22,6 +21,8 @@ from tests.integration.endpoints.helpers import (
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
+    count_checked_out_connections_while_held,
+    hold_argon2,
     run_concurrently,
     run_second_behind_first,
     session_id_from_headers,
@@ -689,17 +690,6 @@ class TestUpdatePasswordConcurrency:
     def password_payload(self, user: UserData, new_password: str) -> dict[str, str]:
         return {"current_password": user["password"], "new_password": new_password}
 
-    def held_argon2(self, mocker: MockerFixture, operation: str) -> FirstCallGate:
-        gate = FirstCallGate()
-        mocker.patch.object(
-            Argon2Hasher,
-            operation,
-            autospec=True,
-            side_effect=gate.wrap(getattr(Argon2Hasher, operation)),
-        )
-
-        return gate
-
     async def test_update_password_concurrent_rehash_succeeds(
         self,
         independent_client: AsyncClient,
@@ -803,7 +793,7 @@ class TestUpdatePasswordConcurrency:
         new_password: str,
         operation: str,
     ):
-        gate = self.held_argon2(mocker, operation)
+        gate = hold_argon2(mocker, operation)
 
         async def lock_user_row_without_waiting() -> None:
             await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
@@ -841,15 +831,7 @@ class TestUpdatePasswordConcurrency:
         operation: str,
     ):
         expected_checked_out_connections = 0
-        gate = self.held_argon2(mocker, operation)
-
-        async def count_checked_out_connections() -> int:
-            await asyncio.wait_for(gate.entered.wait(), timeout=CONCURRENCY_TIMEOUT_SECONDS)
-
-            try:
-                return test_engine.sync_engine.pool.checkedout()
-            finally:
-                gate.release.set()
+        gate = hold_argon2(mocker, operation)
 
         response, checked_out_connections = await run_concurrently(
             independent_client.put(
@@ -857,7 +839,7 @@ class TestUpdatePasswordConcurrency:
                 json=self.password_payload(independent_registered_user, new_password),
                 headers=headers,
             ),
-            count_checked_out_connections(),
+            count_checked_out_connections_while_held(gate, test_engine),
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT

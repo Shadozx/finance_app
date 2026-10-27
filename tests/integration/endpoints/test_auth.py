@@ -10,7 +10,7 @@ from fastapi import status
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
 from sqlalchemy import or_, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from structlog.testing import capture_logs
 
 from app.api.v1.endpoints.auth import REFRESH_REQUESTS_PER_MINUTE
@@ -48,7 +48,9 @@ from tests.integration.endpoints.helpers import (
     assert_field_error,
     assert_no_field_errors,
     assert_validation_error,
+    count_checked_out_connections_while_held,
     forge_refresh_token,
+    hold_argon2,
     register_payload,
     run_concurrently,
     run_second_behind_first,
@@ -1518,6 +1520,30 @@ class TestLoginConcurrency:
         assert login_response.status_code == status.HTTP_401_UNAUTHORIZED
         assert new_login.status_code == status.HTTP_200_OK
         assert old_login.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_login_during_argon2_connection_released(
+        self,
+        mocker: MockerFixture,
+        test_engine: AsyncEngine,
+        independent_client: AsyncClient,
+        independent_registered_user: UserData,
+    ):
+        expected_checked_out_connections = 0
+        gate = hold_argon2(mocker, "verify")
+
+        response, checked_out_connections = await run_concurrently(
+            independent_client.post(
+                API_AUTH_LOGIN_URL,
+                json={
+                    "email": independent_registered_user["email"],
+                    "password": independent_registered_user["password"],
+                },
+            ),
+            count_checked_out_connections_while_held(gate, test_engine),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert checked_out_connections == expected_checked_out_connections
 
 
 class TestConcurrentRefresh:
