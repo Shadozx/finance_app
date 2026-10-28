@@ -4,6 +4,16 @@ from fastapi import FastAPI
 
 from app.schemas.error import ErrorResponse
 
+API_DESCRIPTION = """Client requirements:
+- One shared refresh per client.
+- Save the new token pair atomically.
+- Drop a refresh response that arrives after logout.
+- Clear tokens after a password change: it ends every session.
+- On 503, retry after Retry-After seconds.
+- Refresh ahead of time using expires_in.
+- Ignore unknown JSON fields.
+"""
+
 
 def problem_response(description: str) -> dict[str, Any]:
     return {

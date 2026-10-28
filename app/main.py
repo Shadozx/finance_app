@@ -39,7 +39,7 @@ from app.core.middleware import (
     RequestIDMiddleware,
     UnhandledExceptionMiddleware,
 )
-from app.core.openapi import configure_openapi, problem_response
+from app.core.openapi import API_DESCRIPTION, configure_openapi, problem_response
 from app.core.rate_limiter import limiter
 from app.core.security import PasswordHashQueueFullError, password_hasher
 
@@ -56,6 +56,7 @@ is_prod = settings.ENVIRONMENT == Environment.PROD
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    description=API_DESCRIPTION,
     version=settings.VERSION,
     lifespan=lifespan,
     docs_url=None if is_prod else "/docs",
