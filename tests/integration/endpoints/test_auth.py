@@ -126,31 +126,45 @@ class TestRegister:
     @pytest.mark.parametrize(
         "payload, code, field",
         [
-            (register_payload(username="ab"), FieldErrorCode.STRING_TOO_SHORT, "username"),
-            (register_payload(username="a" * 51), FieldErrorCode.STRING_TOO_LONG, "username"),
-            (
+            pytest.param(
+                register_payload(username="ab"),
+                FieldErrorCode.STRING_TOO_SHORT,
+                "username",
+                id="username_too_short",
+            ),
+            pytest.param(
+                register_payload(username="a" * 51),
+                FieldErrorCode.STRING_TOO_LONG,
+                "username",
+                id="username_too_long",
+            ),
+            pytest.param(
                 register_payload(username="invalid name"),
                 FieldErrorCode.STRING_PATTERN_MISMATCH,
                 "username",
+                id="username_invalid_pattern",
             ),
-            (
+            pytest.param(
                 register_payload(email=NON_ASCII_EMAIL),
                 FieldErrorCode.INVALID_FORMAT,
                 "email",
+                id="non_ascii_email",
             ),
-            (
+            pytest.param(
                 register_payload(password=OVER_MAX_PASSWORD),
                 FieldErrorCode.STRING_TOO_LONG,
                 "password",
+                id="password_too_long",
             ),
-            (
+            pytest.param(
                 register_payload(password="a" * (MIN_PASSWORD_LENGTH - 1)),
                 FieldErrorCode.STRING_TOO_SHORT,
                 "password",
+                id="password_too_short",
             ),
         ],
     )
-    async def test_register_named_validation_codes(
+    async def test_register_invalid_field_returns_field_error_code(
         self,
         client: AsyncClient,
         payload: dict[str, str],
@@ -163,7 +177,7 @@ class TestRegister:
         assert_validation_error(response, ["body", field], code)
         assert "Value error," not in response.text
 
-    async def test_register_success(
+    async def test_register_succeeds(
         self,
         client: AsyncClient,
     ):
@@ -180,7 +194,7 @@ class TestRegister:
         assert "hashed_password" not in body
         assert "password" not in body
 
-    async def test_register_creates_default_categories(self, client: AsyncClient):
+    async def test_register_default_categories_appear_in_categories(self, client: AsyncClient):
         payload = register_payload()
         expected_categories = {
             (name, category_type.value) for name, category_type in DEFAULT_CATEGORIES
@@ -216,34 +230,33 @@ class TestRegister:
         assert all(category["archived_at"] is None for category in categories)
 
     @pytest.mark.parametrize(
-        "payload, duplicate, reason",
+        "payload, duplicate, field",
         [
-            (
+            pytest.param(
                 register_payload(),
                 register_payload(username="otheruser"),
-                "duplicate_email",
+                "email",
+                id="duplicate_email",
             ),
-            (
+            pytest.param(
                 register_payload(),
                 register_payload(email="seconduser@test.com"),
-                "duplicate_username",
+                "username",
+                id="duplicate_username",
             ),
         ],
     )
-    async def test_register_duplicate_value(
-        self, client: AsyncClient, payload: dict[str, str], duplicate: dict[str, str], reason: str
+    async def test_register_duplicate_value_conflicts(
+        self, client: AsyncClient, payload: dict[str, str], duplicate: dict[str, str], field: str
     ):
         await client.post(API_AUTH_REGISTER_URL, json=payload)
 
         response = await client.post(API_AUTH_REGISTER_URL, json=duplicate)
 
-        assert response.status_code == status.HTTP_409_CONFLICT, reason
-        duplicate_field = next(
-            field for field in ("email", "username") if duplicate[field] == payload[field]
-        )
-        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", duplicate_field])
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", field])
 
-    async def test_register_duplicate_email_ignores_case(self, client: AsyncClient):
+    async def test_register_duplicate_email_other_case_conflicts(self, client: AsyncClient):
         payload = register_payload()
         duplicate = register_payload(email=payload["email"].upper(), username="otheruser")
 
@@ -254,19 +267,22 @@ class TestRegister:
         assert response.status_code == status.HTTP_409_CONFLICT
         assert_field_error(response, ErrorCode.ALREADY_EXISTS, ["body", "email"])
 
-    @pytest.mark.parametrize("duplicate_fields", ["both", "email", "username"])
-    async def test_register_concurrent_duplicates_return_conflict(
+    @pytest.mark.parametrize(
+        "duplicate",
+        [
+            pytest.param(register_payload(), id="both"),
+            pytest.param(register_payload(username=OTHER_USERNAME), id="email"),
+            pytest.param(register_payload(email=OTHER_EMAIL), id="username"),
+        ],
+    )
+    async def test_register_concurrent_duplicates_conflict(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
         mocker: MockerFixture,
-        duplicate_fields: str,
+        duplicate: dict[str, str],
     ):
         payload = register_payload()
-        duplicate = register_payload(
-            email=payload["email"] if duplicate_fields != "username" else OTHER_EMAIL,
-            username=payload["username"] if duplicate_fields != "email" else OTHER_USERNAME,
-        )
         payloads = [payload, duplicate]
         participant_count = len(payloads)
         hashed_password = "hashed"
@@ -316,7 +332,7 @@ class TestRegister:
                 DEFAULT_CATEGORIES
             )
 
-    async def test_register_lowercases_email(self, client: AsyncClient):
+    async def test_register_mixed_case_email_returns_lowercase(self, client: AsyncClient):
         payload = register_payload(email="User@Test.com")
 
         response = await client.post(API_AUTH_REGISTER_URL, json=payload)
@@ -324,7 +340,7 @@ class TestRegister:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["email"] == payload["email"].lower()
 
-    async def test_register_accepts_email_with_apostrophe(self, client: AsyncClient):
+    async def test_register_email_with_apostrophe_allowed(self, client: AsyncClient):
         """EmailStr accepts it, so the model must store it rather than fail with a 500."""
         payload = register_payload(email="o'connor@test.com")
 
@@ -334,39 +350,39 @@ class TestRegister:
         assert response.json()["email"] == payload["email"]
 
     @pytest.mark.parametrize(
-        "payload, reason",
+        "payload",
         [
-            (
+            pytest.param(
                 register_payload(email="invalid-email"),
-                "invalid_email",
+                id="invalid_email",
             ),
-            (
+            pytest.param(
                 register_payload(username="t"),
-                "username_too_short",
+                id="username_too_short",
             ),
-            (
+            pytest.param(
                 register_payload(username="t" * 55),
-                "username_too_long",
+                id="username_too_long",
             ),
-            (
+            pytest.param(
                 register_payload(password="short"),
-                "short_password",
+                id="short_password",
             ),
-            (
+            pytest.param(
                 {
                     "email": "test@test.com",
                     "username": "testuser",
                 },
-                "missing_password",
+                id="missing_password",
             ),
         ],
     )
-    async def test_register_validation_fails(
-        self, client: AsyncClient, payload: dict[str, str], reason: str
+    async def test_register_invalid_payload_rejected(
+        self, client: AsyncClient, payload: dict[str, str]
     ):
         response = await client.post(API_AUTH_REGISTER_URL, json=payload)
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
         assert "detail" in response.json()
 
@@ -387,7 +403,7 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_200_OK
 
-    async def test_login_success(
+    async def test_login_succeeds(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -480,7 +496,7 @@ class TestLogin:
         assert stored_user.password_version == password_version
         assert stored_user.password_changed_at == password_changed_at
 
-    async def test_login_wrong_password(
+    async def test_login_wrong_password_unauthorized(
         self,
         client: AsyncClient,
         registered_user: dict[str, str],
@@ -495,7 +511,7 @@ class TestLogin:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
 
-    async def test_login_unknown_email(
+    async def test_login_unknown_email_unauthorized(
         self,
         client: AsyncClient,
         registered_user: dict[str, str],
@@ -510,7 +526,7 @@ class TestLogin:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "detail" in response.json()
 
-    async def test_login_ignores_email_case(
+    async def test_login_mixed_case_email_succeeds(
         self,
         client: AsyncClient,
         registered_user: UserData,
@@ -525,7 +541,7 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_200_OK
 
-    async def test_login_treats_non_ascii_email_as_unknown(
+    async def test_login_non_ascii_email_unauthorized(
         self,
         client: AsyncClient,
         registered_user: UserData,
@@ -538,7 +554,7 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_login_rejects_too_long_password(
+    async def test_login_too_long_password_rejected(
         self,
         client: AsyncClient,
         registered_user: UserData,
@@ -553,41 +569,58 @@ class TestLogin:
         assert_validation_error(response, ["body", "password"], FieldErrorCode.STRING_TOO_LONG)
 
     @pytest.mark.parametrize(
-        "payload, reason",
+        "payload",
         [
-            (
+            pytest.param(
                 {
                     "email": "invalid-email",
                     "password": "Password123",
                 },
-                "invalid_email",
+                id="invalid_email",
             ),
-            (
+            pytest.param(
                 {
                     "email": "user@test.com",
                 },
-                "missing_password",
+                id="missing_password",
             ),
-            (
+            pytest.param(
                 {
                     "password": "Password123",
                 },
-                "missing_email",
+                id="missing_email",
             ),
         ],
     )
-    async def test_login_validation_fails(
-        self, client: AsyncClient, payload: dict[str, str], reason: str
+    async def test_login_invalid_payload_rejected(
+        self, client: AsyncClient, payload: dict[str, str]
     ):
         response = await client.post(API_AUTH_LOGIN_URL, json=payload)
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, reason
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
         assert "detail" in response.json()
 
+    async def test_login_returns_access_token_with_only_expected_claims(
+        self,
+        test_session: AsyncSession,
+        authenticated_user: AuthenticatedUser,
+    ):
+        token = authenticated_user["headers"]["Authorization"].removeprefix("Bearer ")
+        user_id = authenticated_user["user"]["id"]
+        stored_session_id = (
+            await test_session.scalars(select(UserSession.id).where(UserSession.user_id == user_id))
+        ).one()
+
+        claims = read_jwt_claims(token)
+
+        assert set(claims) == ACCESS_TOKEN_CLAIMS
+        assert claims["sub"] == str(user_id)
+        assert claims["sid"] == str(stored_session_id)
+
 
 class TestRefresh:
-    async def test_refresh_rotates_tokens(
+    async def test_refresh_returns_rotated_token_pair(
         self,
         client: AsyncClient,
         login_tokens: dict[str, str],
@@ -618,7 +651,7 @@ class TestRefresh:
         assert next_refresh_response.status_code == status.HTTP_200_OK
         assert next_refresh_response.json()["refresh_token"] != tokens["refresh_token"]
 
-    async def test_refresh_reuse_outside_grace_revokes_all_session_tokens(
+    async def test_refresh_reused_token_outside_grace_revokes_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -655,7 +688,7 @@ class TestRefresh:
         )
         assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
 
-    async def test_refresh_token_two_generations_old_revokes_session(
+    async def test_refresh_two_generations_old_token_revokes_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -691,7 +724,7 @@ class TestRefresh:
         )
         assert current_refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_refresh_previous_token_in_grace_returns_usable_pair_without_extending_window(
+    async def test_refresh_previous_token_in_grace_returns_usable_pair(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -731,7 +764,7 @@ class TestRefresh:
         )
         assert next_refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_refresh_grace_replay_keeps_the_session(
+    async def test_refresh_grace_replay_keeps_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -757,7 +790,7 @@ class TestRefresh:
         )
         assert revoked_at is None
 
-    async def test_refresh_grace_replay_is_unavailable_when_the_current_secret_is_random(
+    async def test_refresh_grace_replay_with_random_secret_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -805,36 +838,50 @@ class TestRefresh:
         )
         assert current_response.status_code == status.HTTP_200_OK
 
-    @pytest.mark.parametrize("session_state", ["expired", "revoked", "unknown"])
-    async def test_refresh_rejects_inactive_session(
+    async def test_refresh_unknown_session_unauthorized(
         self,
         client: AsyncClient,
-        test_session: AsyncSession,
-        login_tokens: dict[str, str],
-        session_state: str,
     ):
-        parsed_token = parse_refresh_token(login_tokens["refresh_token"])
-        assert parsed_token is not None
-        session_id, secret, _signature = parsed_token
-        refresh_token = login_tokens["refresh_token"]
-        if session_state == "unknown":
-            refresh_token = create_refresh_token(uuid.uuid4(), secret)
-        else:
-            now = utc_now()
-            changes = (
-                {"expires_at": now - SESSION_TIME_OFFSET}
-                if session_state == "expired"
-                else {"revoked_at": now, "revoked_reason": SessionRevocationReason.LOGOUT}
-            )
-            await test_session.execute(
-                update(UserSession).where(UserSession.id == session_id).values(**changes)
-            )
+        refresh_token = create_refresh_token(uuid.uuid4(), "unknown-session-refresh-secret")
 
         response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": refresh_token})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_refresh_reuse_revokes_only_compromised_device(
+    async def test_refresh_revoked_session_unauthorized(
+        self,
+        client: AsyncClient,
+        login_tokens: dict[str, str],
+    ):
+        payload = {"refresh_token": login_tokens["refresh_token"]}
+        logout_response = await client.post(API_AUTH_LOGOUT_URL, json=payload)
+        assert logout_response.status_code == status.HTTP_204_NO_CONTENT
+
+        response = await client.post(API_AUTH_REFRESH_URL, json=payload)
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_refresh_expired_session_unauthorized(
+        self,
+        client: AsyncClient,
+        test_session: AsyncSession,
+        login_tokens: dict[str, str],
+    ):
+        parsed_token = parse_refresh_token(login_tokens["refresh_token"])
+        assert parsed_token is not None
+        session_id = parsed_token.session_id
+        refresh_token = login_tokens["refresh_token"]
+        await test_session.execute(
+            update(UserSession)
+            .where(UserSession.id == session_id)
+            .values(expires_at=utc_now() - SESSION_TIME_OFFSET)
+        )
+
+        response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": refresh_token})
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_refresh_reused_token_revokes_only_compromised_device(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -886,7 +933,7 @@ class TestRefresh:
         )
         assert other_refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_refresh_rejects_access_token_without_revoking_session(
+    async def test_refresh_access_token_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -917,9 +964,13 @@ class TestRefresh:
         assert refresh_response.status_code == status.HTTP_200_OK
 
     @pytest.mark.parametrize(
-        "signature", ["forged-signature", "підроблений-підпис"], ids=["ascii", "non-ascii"]
+        "signature",
+        [
+            pytest.param("forged-signature", id="ascii"),
+            pytest.param("підроблений-підпис", id="non_ascii"),
+        ],
     )
-    async def test_refresh_rejects_forged_token_without_revoking_session(
+    async def test_refresh_forged_token_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -950,7 +1001,7 @@ class TestRefresh:
         )
         assert refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_refresh_rejects_substituted_session_id_and_keeps_both_sessions_active(
+    async def test_refresh_substituted_session_id_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -994,7 +1045,7 @@ class TestRefresh:
             )
             assert refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_refresh_moves_older_device_to_top_of_session_list(
+    async def test_refresh_older_device_moves_to_top_of_sessions(
         self,
         client: AsyncClient,
         login_tokens: dict[str, str],
@@ -1025,7 +1076,7 @@ class TestRefresh:
         original_last_used_at = datetime.fromisoformat(original_items[1]["last_used_at"])
         assert refreshed_last_used_at > original_last_used_at
 
-    async def test_refresh_rejects_previous_token_in_grace_after_session_revocation(
+    async def test_refresh_previous_token_after_revocation_unauthorized(
         self,
         mocker: MockerFixture,
         client: AsyncClient,
@@ -1067,8 +1118,16 @@ class TestRefresh:
         )
         assert revoked_reason == SessionRevocationReason.REVOKED_BY_USER
 
-    @pytest.mark.parametrize("refresh_token", ["malformed-token", "invalid-uuid.secret.signature"])
-    async def test_refresh_rejects_malformed_token(self, client: AsyncClient, refresh_token: str):
+    @pytest.mark.parametrize(
+        "refresh_token",
+        [
+            pytest.param("malformed-token", id="malformed"),
+            pytest.param("invalid-uuid.secret.signature", id="invalid_uuid"),
+        ],
+    )
+    async def test_refresh_malformed_token_unauthorized(
+        self, client: AsyncClient, refresh_token: str
+    ):
         response = await client.post(API_AUTH_REFRESH_URL, json={"refresh_token": refresh_token})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -1076,16 +1135,16 @@ class TestRefresh:
     @pytest.mark.parametrize(
         "payload, code",
         [
-            ({}, FieldErrorCode.MISSING),
-            ({"refresh_token": ""}, FieldErrorCode.STRING_TOO_SHORT),
-            (
+            pytest.param({}, FieldErrorCode.MISSING, id="missing_field"),
+            pytest.param({"refresh_token": ""}, FieldErrorCode.STRING_TOO_SHORT, id="empty"),
+            pytest.param(
                 {"refresh_token": "x" * (REFRESH_TOKEN_MAX_LENGTH + 1)},
                 FieldErrorCode.STRING_TOO_LONG,
+                id="too_long",
             ),
         ],
-        ids=["missing-field", "empty", "too-long"],
     )
-    async def test_refresh_validates_request(
+    async def test_refresh_invalid_payload_rejected(
         self, client: AsyncClient, payload: dict[str, str], code: FieldErrorCode
     ):
         response = await client.post(API_AUTH_REFRESH_URL, json=payload)
@@ -1093,7 +1152,9 @@ class TestRefresh:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert_validation_error(response, ["body", "refresh_token"], code)
 
-    async def test_refresh_rate_limit(self, mocker: MockerFixture, client: AsyncClient):
+    async def test_refresh_over_rate_limit_too_many_requests(
+        self, mocker: MockerFixture, client: AsyncClient
+    ):
         invalid_token = "malformed-token"
         limiter.reset()
         mocker.patch.object(limiter, "enabled", True)
@@ -1114,7 +1175,7 @@ class TestRefresh:
 
 
 class TestLogout:
-    async def test_logout_immediately_rejects_access_and_refresh_tokens(
+    async def test_logout_access_and_refresh_tokens_unauthorized_after(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1148,14 +1209,16 @@ class TestLogout:
     @pytest.mark.parametrize(
         "refresh_token",
         [
-            "malformed-token",
-            "invalid-uuid.secret.signature",
-            f"{uuid.uuid4()}..signature",
-            create_refresh_token(uuid.uuid4(), "unknown-session-refresh-secret"),
+            pytest.param("malformed-token", id="missing_separator"),
+            pytest.param("invalid-uuid.secret.signature", id="invalid_uuid"),
+            pytest.param(f"{uuid.uuid4()}..signature", id="empty_secret"),
+            pytest.param(
+                create_refresh_token(uuid.uuid4(), "unknown-session-refresh-secret"),
+                id="unknown_session",
+            ),
         ],
-        ids=["missing-separator", "invalid-uuid", "empty-secret", "unknown-session"],
     )
-    async def test_logout_ignores_invalid_token(self, client: AsyncClient, refresh_token: str):
+    async def test_logout_invalid_token_succeeds(self, client: AsyncClient, refresh_token: str):
         response = await client.post(API_AUTH_LOGOUT_URL, json={"refresh_token": refresh_token})
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -1164,16 +1227,16 @@ class TestLogout:
     @pytest.mark.parametrize(
         "payload, code",
         [
-            ({}, FieldErrorCode.MISSING),
-            ({"refresh_token": ""}, FieldErrorCode.STRING_TOO_SHORT),
-            (
+            pytest.param({}, FieldErrorCode.MISSING, id="missing_field"),
+            pytest.param({"refresh_token": ""}, FieldErrorCode.STRING_TOO_SHORT, id="empty"),
+            pytest.param(
                 {"refresh_token": "x" * (REFRESH_TOKEN_MAX_LENGTH + 1)},
                 FieldErrorCode.STRING_TOO_LONG,
+                id="too_long",
             ),
         ],
-        ids=["missing-field", "empty", "too-long"],
     )
-    async def test_logout_validates_request(
+    async def test_logout_invalid_payload_rejected(
         self, client: AsyncClient, payload: dict[str, str], code: FieldErrorCode
     ):
         response = await client.post(API_AUTH_LOGOUT_URL, json=payload)
@@ -1181,7 +1244,7 @@ class TestLogout:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert_validation_error(response, ["body", "refresh_token"], code)
 
-    async def test_logout_forged_token_does_not_revoke_session(
+    async def test_logout_forged_token_keeps_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1213,7 +1276,7 @@ class TestLogout:
         )
         assert refresh_response.status_code == status.HTTP_200_OK
 
-    async def test_logout_wrong_secret_revokes_the_session_as_reuse(
+    async def test_logout_wrong_secret_revokes_session_as_reuse(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1242,7 +1305,7 @@ class TestLogout:
         assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
         assert await test_session.scalar(reason_query) == SessionRevocationReason.REUSE_DETECTED
 
-    async def test_logout_previous_token_in_grace_revokes_the_session(
+    async def test_logout_previous_token_in_grace_revokes_session(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1280,7 +1343,7 @@ class TestLogout:
         assert repeated_logout_response.status_code == status.HTTP_204_NO_CONTENT
         assert (await test_session.execute(revocation_query)).one() == revocation
 
-    async def test_logout_previous_token_outside_grace_revokes_the_session_as_reuse(
+    async def test_logout_previous_token_outside_grace_revokes_session_as_reuse(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1330,12 +1393,12 @@ class TestRefreshGeneration:
             )
         ).one()
 
-    async def test_login_starts_at_the_initial_generation(
+    async def test_login_sets_initial_generation(
         self, test_session: AsyncSession, session_id: uuid.UUID
     ):
         assert await self.stored_generation(test_session, session_id) == INITIAL_REFRESH_GENERATION
 
-    async def test_login_issues_the_derived_secret_of_the_initial_generation(
+    async def test_login_returns_derived_secret_of_initial_generation(
         self, login_tokens: dict[str, str], session_id: uuid.UUID
     ):
         parsed_token = parse_refresh_token(login_tokens["refresh_token"])
@@ -1343,7 +1406,7 @@ class TestRefreshGeneration:
         assert parsed_token is not None
         assert parsed_token.secret == derive_refresh_secret(session_id, INITIAL_REFRESH_GENERATION)
 
-    async def test_refresh_replaces_a_random_secret_with_a_derived_one(
+    async def test_refresh_random_secret_replaced_with_derived(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1366,7 +1429,7 @@ class TestRefreshGeneration:
             session_id, GENERATION_AFTER_ONE_REFRESH
         )
 
-    async def test_each_refresh_advances_the_generation(
+    async def test_refresh_advances_generation(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1390,7 +1453,7 @@ class TestRefreshGeneration:
             await self.stored_generation(test_session, session_id) == GENERATION_AFTER_TWO_REFRESHES
         )
 
-    async def test_refresh_in_grace_window_keeps_the_generation(
+    async def test_refresh_in_grace_keeps_generation(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1408,7 +1471,7 @@ class TestRefreshGeneration:
             await self.stored_generation(test_session, session_id) == GENERATION_AFTER_ONE_REFRESH
         )
 
-    async def test_refresh_reuse_keeps_the_generation_and_revokes_the_session(
+    async def test_refresh_reused_token_keeps_generation(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1439,7 +1502,7 @@ class TestRefreshGeneration:
         )
         assert revoked_reason == SessionRevocationReason.REUSE_DETECTED
 
-    async def test_logout_keeps_the_generation(
+    async def test_logout_keeps_generation(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -1542,7 +1605,7 @@ class TestLoginConcurrency:
         assert checked_out_connections == expected_checked_out_connections
 
 
-class TestConcurrentRefresh:
+class TestRefreshConcurrency:
     @pytest.fixture
     def session_id(self, independent_login_tokens: dict[str, str]) -> uuid.UUID:
         return uuid.UUID(verify_token(independent_login_tokens["access_token"])["sid"])
@@ -1584,7 +1647,7 @@ class TestConcurrentRefresh:
                 )
             ).one()
 
-    async def test_concurrent_refresh_with_the_same_token_returns_the_same_successor(
+    async def test_refresh_concurrent_same_token_returns_same_successor(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
@@ -1618,7 +1681,7 @@ class TestConcurrentRefresh:
         )
         assert follow_up_response.status_code == status.HTTP_200_OK
 
-    async def test_logout_with_the_old_token_ends_the_session_after_a_concurrent_refresh(
+    async def test_logout_old_token_after_concurrent_refresh_revokes_session(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
@@ -1656,7 +1719,7 @@ class TestConcurrentRefresh:
         assert refresh_matches == ["current"]
         assert logout_matches == ["previous_in_grace"]
 
-    async def test_refresh_after_a_concurrent_logout_is_rejected(
+    async def test_refresh_after_concurrent_logout_unauthorized(
         self,
         independent_client: AsyncClient,
         independent_session_factory: async_sessionmaker[AsyncSession],
@@ -1686,8 +1749,8 @@ class TestConcurrentRefresh:
         assert len(revoked_session_events) == 1
 
 
-class TestTokenLogging:
-    async def test_authentication_does_not_log_email_addresses(
+class TestAuthLogging:
+    async def test_auth_logs_exclude_email_addresses(
         self,
         client: AsyncClient,
         registered_user: UserData,
@@ -1721,7 +1784,7 @@ class TestTokenLogging:
         for sensitive_value in sensitive_values:
             assert sensitive_value not in serialized_logs
 
-    async def test_authentication_does_not_log_tokens_or_refresh_secrets(
+    async def test_auth_logs_exclude_tokens_and_refresh_secrets(
         self,
         client: AsyncClient,
         registered_user: UserData,
@@ -1827,24 +1890,7 @@ class TestTokenLogging:
             assert sensitive_value not in serialized_logs
 
 
-class TestSessionToken:
-    async def test_login_issues_access_token_with_only_the_expected_claims(
-        self,
-        test_session: AsyncSession,
-        authenticated_user: AuthenticatedUser,
-    ):
-        token = authenticated_user["headers"]["Authorization"].removeprefix("Bearer ")
-        user_id = authenticated_user["user"]["id"]
-        stored_session_id = (
-            await test_session.scalars(select(UserSession.id).where(UserSession.user_id == user_id))
-        ).one()
-
-        claims = read_jwt_claims(token)
-
-        assert set(claims) == ACCESS_TOKEN_CLAIMS
-        assert claims["sub"] == str(user_id)
-        assert claims["sid"] == str(stored_session_id)
-
+class TestGetMeAccessToken:
     # Valid in every claim and signed with the real key, so a test that breaks exactly one
     # of them is rejected for that claim alone
     @pytest.fixture
@@ -1859,7 +1905,7 @@ class TestSessionToken:
             "aud": settings.JWT_AUDIENCE,
         }
 
-    async def test_get_me_accepts_token_with_valid_claims(
+    async def test_get_me_valid_claims_succeeds(
         self,
         client: AsyncClient,
         valid_claims: dict[str, str | float],
@@ -1873,7 +1919,7 @@ class TestSessionToken:
 
         assert response.status_code == status.HTTP_200_OK
 
-    async def test_get_me_rejects_token_without_exp(
+    async def test_get_me_token_without_exp_unauthorized(
         self,
         client: AsyncClient,
         valid_claims: dict[str, str | float],
@@ -1892,9 +1938,13 @@ class TestSessionToken:
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
     @pytest.mark.parametrize(
-        "break_claims", ISSUER_AUDIENCE_DEFECTS.values(), ids=ISSUER_AUDIENCE_DEFECTS.keys()
+        "break_claims",
+        [
+            pytest.param(break_claims, id=name)
+            for name, break_claims in ISSUER_AUDIENCE_DEFECTS.items()
+        ],
     )
-    async def test_get_me_rejects_token_with_missing_or_foreign_issuer_or_audience(
+    async def test_get_me_invalid_issuer_or_audience_unauthorized(
         self,
         client: AsyncClient,
         valid_claims: dict[str, str | float],
@@ -1913,7 +1963,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_without_sub(
+    async def test_get_me_token_without_sub_unauthorized(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1930,7 +1980,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_refresh_token_as_bearer(
+    async def test_get_me_refresh_token_as_bearer_unauthorized(
         self,
         client: AsyncClient,
         login_tokens: dict[str, str],
@@ -1945,7 +1995,7 @@ class TestSessionToken:
         )
         assert valid_response.status_code == status.HTTP_200_OK
 
-    async def test_get_me_rejects_token_without_sid(
+    async def test_get_me_token_without_sid_unauthorized(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1961,7 +2011,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_with_invalid_sid(
+    async def test_get_me_invalid_sid_unauthorized(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1980,7 +2030,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_with_nonexistent_session(
+    async def test_get_me_unknown_session_unauthorized(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
@@ -1999,7 +2049,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_with_revoked_session(
+    async def test_get_me_revoked_session_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -2024,7 +2074,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_with_expired_session(
+    async def test_get_me_expired_session_unauthorized(
         self,
         client: AsyncClient,
         test_session: AsyncSession,
@@ -2047,7 +2097,7 @@ class TestSessionToken:
 
         assert_no_field_errors(response, ErrorCode.AUTHENTICATION_REQUIRED)
 
-    async def test_get_me_rejects_token_with_another_users_session(
+    async def test_get_me_other_users_session_unauthorized(
         self,
         client: AsyncClient,
         authenticated_user: AuthenticatedUser,
