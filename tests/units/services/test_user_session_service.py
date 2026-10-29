@@ -14,7 +14,7 @@ from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 SESSION_TIME_OFFSET = timedelta(days=1)
 
 
-class TestListSessions:
+class TestGetUserSessions:
     @pytest.fixture
     def session_rows(self, active_user_session: UserSession):
         other_session_count = 2
@@ -47,7 +47,7 @@ class TestListSessions:
         limit = len(session_rows)
         offset = 0
 
-        result = await user_session_service.list_sessions(
+        result = await user_session_service.get_user_sessions(
             active_user_session.user_id, active_user_session.id, limit=limit, offset=offset
         )
 
@@ -79,7 +79,7 @@ class TestListSessions:
         offset = limit
         user_session_repo_mock.get_active_by_user.return_value = session_rows
 
-        result = await user_session_service.list_sessions(
+        result = await user_session_service.get_user_sessions(
             active_user_session.user_id, active_user_session.id, limit=limit, offset=offset
         )
 
@@ -110,7 +110,7 @@ class TestListSessions:
         rows = session_rows[:row_count]
         user_session_repo_mock.get_active_by_user.return_value = rows
 
-        result = await user_session_service.list_sessions(
+        result = await user_session_service.get_user_sessions(
             active_user_session.user_id, active_user_session.id, limit=limit, offset=offset
         )
 

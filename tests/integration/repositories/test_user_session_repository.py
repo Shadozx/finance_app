@@ -14,7 +14,7 @@ REFRESH_TOKEN_HASH = hash_refresh_secret("repository-refresh-secret")
 
 
 class TestAdd:
-    async def test_add_user_session(
+    async def test_add_persists_session(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -66,7 +66,7 @@ class TestUpdate:
 
 
 class TestGetActiveWithUser:
-    async def test_get_active_with_user(
+    async def test_get_active_with_user_returns_session_and_user(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -90,7 +90,7 @@ class TestGetActiveWithUser:
         assert found_user.id == user.id
         assert found_session.user_id == found_user.id
 
-    async def test_get_active_with_user_revoked(
+    async def test_get_active_with_user_revoked_returns_none(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -110,7 +110,7 @@ class TestGetActiveWithUser:
 
         assert found is None
 
-    async def test_get_active_with_user_expired(
+    async def test_get_active_with_user_expired_returns_none(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -128,7 +128,7 @@ class TestGetActiveWithUser:
 
         assert found is None
 
-    async def test_get_active_with_user_not_found(
+    async def test_get_active_with_user_unknown_id_returns_none(
         self,
         user_session_repository: UserSessionRepository,
     ):
@@ -139,7 +139,7 @@ class TestGetActiveWithUser:
 
         assert found is None
 
-    async def test_get_active_with_user_expires_at_now(
+    async def test_get_active_with_user_expiring_now_returns_none(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -159,7 +159,7 @@ class TestGetActiveWithUser:
 
 
 class TestGetActiveByUser:
-    async def test_get_active_by_user_returns_only_active_sessions_for_user(
+    async def test_get_active_by_user_returns_only_own_active_sessions(
         self,
         user_repository: UserRepository,
         user_session_repository: UserSessionRepository,
@@ -265,7 +265,7 @@ class TestGetActiveByUser:
 
         assert [user_session.id for user_session in found] == expected_session_ids
 
-    async def test_get_active_by_user_paginates_sessions_with_equal_last_used_at(
+    async def test_get_active_by_user_equal_last_used_at_respects_limit_and_offset(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -302,7 +302,7 @@ class TestGetActiveByUser:
 
 
 class TestGetByIdForUpdate:
-    async def test_get_by_id_for_update(
+    async def test_get_by_id_for_update_returns_session(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -322,7 +322,7 @@ class TestGetByIdForUpdate:
         assert found.id == created_session.id
         assert found.user_id == user.id
 
-    async def test_get_by_id_for_update_revoked(
+    async def test_get_by_id_for_update_revoked_returns_session(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -345,7 +345,7 @@ class TestGetByIdForUpdate:
         assert found.revoked_at == now
         assert found.revoked_reason == SessionRevocationReason.LOGOUT
 
-    async def test_get_by_id_for_update_expired(
+    async def test_get_by_id_for_update_expired_returns_session(
         self,
         user_session_repository: UserSessionRepository,
         user: User,
@@ -366,7 +366,7 @@ class TestGetByIdForUpdate:
         assert found.id == created_session.id
         assert found.expires_at == expires_at
 
-    async def test_get_by_id_for_update_not_found(
+    async def test_get_by_id_for_update_unknown_id_returns_none(
         self,
         user_session_repository: UserSessionRepository,
     ):
@@ -378,7 +378,7 @@ class TestGetByIdForUpdate:
 
 
 class TestRevokeActiveExcept:
-    async def test_revoke_active_except_revokes_other_active_sessions_and_returns_count(
+    async def test_revoke_active_except_revokes_other_sessions_and_returns_count(
         self,
         test_session: AsyncSession,
         user_session_repository: UserSessionRepository,
@@ -427,7 +427,7 @@ class TestRevokeActiveExcept:
         assert revoked_count == len(sessions_to_revoke)
         assert persisted_states == expected_states
 
-    async def test_revoke_active_except_preserves_other_users_and_inactive_sessions(
+    async def test_revoke_active_except_excludes_other_users_and_inactive_sessions(
         self,
         test_session: AsyncSession,
         user_repository: UserRepository,
@@ -511,7 +511,7 @@ class TestRevokeActiveExcept:
 
 
 class TestRevokeActive:
-    async def test_revoke_active_revokes_all_active_sessions_and_returns_count(
+    async def test_revoke_active_revokes_all_sessions_and_returns_count(
         self,
         test_session: AsyncSession,
         user_session_repository: UserSessionRepository,
@@ -555,7 +555,7 @@ class TestRevokeActive:
         assert revoked_count == len(sessions_to_revoke)
         assert persisted_states == expected_states
 
-    async def test_revoke_active_preserves_other_users_and_inactive_sessions(
+    async def test_revoke_active_excludes_other_users_and_inactive_sessions(
         self,
         test_session: AsyncSession,
         user_repository: UserRepository,
@@ -635,7 +635,7 @@ class TestRevokeActive:
 
 
 class TestDeleteExpiredSessions:
-    async def test_delete_expired_sessions_deletes_expired_session(
+    async def test_delete_expired_sessions_removes_expired_session(
         self,
         test_session: AsyncSession,
         user_session_repository: UserSessionRepository,
@@ -656,7 +656,7 @@ class TestDeleteExpiredSessions:
 
         assert remaining_session_ids == set()
 
-    async def test_delete_expired_sessions_keeps_active_session(
+    async def test_delete_expired_sessions_excludes_active_session(
         self,
         test_session: AsyncSession,
         user_session_repository: UserSessionRepository,
@@ -684,7 +684,7 @@ class TestDeleteExpiredSessions:
 
         assert remaining_session_ids == expected_session_ids
 
-    async def test_delete_expired_sessions_keeps_other_users_expired_session(
+    async def test_delete_expired_sessions_excludes_other_users_expired_session(
         self,
         test_session: AsyncSession,
         user_repository: UserRepository,
@@ -720,7 +720,7 @@ class TestDeleteExpiredSessions:
 
         assert remaining_session_ids == expected_session_ids
 
-    async def test_delete_expired_sessions_keeps_revoked_unexpired_session(
+    async def test_delete_expired_sessions_excludes_revoked_unexpired_session(
         self,
         test_session: AsyncSession,
         user_session_repository: UserSessionRepository,

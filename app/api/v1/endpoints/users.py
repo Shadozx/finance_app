@@ -50,13 +50,13 @@ async def update_password(
 
 
 @router.get("/me/sessions", response_model=Page[UserSessionResponse])
-async def list_sessions(
+async def get_sessions(
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0),
     context: AuthContext = Depends(get_auth_context),
     user_session_service: UserSessionService = Depends(get_user_session_service),
 ):
-    return await user_session_service.list_sessions(
+    return await user_session_service.get_user_sessions(
         context.user.id, context.user_session.id, limit=limit, offset=offset
     )
 

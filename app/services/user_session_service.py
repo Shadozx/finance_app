@@ -22,7 +22,7 @@ class UserSessionService:
         self.user_session_repository = user_session_repository
         self.unit_of_work = unit_of_work
 
-    async def list_sessions(
+    async def get_user_sessions(
         self,
         user_id: int,
         current_session_id: UUID,
