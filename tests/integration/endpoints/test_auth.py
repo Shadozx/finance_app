@@ -40,6 +40,7 @@ from app.models import (
 )
 from app.repositories import UserSessionRepository
 from app.schemas.auth import REFRESH_TOKEN_MAX_LENGTH
+from app.schemas.validators import MIN_PASSWORD_LENGTH
 from app.services.default_categories import DEFAULT_CATEGORIES
 from tests.integration.endpoints.helpers import (
     CONCURRENCY_TIMEOUT_SECONDS,
@@ -143,13 +144,8 @@ class TestRegister:
                 "password",
             ),
             (
-                register_payload(password="PasswordWithoutDigit"),
-                FieldErrorCode.PASSWORD_TOO_WEAK,
-                "password",
-            ),
-            (
-                register_payload(password="12345678"),
-                FieldErrorCode.PASSWORD_TOO_WEAK,
+                register_payload(password="a" * (MIN_PASSWORD_LENGTH - 1)),
+                FieldErrorCode.STRING_TOO_SHORT,
                 "password",
             ),
         ],
@@ -354,7 +350,7 @@ class TestRegister:
             ),
             (
                 register_payload(password="short"),
-                "weak_password",
+                "short_password",
             ),
             (
                 {
@@ -377,8 +373,8 @@ class TestRegister:
 
 class TestLogin:
     async def test_login_decomposed_password_succeeds(self, client: AsyncClient):
-        composed_password = "Password1\u0439"
-        decomposed_password = "Password1\u0438\u0306"
+        composed_password = "LongPassword123\u0439"
+        decomposed_password = "LongPassword123\u0438\u0306"
         payload = register_payload(password=composed_password)
 
         registration = await client.post(API_AUTH_REGISTER_URL, json=payload)

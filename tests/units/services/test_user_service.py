@@ -1564,7 +1564,7 @@ class TestUpdatePassword:
     def data(self, plain_existing_user_password: str):
         return PasswordUpdate(
             current_password=plain_existing_user_password,
-            new_password="Password1234!",
+            new_password="UpdatedPassword1234!",
         )
 
     @pytest.mark.parametrize("operation", ["verify", "hash"])

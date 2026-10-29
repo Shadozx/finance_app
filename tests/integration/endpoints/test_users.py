@@ -418,7 +418,7 @@ class TestUpdateUsername:
             json={
                 "email": "other@test.com",
                 "username": payload["new_username"],
-                "password": "Password123",
+                "password": authenticated_user["user"]["password"],
             },
         )
 
@@ -631,11 +631,11 @@ class TestUpdatePassword:
                     "current_password": "Password123",
                     "new_password": "short",
                 },
-                "new_password_too_weak",
+                "new_password_too_short",
             ),
             (
                 {
-                    "new_password": "NewPassword123",
+                    "new_password": "NewPassword12345",
                 },
                 "missing_current_password",
             ),
@@ -670,7 +670,7 @@ class TestUpdatePassword:
     ):
         response = await client.put(
             API_USERS_ME_UPDATE_PASSWORD,
-            json={"current_password": "Password123", "new_password": "NewUsername123"},
+            json={"current_password": "Password123", "new_password": "NewPassword12345"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

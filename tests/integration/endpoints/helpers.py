@@ -262,7 +262,7 @@ def assert_validation_error(
 def register_payload(
     email: str = "user@test.com",
     username: str = "testuser",
-    password: str = "Password123",
+    password: str = "RegistrationPassword123",
 ) -> dict[str, str]:
     return {
         "email": email,

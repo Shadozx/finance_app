@@ -21,6 +21,7 @@ MAX_NAME_LENGTH = 100
 
 # Long enough for passphrases and generated passwords
 MAX_PASSWORD_LENGTH = 128
+MIN_PASSWORD_LENGTH = 15
 
 # Shared by transactions and templates so the two limits cannot drift apart
 MAX_SPLITS = 50
@@ -75,19 +76,14 @@ def password_max_length_validator(password: str) -> str:
 
 
 def password_validator(password: str) -> str:
-    # Length goes first, so the strength checks below never scan an oversized string
+    # Normalized and capped first, so the minimum counts the form that gets hashed
     password = password_max_length_validator(password)
 
-    if len(password) < 8:
-        raise field_error(FieldErrorCode.STRING_TOO_SHORT, "Password must be at least 8 characters")
-
-    if not any(c.isdigit() for c in password):
+    if len(password) < MIN_PASSWORD_LENGTH:
         raise field_error(
-            FieldErrorCode.PASSWORD_TOO_WEAK, "Password must contain at least one digit"
-        )
-    if not any(c.isalpha() for c in password):
-        raise field_error(
-            FieldErrorCode.PASSWORD_TOO_WEAK, "Password must contain at least one letter"
+            FieldErrorCode.STRING_TOO_SHORT,
+            "Password must be at least {min_length} characters",
+            {"min_length": MIN_PASSWORD_LENGTH},
         )
 
     return password

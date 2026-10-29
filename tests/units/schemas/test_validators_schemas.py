@@ -11,6 +11,7 @@ from app.schemas.validators import (
     MAX_DATE_RANGE_DAYS,
     MAX_NAME_LENGTH,
     MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
     amount_validator,
     balance_validator,
     currency_code_validator,
@@ -24,8 +25,8 @@ from app.schemas.validators import (
 
 # The same password in two Unicode forms that look identical: a single composed character
 # and a base letter followed by a combining mark
-COMPOSED_PASSWORD = "Password1\u0439"
-DECOMPOSED_PASSWORD = "Password1\u0438\u0306"
+COMPOSED_PASSWORD = "LongPassword123\u0439"
+DECOMPOSED_PASSWORD = "LongPassword123\u0438\u0306"
 # The same letter in the same two forms, for tests that depend on the length
 COMPOSED_LETTER = "\u00e9"
 DECOMPOSED_LETTER = "e\u0301"
@@ -67,36 +68,46 @@ class TestPasswordValidator:
         assert password_validator(DECOMPOSED_PASSWORD) == COMPOSED_PASSWORD
 
     def test_password_over_max_length_before_normalization_accepted(self):
-        required_digit = "1"
-        letter_count = MAX_PASSWORD_LENGTH - len(required_digit)
-        decomposed_password = DECOMPOSED_LETTER * letter_count + required_digit
-        composed_password = COMPOSED_LETTER * letter_count + required_digit
+        decomposed_password = DECOMPOSED_LETTER * MAX_PASSWORD_LENGTH
+        composed_password = COMPOSED_LETTER * MAX_PASSWORD_LENGTH
 
         assert len(decomposed_password) > MAX_PASSWORD_LENGTH
         assert len(composed_password) == MAX_PASSWORD_LENGTH
         assert password_validator(decomposed_password) == composed_password
 
     def test_valid_password_returned_as_is(self):
-        assert password_validator("Password1") == "Password1"
+        password = "LongPassword1234"
+
+        assert password_validator(password) == password
 
     def test_password_not_stripped(self):
         """Unlike names, surrounding spaces are part of the secret."""
-        assert password_validator("  Password1  ") == "  Password1  "
+        password = "  LongPassword1234  "
+
+        assert password_validator(password) == password
 
     def test_password_at_min_length_allowed(self):
-        assert password_validator("passwor1") == "passwor1"
+        password = "a" * MIN_PASSWORD_LENGTH
+
+        assert password_validator(password) == password
 
     def test_short_password_rejected(self):
-        with pytest.raises(ValueError, match="Password must be at least 8 characters"):
-            password_validator("Pass1")
+        password = "a" * (MIN_PASSWORD_LENGTH - 1)
 
-    def test_password_without_digit_rejected(self):
-        with pytest.raises(ValueError, match="Password must contain at least one digit"):
-            password_validator("PasswordOnly")
+        with pytest.raises(
+            ValueError, match=f"Password must be at least {MIN_PASSWORD_LENGTH} characters"
+        ):
+            password_validator(password)
 
-    def test_password_without_letter_rejected(self):
-        with pytest.raises(ValueError, match="Password must contain at least one letter"):
-            password_validator("12345678")
+    @pytest.mark.parametrize(
+        "password",
+        [
+            pytest.param("a phrase without digits", id="words_only"),
+            pytest.param("1" * MIN_PASSWORD_LENGTH, id="digits_only"),
+        ],
+    )
+    def test_password_without_required_character_types_allowed(self, password: str):
+        assert password_validator(password) == password
 
     def test_password_at_max_length_allowed(self):
         password = "a1" * (MAX_PASSWORD_LENGTH // 2)
@@ -104,7 +115,6 @@ class TestPasswordValidator:
         assert password_validator(password) == password
 
     def test_long_password_rejected(self):
-        """It has no digit either: the length error proves length is checked first."""
         with pytest.raises(ValueError, match="Password must be at most"):
             password_validator("a" * (MAX_PASSWORD_LENGTH + 1))
 

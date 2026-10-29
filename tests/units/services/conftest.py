@@ -291,7 +291,7 @@ def existing_template(
 
 @pytest.fixture
 def plain_existing_user_password():
-    return "Password1234"
+    return "ExistingPassword1234"
 
 
 @pytest.fixture
