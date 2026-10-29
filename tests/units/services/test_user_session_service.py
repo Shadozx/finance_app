@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 import pytest
@@ -12,6 +13,23 @@ from app.services import UserSessionService
 from app.services.user_session_service import SESSION_NOT_FOUND_MESSAGE
 
 SESSION_TIME_OFFSET = timedelta(days=1)
+
+
+def revoke(session: UserSession, now: datetime) -> None:
+    session.revoked_at = now - SESSION_TIME_OFFSET
+    session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
+
+
+def expire(session: UserSession, now: datetime) -> None:
+    session.expires_at = now - SESSION_TIME_OFFSET
+
+
+def expire_now(session: UserSession, now: datetime) -> None:
+    session.expires_at = now
+
+
+def keep_active(session: UserSession, now: datetime) -> None:
+    pass
 
 
 class TestGetUserSessions:
@@ -32,8 +50,14 @@ class TestGetUserSessions:
         ]
         return [*other_sessions, active_user_session]
 
-    @pytest.mark.parametrize("user_agent", [None, "Current browser"])
-    async def test_list_sessions_maps_public_fields_and_marks_only_current_session(
+    @pytest.mark.parametrize(
+        "user_agent",
+        [
+            pytest.param(None, id="without_user_agent"),
+            pytest.param("Current browser", id="with_user_agent"),
+        ],
+    )
+    async def test_get_user_sessions_returns_public_fields_with_current_flag(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,
@@ -67,7 +91,7 @@ class TestGetUserSessions:
             active_user_session.user_id, session_now, limit + 1, offset
         )
 
-    async def test_list_sessions_reports_more_and_excludes_extra_row(
+    async def test_get_user_sessions_extra_row_returns_has_more(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,
@@ -95,8 +119,15 @@ class TestGetUserSessions:
             active_user_session.user_id, session_now, limit + 1, offset
         )
 
-    @pytest.mark.parametrize("row_count", [0, 1, 2], ids=["empty", "short", "full"])
-    async def test_list_sessions_reports_no_more_on_last_page(
+    @pytest.mark.parametrize(
+        "row_count",
+        [
+            pytest.param(0, id="empty"),
+            pytest.param(1, id="short"),
+            pytest.param(2, id="full"),
+        ],
+    )
+    async def test_get_user_sessions_last_page_returns_no_more(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,
@@ -126,7 +157,7 @@ class TestGetUserSessions:
 
 
 class TestRevokeSession:
-    async def test_revoke_session_revokes_active_session_and_commits(
+    async def test_revoke_session_own_active_session_sets_revoked_at(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,
@@ -164,43 +195,15 @@ class TestRevokeSession:
             }
         ]
 
-    @pytest.mark.parametrize(
-        "session_state",
-        [
-            "missing",
-            "foreign_active",
-            "foreign_revoked",
-            "foreign_expired",
-            "foreign_expires_now",
-            "revoked",
-            "expired",
-            "expires_now",
-        ],
-    )
-    async def test_revoke_session_rejects_unavailable_session_without_changes(
+    async def test_revoke_session_unknown_id_raises_not_found(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         active_user_session: UserSession,
-        session_now: datetime,
-        session_state: str,
     ):
-        is_foreign = session_state.startswith("foreign_")
-        if is_foreign:
-            other_user_id = existing_user.id + 1
-            active_user_session.user_id = other_user_id
-        if session_state.endswith("revoked"):
-            active_user_session.revoked_at = session_now - SESSION_TIME_OFFSET
-            active_user_session.revoked_reason = SessionRevocationReason.REUSE_DETECTED
-        elif session_state.endswith("expired"):
-            active_user_session.expires_at = session_now - SESSION_TIME_OFFSET
-        elif session_state.endswith("expires_now"):
-            active_user_session.expires_at = session_now
-        user_session_repo_mock.get_by_id_for_update.return_value = (
-            None if session_state == "missing" else active_user_session
-        )
+        user_session_repo_mock.get_by_id_for_update.return_value = None
         original_revoked_at = active_user_session.revoked_at
         original_reason = active_user_session.revoked_reason
 
@@ -215,24 +218,100 @@ class TestRevokeSession:
         user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
-        expected_logs = (
-            [
-                {
-                    "event": "user_session_permission_denied",
-                    "user_id": existing_user.id,
-                    "session_id": str(active_user_session.id),
-                    "log_level": "warning",
-                }
-            ]
-            if is_foreign
-            else []
-        )
-        assert logs == expected_logs
+        assert logs == []
+
+    @pytest.mark.parametrize(
+        "make_state",
+        [
+            pytest.param(revoke, id="revoked"),
+            pytest.param(expire, id="expired"),
+            pytest.param(expire_now, id="expiring_now"),
+        ],
+    )
+    async def test_revoke_session_unavailable_own_session_raises_not_found(
+        self,
+        user_session_service: UserSessionService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        active_user_session: UserSession,
+        session_now: datetime,
+        make_state: Callable[[UserSession, datetime], None],
+    ):
+        make_state(active_user_session, session_now)
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+        original_revoked_at = active_user_session.revoked_at
+        original_reason = active_user_session.revoked_reason
+
+        with capture_logs() as logs:
+            with pytest.raises(NotFoundException) as exc_info:
+                await user_session_service.revoke_session(existing_user.id, active_user_session.id)
+
+        assert exc_info.value.message == SESSION_NOT_FOUND_MESSAGE
+        assert exc_info.value.errors == []
+        assert active_user_session.revoked_at == original_revoked_at
+        assert active_user_session.revoked_reason == original_reason
+        user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
+        user_session_repo_mock.update.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
+        assert logs == []
+
+    @pytest.mark.parametrize(
+        "make_state",
+        [
+            pytest.param(keep_active, id="active"),
+            pytest.param(revoke, id="revoked"),
+            pytest.param(expire, id="expired"),
+            pytest.param(expire_now, id="expiring_now"),
+        ],
+    )
+    async def test_revoke_session_other_users_session_raises_not_found(
+        self,
+        user_session_service: UserSessionService,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        existing_user: User,
+        active_user_session: UserSession,
+        session_now: datetime,
+        make_state: Callable[[UserSession, datetime], None],
+    ):
+        other_user_id = existing_user.id + 1
+        active_user_session.user_id = other_user_id
+        make_state(active_user_session, session_now)
+        user_session_repo_mock.get_by_id_for_update.return_value = active_user_session
+        original_revoked_at = active_user_session.revoked_at
+        original_reason = active_user_session.revoked_reason
+
+        with capture_logs() as logs:
+            with pytest.raises(NotFoundException) as exc_info:
+                await user_session_service.revoke_session(existing_user.id, active_user_session.id)
+
+        assert exc_info.value.message == SESSION_NOT_FOUND_MESSAGE
+        assert exc_info.value.errors == []
+        assert active_user_session.revoked_at == original_revoked_at
+        assert active_user_session.revoked_reason == original_reason
+        user_session_repo_mock.get_by_id_for_update.assert_awaited_once_with(active_user_session.id)
+        user_session_repo_mock.update.assert_not_awaited()
+        unit_of_work_mock.commit.assert_not_awaited()
+        assert logs == [
+            {
+                "event": "user_session_permission_denied",
+                "user_id": existing_user.id,
+                "session_id": str(active_user_session.id),
+                "log_level": "warning",
+            }
+        ]
 
 
 class TestRevokeOtherSessions:
-    @pytest.mark.parametrize("revoked_count", [0, 2], ids=["no-other-sessions", "revoked"])
-    async def test_revoke_other_sessions_keeps_current_session_and_commits(
+    @pytest.mark.parametrize(
+        "revoked_count",
+        [
+            pytest.param(0, id="none_revoked"),
+            pytest.param(2, id="some_revoked"),
+        ],
+    )
+    async def test_revoke_other_sessions_revokes_all_except_current(
         self,
         user_session_service: UserSessionService,
         user_session_repo_mock: UserSessionRepository,

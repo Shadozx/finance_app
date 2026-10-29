@@ -1,5 +1,6 @@
 import re
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -63,6 +64,26 @@ SESSION_FIELDS = (
 )
 
 
+def keep_unrotated(session: UserSession, now: datetime, secret: str) -> None:
+    pass
+
+
+def set_unrelated_previous(session: UserSession, now: datetime, secret: str) -> None:
+    session.previous_refresh_token_hash = hash_refresh_secret("previous-secret")
+    session.rotated_at = now
+
+
+def expire_rotation_grace(session: UserSession, now: datetime, secret: str) -> None:
+    grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
+    boundary_offset = timedelta(microseconds=1)
+    session.previous_refresh_token_hash = hash_refresh_secret(secret)
+    session.rotated_at = now - grace_interval - boundary_offset
+
+
+def set_previous_without_rotated_at(session: UserSession, now: datetime, secret: str) -> None:
+    session.previous_refresh_token_hash = hash_refresh_secret(secret)
+
+
 class TestRegister:
     @pytest.fixture
     def data(
@@ -76,7 +97,7 @@ class TestRegister:
             password=plain_existing_user_password,
         )
 
-    async def test_register_success(
+    async def test_register_returns_created_user(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -159,7 +180,7 @@ class TestRegister:
         password_hasher_mock.hash.assert_awaited_once_with(data.password)
         assert unit_of_work_mock.commit.await_count == expected_commit_count
 
-    async def test_register_propagates_password_hash_queue_full(
+    async def test_register_full_hash_queue_raises_queue_full(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -183,7 +204,7 @@ class TestRegister:
         category_repo_mock.add_all.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_register_existing_email(
+    async def test_register_existing_email_raises_already_exists(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -208,7 +229,7 @@ class TestRegister:
 
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_register_existing_username(
+    async def test_register_existing_username_raises_already_exists(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -249,10 +270,12 @@ class TestAuthenticate:
 
     @pytest.mark.parametrize(
         "user_agent",
-        ["unit-test-agent", None],
-        ids=["with_user_agent", "without_user_agent"],
+        [
+            pytest.param("unit-test-agent", id="with_user_agent"),
+            pytest.param(None, id="without_user_agent"),
+        ],
     )
-    async def test_authenticate_success(
+    async def test_authenticate_returns_token_pair(
         self,
         mocker: MockerFixture,
         user_service: UserService,
@@ -474,7 +497,6 @@ class TestAuthenticate:
             },
         ]
 
-    @pytest.mark.parametrize("known_user", [True, False], ids=["known-email", "unknown-email"])
     async def test_authenticate_commits_before_verifying_password(
         self,
         user_service: UserService,
@@ -483,15 +505,9 @@ class TestAuthenticate:
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserLogin,
-        known_user: bool,
     ):
-        user_repo_mock.get_by_email.return_value = existing_user if known_user else None
-        mock_password = (
-            password_hasher_mock.verify if known_user else password_hasher_mock.verify_dummy
-        )
-        expected_args = (
-            (data.password, existing_user.hashed_password) if known_user else (data.password,)
-        )
+        user_repo_mock.get_by_email.return_value = existing_user
+        mock_password = password_hasher_mock.verify
 
         async def verify_password(*args) -> bool:
             user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
@@ -504,10 +520,35 @@ class TestAuthenticate:
         with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
             await user_service.authenticate(data, user_agent=None)
 
-        mock_password.assert_awaited_once_with(*expected_args)
+        mock_password.assert_awaited_once_with(data.password, existing_user.hashed_password)
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_authenticate_truncates_user_agent(
+    async def test_authenticate_unknown_email_commits_before_dummy_verify(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: UserLogin,
+    ):
+        user_repo_mock.get_by_email.return_value = None
+        mock_password = password_hasher_mock.verify_dummy
+
+        async def verify_password(*args) -> bool:
+            user_repo_mock.get_by_email.assert_awaited_once_with(data.email)
+            unit_of_work_mock.commit.assert_awaited_once_with()
+            user_repo_mock.get_by_id_for_update.assert_not_awaited()
+            return False
+
+        mock_password.side_effect = verify_password
+
+        with pytest.raises(AuthenticationException, match=re.escape(INVALID_CREDENTIALS_MESSAGE)):
+            await user_service.authenticate(data, user_agent=None)
+
+        mock_password.assert_awaited_once_with(data.password)
+        unit_of_work_mock.commit.assert_awaited_once_with()
+
+    async def test_authenticate_long_user_agent_sets_truncated_value(
         self,
         mocker: MockerFixture,
         user_service: UserService,
@@ -537,8 +578,7 @@ class TestAuthenticate:
 
         user_session_repo_mock.add.assert_awaited_once_with(created_session)
 
-    @pytest.mark.parametrize("known_user", [True, False], ids=["known-email", "unknown-email"])
-    async def test_authenticate_propagates_password_hash_queue_full(
+    async def test_authenticate_full_hash_queue_raises_queue_full(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -547,30 +587,23 @@ class TestAuthenticate:
         unit_of_work_mock: UnitOfWork,
         existing_user: User,
         data: UserLogin,
-        known_user: bool,
     ):
         pending_count = 22
         error = PasswordHashQueueFullError(pending_count)
-        user_repo_mock.get_by_email.return_value = existing_user if known_user else None
-        mock_password = (
-            password_hasher_mock.verify if known_user else password_hasher_mock.verify_dummy
-        )
+        user_repo_mock.get_by_email.return_value = existing_user
+        mock_password = password_hasher_mock.verify
         mock_password.side_effect = error
-        expected_args = (
-            (data.password, existing_user.hashed_password) if known_user else (data.password,)
-        )
 
         with pytest.raises(PasswordHashQueueFullError) as exc_info:
             await user_service.authenticate(data, user_agent=None)
 
         assert exc_info.value is error
-        mock_password.assert_awaited_once_with(*expected_args)
+        mock_password.assert_awaited_once_with(data.password, existing_user.hashed_password)
         user_repo_mock.get_by_id_for_update.assert_not_awaited()
         user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("mixed_case", [False, True], ids=["lowercase", "mixed-case"])
-    async def test_authenticate_not_found_user(
+    async def test_authenticate_unknown_email_full_hash_queue_raises_queue_full(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -578,10 +611,41 @@ class TestAuthenticate:
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         data: UserLogin,
-        mixed_case: bool,
+    ):
+        pending_count = 22
+        error = PasswordHashQueueFullError(pending_count)
+        user_repo_mock.get_by_email.return_value = None
+        mock_password = password_hasher_mock.verify_dummy
+        mock_password.side_effect = error
+
+        with pytest.raises(PasswordHashQueueFullError) as exc_info:
+            await user_service.authenticate(data, user_agent=None)
+
+        assert exc_info.value is error
+        mock_password.assert_awaited_once_with(data.password)
+        user_repo_mock.get_by_id_for_update.assert_not_awaited()
+        user_session_repo_mock.add.assert_not_awaited()
+        unit_of_work_mock.commit.assert_awaited_once_with()
+
+    @pytest.mark.parametrize(
+        "transform_email",
+        [
+            pytest.param(str.lower, id="lowercase"),
+            pytest.param(str.title, id="mixed_case"),
+        ],
+    )
+    async def test_authenticate_unknown_email_raises_invalid_credentials(
+        self,
+        user_service: UserService,
+        password_hasher_mock: Argon2Hasher,
+        user_repo_mock: UserRepository,
+        user_session_repo_mock: UserSessionRepository,
+        unit_of_work_mock: UnitOfWork,
+        data: UserLogin,
+        transform_email: Callable[[str], str],
     ):
         login_data = UserLogin(
-            email=data.email.title() if mixed_case else data.email,
+            email=transform_email(data.email),
             password=data.password,
         )
         expected_fingerprint = fingerprint_email(data.email)
@@ -614,7 +678,7 @@ class TestAuthenticate:
 
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_authenticate_wrong_password(
+    async def test_authenticate_wrong_password_raises_invalid_credentials(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -661,7 +725,7 @@ class TestAuthenticate:
             pytest.param(True, id="outdated_hash"),
         ],
     )
-    async def test_authenticate_rejects_password_changed_after_verification(
+    async def test_authenticate_password_changed_after_verification_raises_invalid_credentials(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -712,7 +776,7 @@ class TestAuthenticate:
         user_session_repo_mock.add.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_authenticate_accepts_hash_changed_without_password_change(
+    async def test_authenticate_hash_changed_without_password_change_returns_token_pair(
         self,
         mocker: MockerFixture,
         user_service: UserService,
@@ -760,7 +824,7 @@ class TestAuthenticate:
             }
         ]
 
-    async def test_authenticate_rejects_user_deleted_after_verification(
+    async def test_authenticate_user_deleted_after_verification_raises_invalid_credentials(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -832,16 +896,16 @@ class TestRefreshSession:
             pytest.param(
                 SESSION_TIME_OFFSET,
                 timedelta(days=settings.SESSION_IDLE_DAYS),
-                id="idle-window",
+                id="idle_window",
             ),
             pytest.param(
                 timedelta(days=settings.SESSION_MAX_DAYS) - SESSION_TIME_OFFSET,
                 SESSION_TIME_OFFSET,
-                id="absolute-limit",
+                id="absolute_limit",
             ),
         ],
     )
-    async def test_refresh_session_rotates_tokens_and_extends_expiration(
+    async def test_refresh_session_rotates_secret_and_sets_expiration(
         self,
         mocker: MockerFixture,
         user_service: UserService,
@@ -896,7 +960,7 @@ class TestRefreshSession:
         unit_of_work_mock.commit.assert_awaited_once()
 
     # Sessions issued before secrets were derived hold a random one, and it must keep working
-    async def test_refresh_session_replaces_a_random_secret_with_a_derived_one(
+    async def test_refresh_session_random_secret_updates_to_derived_secret(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -917,8 +981,15 @@ class TestRefreshSession:
         assert active_user_session.refresh_token_hash == hash_refresh_secret(expected_secret)
         assert active_user_session.refresh_generation == original_generation + 1
 
-    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret.signature"])
-    async def test_refresh_session_rejects_malformed_token(
+    @pytest.mark.parametrize(
+        "token",
+        [
+            pytest.param("", id="empty"),
+            pytest.param("malformed-token", id="malformed"),
+            pytest.param("invalid-uuid.secret.signature", id="invalid_uuid"),
+        ],
+    )
+    async def test_refresh_session_malformed_token_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -938,9 +1009,13 @@ class TestRefreshSession:
         unit_of_work_mock.commit.assert_not_awaited()
 
     @pytest.mark.parametrize(
-        "signature", ["forged-signature", "підроблений-підпис"], ids=["ascii", "non-ascii"]
+        "signature",
+        [
+            pytest.param("forged-signature", id="ascii"),
+            pytest.param("підроблений-підпис", id="non_ascii"),
+        ],
     )
-    async def test_refresh_session_rejects_invalid_signature_without_accessing_repository(
+    async def test_refresh_session_invalid_signature_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -969,7 +1044,7 @@ class TestRefreshSession:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_refresh_session_rejects_missing_session(
+    async def test_refresh_session_unknown_session_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -997,8 +1072,11 @@ class TestRefreshSession:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    @pytest.mark.parametrize("revoked_reason", list(SessionRevocationReason))
-    async def test_refresh_session_rejects_revoked_session_before_checking_expiration(
+    @pytest.mark.parametrize(
+        "revoked_reason",
+        [pytest.param(reason, id=reason.value.lower()) for reason in SessionRevocationReason],
+    )
+    async def test_refresh_session_revoked_session_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1034,10 +1112,12 @@ class TestRefreshSession:
 
     @pytest.mark.parametrize(
         "elapsed_since_expiration",
-        [SESSION_TIME_OFFSET, timedelta(0)],
-        ids=["expired", "at-boundary"],
+        [
+            pytest.param(SESSION_TIME_OFFSET, id="expired"),
+            pytest.param(timedelta(0), id="expiring_now"),
+        ],
     )
-    async def test_refresh_session_rejects_expired_session(
+    async def test_refresh_session_expired_session_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1069,10 +1149,15 @@ class TestRefreshSession:
 
     @pytest.mark.parametrize(
         "rotation_age",
-        [timedelta(seconds=1), timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)],
-        ids=["within-grace", "at-grace-boundary"],
+        [
+            pytest.param(timedelta(seconds=1), id="within_grace"),
+            pytest.param(
+                timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS),
+                id="at_grace_boundary",
+            ),
+        ],
     )
-    async def test_refresh_session_previous_token_replays_the_current_successor(
+    async def test_refresh_session_previous_token_in_grace_returns_current_successor(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1127,7 +1212,7 @@ class TestRefreshSession:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    async def test_refresh_session_previous_token_replay_is_unavailable_for_a_random_secret(
+    async def test_refresh_session_previous_token_with_random_secret_raises_invalid_token(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1159,29 +1244,26 @@ class TestRefreshSession:
         unit_of_work_mock.commit.assert_not_awaited()
 
     @pytest.mark.parametrize(
-        "rotation_state",
-        ["never-rotated", "unrelated-previous", "grace-expired", "missing-rotated-at"],
+        "make_rotation_state",
+        [
+            pytest.param(keep_unrotated, id="never_rotated"),
+            pytest.param(set_unrelated_previous, id="unrelated_previous"),
+            pytest.param(expire_rotation_grace, id="grace_expired"),
+            pytest.param(set_previous_without_rotated_at, id="missing_rotated_at"),
+        ],
     )
-    async def test_refresh_session_commits_revocation_before_rejecting_reused_token(
+    async def test_refresh_session_reused_token_commits_revocation_before_raising(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
         unit_of_work_mock: UnitOfWork,
         active_user_session: UserSession,
         session_now: datetime,
-        rotation_state: str,
+        make_rotation_state: Callable[[UserSession, datetime, str], None],
     ):
         wrong_secret = "wrong-refresh-secret"
         refresh_token = create_refresh_token(active_user_session.id, wrong_secret)
-        grace_interval = timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)
-        boundary_offset = timedelta(microseconds=1)
-        if rotation_state == "unrelated-previous":
-            active_user_session.previous_refresh_token_hash = hash_refresh_secret("previous-secret")
-            active_user_session.rotated_at = session_now
-        elif rotation_state in {"grace-expired", "missing-rotated-at"}:
-            active_user_session.previous_refresh_token_hash = hash_refresh_secret(wrong_secret)
-            if rotation_state == "grace-expired":
-                active_user_session.rotated_at = session_now - grace_interval - boundary_offset
+        make_rotation_state(active_user_session, session_now, wrong_secret)
         original_hash = active_user_session.refresh_token_hash
         original_generation = active_user_session.refresh_generation
         original_last_used_at = active_user_session.last_used_at
@@ -1219,7 +1301,7 @@ class TestRefreshSession:
 
 
 class TestLogout:
-    async def test_logout_revokes_session(
+    async def test_logout_current_token_revokes_session(
         self,
         mocker: MockerFixture,
         user_service: UserService,
@@ -1254,8 +1336,15 @@ class TestLogout:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    @pytest.mark.parametrize("token", ["", "malformed-token", "invalid-uuid.secret.signature"])
-    async def test_logout_ignores_malformed_token(
+    @pytest.mark.parametrize(
+        "token",
+        [
+            pytest.param("", id="empty"),
+            pytest.param("malformed-token", id="malformed"),
+            pytest.param("invalid-uuid.secret.signature", id="invalid_uuid"),
+        ],
+    )
+    async def test_logout_malformed_token_skips_revocation(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1272,9 +1361,13 @@ class TestLogout:
         unit_of_work_mock.commit.assert_not_awaited()
 
     @pytest.mark.parametrize(
-        "signature", ["forged-signature", "підроблений-підпис"], ids=["ascii", "non-ascii"]
+        "signature",
+        [
+            pytest.param("forged-signature", id="ascii"),
+            pytest.param("підроблений-підпис", id="non_ascii"),
+        ],
     )
-    async def test_logout_ignores_invalid_signature_without_accessing_repository(
+    async def test_logout_invalid_signature_skips_revocation(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1303,7 +1396,7 @@ class TestLogout:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_logout_ignores_unknown_session(
+    async def test_logout_unknown_session_skips_revocation(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1328,7 +1421,7 @@ class TestLogout:
         user_session_repo_mock.update.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_logout_wrong_secret_revokes_the_session_as_reuse(
+    async def test_logout_wrong_secret_revokes_session_as_reuse(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1369,10 +1462,15 @@ class TestLogout:
 
     @pytest.mark.parametrize(
         "rotation_age",
-        [timedelta(seconds=1), timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS)],
-        ids=["within-grace", "at-grace-boundary"],
+        [
+            pytest.param(timedelta(seconds=1), id="within_grace"),
+            pytest.param(
+                timedelta(seconds=settings.REFRESH_TOKEN_REUSE_GRACE_SECONDS),
+                id="at_grace_boundary",
+            ),
+        ],
     )
-    async def test_logout_previous_token_in_grace_revokes_the_session(
+    async def test_logout_previous_token_in_grace_revokes_session(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1421,7 +1519,7 @@ class TestLogout:
         user_session_repo_mock.update.assert_awaited_once_with(active_user_session)
         unit_of_work_mock.commit.assert_awaited_once()
 
-    async def test_logout_previous_token_outside_grace_revokes_the_session_as_reuse(
+    async def test_logout_previous_token_outside_grace_revokes_session_as_reuse(
         self,
         user_service: UserService,
         user_session_repo_mock: UserSessionRepository,
@@ -1472,7 +1570,7 @@ class TestUpdateUsername:
     ):
         return UsernameUpdate(new_username="test_user")
 
-    async def test_update_username_success(
+    async def test_update_username_returns_updated_user(
         self,
         user_service: UserService,
         user_repo_mock: UserRepository,
@@ -1505,7 +1603,7 @@ class TestUpdateUsername:
 
         unit_of_work_mock.commit.assert_awaited_once()
 
-    async def test_update_username_username_belongs_to_other_user(
+    async def test_update_username_taken_username_raises_already_exists(
         self,
         user_service: UserService,
         user_repo_mock: UserRepository,
@@ -1530,7 +1628,7 @@ class TestUpdateUsername:
 
         unit_of_work_mock.commit.assert_not_awaited()
 
-    async def test_update_username_self_not_duplicate(
+    async def test_update_username_own_username_returns_user(
         self,
         user_service: UserService,
         user_repo_mock: UserRepository,
@@ -1567,8 +1665,11 @@ class TestUpdatePassword:
             new_password="UpdatedPassword1234!",
         )
 
-    @pytest.mark.parametrize("operation", ["verify", "hash"])
-    async def test_update_password_propagates_password_hash_queue_full(
+    @pytest.mark.parametrize(
+        "operation",
+        [pytest.param("verify", id="verify"), pytest.param("hash", id="hash")],
+    )
+    async def test_update_password_full_hash_queue_raises_queue_full(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1596,7 +1697,7 @@ class TestUpdatePassword:
         user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_update_password_rejects_missing_user(
+    async def test_update_password_unknown_user_raises_user_no_longer_exists(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1624,8 +1725,11 @@ class TestUpdatePassword:
         user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_not_awaited()
 
-    @pytest.mark.parametrize("revoked_count", [0, 2], ids=["none-revoked", "revoked"])
-    async def test_update_password_success(
+    @pytest.mark.parametrize(
+        "revoked_count",
+        [pytest.param(0, id="none_revoked"), pytest.param(2, id="some_revoked")],
+    )
+    async def test_update_password_updates_hash_and_revokes_sessions(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1705,7 +1809,7 @@ class TestUpdatePassword:
             }
         ]
 
-    async def test_update_password_wrong_current(
+    async def test_update_password_wrong_current_password_raises_invalid_credentials(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1792,7 +1896,7 @@ class TestUpdatePassword:
         user_repo_mock.get_by_id_for_update.assert_awaited_once_with(existing_user.id)
         assert existing_user.hashed_password == hashed_password
 
-    async def test_update_password_rejects_password_changed_after_verification(
+    async def test_update_password_password_changed_after_verification_raises_invalid_credentials(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1843,7 +1947,7 @@ class TestUpdatePassword:
         user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_update_password_rejects_user_deleted_after_verification(
+    async def test_update_password_user_deleted_after_verification_raises_user_no_longer_exists(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
@@ -1868,7 +1972,7 @@ class TestUpdatePassword:
         user_session_repo_mock.revoke_active.assert_not_awaited()
         unit_of_work_mock.commit.assert_awaited_once_with()
 
-    async def test_update_password_does_not_commit_when_session_revocation_fails(
+    async def test_update_password_revocation_failure_skips_commit(
         self,
         user_service: UserService,
         password_hasher_mock: Argon2Hasher,
